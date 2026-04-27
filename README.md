@@ -65,7 +65,7 @@ Plantilla base para los proyectos de Grupo Olympo / Inversiones Olympo. Diseñad
 Ver [docs/SETUP.md](docs/SETUP.md) para el flujo completo. Resumen:
 
 ```bash
-git clone https://github.com/grupo-olympo/plantilla-laravel-filament.git mi-proyecto
+git clone https://github.com/grupo-olympo/constructora-mayap.git mi-proyecto
 cd mi-proyecto
 cp .env.example .env
 # Edita .env: APP_NAME, APP_SLUG, DB_DATABASE, ADMIN_EMAIL, ADMIN_PASSWORD

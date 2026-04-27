@@ -94,6 +94,7 @@ class TemplateRename extends Command
             base_path('package.json'),
             base_path('README.md'),
             base_path('docker-compose.yml'),
+            base_path('phpunit.xml'),
         ];
 
         $cambiados = 0;

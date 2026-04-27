@@ -1,6 +1,6 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "grupo-olympo/plantilla-laravel-filament",
+    "name": "grupo-olympo/constructora-mayap",
     "type": "project",
     "description": "Plantilla base Grupo Olympo: Laravel 12 + Filament v4 + PHP 8.4 + PostgreSQL 16 + Redis 7. Lista para Honduras (ISV/RTN/CAI), multi-tenant opcional, observabilidad y CI integrados.",
     "keywords": ["laravel", "filament", "postgresql", "honduras", "grupo-olympo", "template"],
