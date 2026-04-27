@@ -119,6 +119,17 @@ parameters:
               - app/Models/Item.php
               - app/Models/Zona.php
               - app/Models/UnidadMedida.php
+              - app/Models/Ficha.php
+              - app/Models/FichaLinea.php
+
+        # ── bcmath en el calculador de fichas ───────────────────────────────
+        # Los strings que llegan a bcmul/bcadd/bcsub/bccomp/bcdiv vienen de
+        # columnas decimal con CHECK constraint de no-negatividad y rangos
+        # válidos. PHPStan los infiere como `string` plain en vez de
+        # `numeric-string`. La defensa real vive en los CHECK constraints
+        # + bcmath que lanza excepción runtime ante valores no numéricos.
+        - identifier: argument.type
+          path: app/Services/Fichas/CalcularPrecioFichaService.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no
