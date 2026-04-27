@@ -92,8 +92,17 @@ Schedule::command('queue:prune-batches --hours=168')
     ->onOneServer()
     ->name('queue-prune-batches');
 
-// ─── Telescope / Activity Log (si se activan) ──────────────────────────
-// Schedule::command('activitylog:clean')->daily();
+// ─── Activity Log ──────────────────────────────────────────────────────
+// Limpieza periódica del log de Spatie ActivityLog. Por defecto el comando
+// borra registros con más de 365 días (configurable en config/activitylog.php
+// → delete_records_older_than_days). Sin esto la tabla crece indefinidamente
+// y se vuelve un problema de performance + espacio en disco con el tiempo.
+Schedule::command('activitylog:clean')
+    ->dailyAt('06:00')
+    ->onOneServer()
+    ->name('activitylog-clean');
+
+// ─── Telescope (si se activa) ──────────────────────────────────────────
 // Schedule::command('telescope:prune --hours=48')->daily();
 
 // ─── Sesiones expiradas ────────────────────────────────────────────────

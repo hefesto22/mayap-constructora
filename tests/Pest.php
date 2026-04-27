@@ -20,8 +20,11 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
-pest()->extend(TestCase::class)
-    ->in('Feature/Filament');
+// Feature/Filament hereda automáticamente de Feature (TestCase + RefreshDatabase).
+// Mantener este extend sin RefreshDatabase generaba conflicto "test case already used"
+// cuando un mismo archivo cae bajo dos reglas. Si en el futuro algún test Livewire
+// concreto necesita persistencia entre tests, marcarlo individual con
+// uses()->in() apuntando a un path específico que excluya RefreshDatabase.
 
 /*
 |--------------------------------------------------------------------------

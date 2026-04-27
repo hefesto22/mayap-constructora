@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             AdminUserSeeder::class,
             BrandingSettingSeeder::class,
+            CatalogosSeeder::class,
         ]);
     }
 }

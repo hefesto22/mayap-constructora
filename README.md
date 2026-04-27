@@ -133,6 +133,12 @@ composer ci                  # Lint + Stan + Test (lo que corre CI)
 
 Ver [docs/adr/0001-arquitectura.md](docs/adr/0001-arquitectura.md) — la plantilla nace con **Laravel tradicional** (Services + Models). Cada proyecto que la consuma decide en su propio ADR si necesita migrar a Clean Architecture (§6 del documento de instrucciones de Grupo Olympo).
 
+## Módulos del proyecto Constructora MAYAP
+
+- [Sprint 1 — Catálogos base](docs/sprint-1-catalogos.md): unidades de medida, zonas operativas, base de precios por zona con auto-código, clonado entre zonas y edición inline.
+- Sprint 2 — Fichas APU (pendiente): análisis de precio unitario con cálculo en vivo + duplicación entre zonas.
+- Sprint 3 — Presupuestos + PDF (pendiente): clientes, proyectos, presupuestos versionados con snapshot inmutable + Browsershot.
+
 ## Compatibilidad con VPS compartido
 
 Si despliegas a un VPS donde ya conviven otros proyectos de Olympo:

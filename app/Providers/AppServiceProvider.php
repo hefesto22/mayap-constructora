@@ -8,6 +8,8 @@ use App\Listeners\RecordUserLogin;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Support\Facades\FilamentView;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
@@ -50,5 +52,34 @@ class AppServiceProvider extends ServiceProvider
 
         // ─── Eventos ────────────────────────────────────────────────────
         Event::listen(Login::class, RecordUserLogin::class);
+
+        // ─── Macros Filament: ->mayusculas() en TextInput y Textarea ────
+        // Convención del proyecto (ver feedback memory): nombres, códigos,
+        // descripciones y observaciones del dominio constructor van en
+        // mayúsculas. Este macro centraliza CSS visual + dehydrate al
+        // persistir, para no repetir 5 modificadores en cada campo.
+        // Triple defensa: el mutator del modelo (HasUppercaseAttributes
+        // trait) corrige cualquier dato que evite el form.
+        $aMayusculas = static function (?string $state): ?string {
+            if ($state === null || trim($state) === '') {
+                return null;
+            }
+
+            return mb_strtoupper(trim($state), 'UTF-8');
+        };
+
+        TextInput::macro('mayusculas', function () use ($aMayusculas): TextInput {
+            /** @var TextInput $this */
+            return $this
+                ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+                ->dehydrateStateUsing($aMayusculas);
+        });
+
+        Textarea::macro('mayusculas', function () use ($aMayusculas): Textarea {
+            /** @var Textarea $this */
+            return $this
+                ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+                ->dehydrateStateUsing($aMayusculas);
+        });
     }
 }
