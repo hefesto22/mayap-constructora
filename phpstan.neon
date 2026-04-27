@@ -49,7 +49,13 @@ parameters:
         # existe en proyectos multi-tenant. La plantilla NO incluye Empresa.
         - '#Class App\\Models\\Empresa not found#'
         - identifier: trait.unused
-          path: app/Models/Concerns/BelongsToEmpresa.php
+          paths:
+              - app/Models/Concerns/BelongsToEmpresa.php
+              # NotificaResultadoClonado se usa en CreateZona y EditZona
+              # que viven en app/Filament/Resources/*/Pages/* — excluido
+              # del análisis (ver excludePaths). PHPStan no detecta los
+              # `use` y reporta el trait como huérfano. Es falso positivo.
+              - app/Filament/Concerns/NotificaResultadoClonado.php
 
         # ── Pest 3 magic ────────────────────────────────────────────────────
         # $this, test(), pest()->extend(), expect() son magic globals.
@@ -59,6 +65,9 @@ parameters:
         - identifier: method.notFound
           path: tests/*
         - identifier: method.staticCall
+          path: tests/*
+        # Pest expectations chain (->not->toBeEmpty(), etc) son magic.
+        - identifier: property.notFound
           path: tests/*
 
         # ── Seeders ─────────────────────────────────────────────────────────
@@ -86,7 +95,47 @@ parameters:
 
         # Filament Tables/Schemas reciben Model de la query builder generic.
         # No podemos tipar $record como User dentro de cierres anónimos.
-        - '#Call to an undefined method Illuminate\\Database\\Eloquent\\(Model|Builder)<.*>::(hasRole|visibleTo)\(\)\.#'
+        - '#Call to an undefined method Illuminate\\Database\\Eloquent\\(Model|Builder)<.*>::(hasRole|visibleTo|preciosDesactualizados)\(\)\.#'
+
+        # ── Macros Filament registrados en AppServiceProvider ───────────────
+        # ->mayusculas() es un macro que aplica CSS uppercase + dehydrate.
+        # Existe en runtime pero PHPStan no lo ve porque se registra dinámicamente.
+        - '#Call to an undefined method Filament\\Forms\\Components\\(TextInput|Textarea)::mayusculas\(\)\.#'
+
+        # PHPDoc @var $this dentro de los closures de los macros — limitación
+        # conocida de PHPStan con Laravel macros. La firma es correcta en runtime.
+        - identifier: varTag.nativeType
+          path: app/Providers/AppServiceProvider.php
+
+        # ── Spatie ActivityLog: ->activities() es magic via trait ───────────
+        # LogsActivity declara un MorphMany dinámico que PHPStan no ve.
+        - '#Call to an undefined method App\\Models\\(Item|Zona|UnidadMedida)::activities\(\)#'
+
+        # ── Eloquent Casts\Attribute — generics opcionales en mutators ──────
+        # Laravel 11 no obliga a especificar Attribute<TGet, TSet> aunque
+        # PHPStan nivel 7 lo pida. La inferencia es correcta en runtime.
+        - identifier: missingType.generics
+          paths:
+              - app/Models/Item.php
+              - app/Models/Zona.php
+              - app/Models/UnidadMedida.php
+
+        # ── Acceso dinámico a record en closures de Filament Tables ────────
+        # Las Tables de Filament tipan $record como Illuminate\...\Model (no
+        # nuestro modelo específico) en closures de columnas y filtros, por
+        # lo que llamadas como $record->items() o $record->codigo no se
+        # validan estáticamente. Misma situación para scopes locales
+        # (Builder::preciosDesactualizados) en queries de Filters.
+        - identifier: property.notFound
+          paths:
+              - app/Filament/Resources/Items/Tables/*
+              - app/Filament/Resources/Zonas/Tables/*
+              - app/Filament/Resources/UnidadesMedida/Tables/*
+        - identifier: method.notFound
+          paths:
+              - app/Filament/Resources/Items/Tables/*
+              - app/Filament/Resources/Zonas/Tables/*
+              - app/Filament/Resources/UnidadesMedida/Tables/*
 
         # config/filesystems.php es archivo de Laravel — no nuestro
         - identifier: argument.type
