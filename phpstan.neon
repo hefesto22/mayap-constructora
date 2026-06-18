@@ -143,6 +143,7 @@ parameters:
               - app/Services/Proyectos/DuplicarProyectoService.php
               - database/factories/ProyectoRenglonFactory.php
               - app/Models/Existencia.php
+              - app/Services/Inventario/RegistrarMovimientoService.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no

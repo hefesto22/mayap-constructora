@@ -76,27 +76,44 @@ enum TipoMovimientoInventario: string implements HasColor, HasIcon, HasLabel
     }
 
     /**
-     * ¿Este tipo de movimiento INCREMENTA stock en el destino?
-     * Determina la dirección del efecto sobre existencias.
+     * ¿Este tipo descuenta stock de una ubicación de ORIGEN?
+     *
+     * Las entradas (compra, ajuste positivo) no tienen origen — el stock
+     * aparece. Todo lo demás sale de algún lado.
      */
-    public function incrementaDestino(): bool
+    public function tieneOrigen(): bool
     {
         return match ($this) {
-            self::EntradaCompra,
-            self::Traslado,
-            self::Devolucion,
-            self::AjustePositivo => true,
-            self::SalidaDespacho,
-            self::ConsumoObra,
-            self::AjusteNegativo => false,
+            self::EntradaCompra, self::AjustePositivo => false,
+            default                                   => true,
         };
     }
 
     /**
-     * ¿Este tipo recalcula el costo promedio ponderado del destino?
-     * Solo las entradas con costo de compra propio mueven el promedio.
+     * ¿Este tipo agrega stock a una ubicación de DESTINO?
+     *
+     * El consumo en obra y el ajuste negativo son bajas puras (no hay
+     * destino). El despacho y la devolución SÍ tienen destino: el stock
+     * que sale de un lado entra en otro (ej: 100 bolsas despachadas
+     * incrementan la existencia de la obra — caso de las 130).
      */
-    public function recalculaCosto(): bool
+    public function tieneDestino(): bool
+    {
+        return match ($this) {
+            self::ConsumoObra, self::AjusteNegativo => false,
+            default                                 => true,
+        };
+    }
+
+    /**
+     * ¿El costo unitario lo define el movimiento (true) o lo hereda del
+     * promedio ponderado vigente del origen (false)?
+     *
+     * Solo las entradas con costo de compra propio (compra, ajuste
+     * positivo) definen costo. Los traslados/despachos/devoluciones
+     * arrastran el costo promedio del origen — no inventan costo nuevo.
+     */
+    public function defineCostoPropio(): bool
     {
         return match ($this) {
             self::EntradaCompra, self::AjustePositivo => true,
