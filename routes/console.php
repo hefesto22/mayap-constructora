@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Jobs\MarcarProyectosVencidosJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -91,6 +92,14 @@ Schedule::command('queue:prune-batches --hours=168')
     ->dailyAt('05:45')
     ->onOneServer()
     ->name('queue-prune-batches');
+
+// ─── Proyectos / Cotizaciones ──────────────────────────────────────────
+// Marca como `vencidas` las cotizaciones enviadas cuya fecha_validez ya
+// pasó. Idempotente: correr dos veces el mismo día es seguro.
+Schedule::job(new MarcarProyectosVencidosJob)
+    ->dailyAt('01:00')
+    ->onOneServer()
+    ->name('proyectos-marcar-vencidos');
 
 // ─── Activity Log ──────────────────────────────────────────────────────
 // Limpieza periódica del log de Spatie ActivityLog. Por defecto el comando

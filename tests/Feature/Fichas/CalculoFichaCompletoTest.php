@@ -59,7 +59,9 @@ test('ficha con un solo item sin desperdicio: aplica utilidad correctamente', fu
     expect($resultado->precioVenta)->toBe('1000.00');
 });
 
-test('ficha con item + desperdicio: rendimiento efectivo aplica al subtotal', function (): void {
+test('ficha con item + desperdicio: el rendimiento efectivo determina el subtotal', function (): void {
+    // El rendimiento se captura como EFECTIVO (con la pérdida ya considerada).
+    // El desperdicio queda como metadato informativo.
     $ficha = Ficha::factory()
         ->enZona($this->zona)
         ->conUnidad($this->unidadM2)
@@ -76,12 +78,12 @@ test('ficha con item + desperdicio: rendimiento efectivo aplica al subtotal', fu
     FichaLinea::factory()
         ->paraFicha($ficha)
         ->conItem($cemento)
-        ->conRendimiento('0.850000', '5.00')
+        ->conRendimiento('0.892500', '5.00')  // efectivo (= 0.85 teórico × 1.05)
         ->create();
 
     $resultado = $this->service->calcular($ficha);
 
-    // 0.85 * 1.05 * 220 = 196.35
+    // 0.892500 × 220 = 196.35
     expect($resultado->subtotalDe(CategoriaItem::Materiales))->toBe('196.35');
     expect($resultado->precioVenta)->toBe('245.44'); // 196.35 + 49.0875 = 245.4375 → 245.44
 });

@@ -23,9 +23,11 @@ use Illuminate\Support\Facades\DB;
  *
  * FÓRMULAS DEL DOMINIO:
  *
- *   tipo='item':
- *     rendimiento_efectivo = rendimiento × (1 + desperdicio/100)
- *     subtotal             = rendimiento_efectivo × precio_unitario_item
+ *   tipo='item' (modelo único — Sprint 2 Sesión 3):
+ *     El rendimiento se captura como valor EFECTIVO (con la pérdida ya
+ *     considerada, igual que muestra Excel internamente). El desperdicio
+ *     queda como metadato informativo y NO entra al cálculo.
+ *     subtotal = rendimiento × precio_unitario_item
  *
  *   tipo='porcentaje':
  *     base     = subtotal_de(categoria_base)   ← valor crudo, no redondeado
@@ -60,17 +62,20 @@ final class CalcularPrecioFichaService
      * Calcula subtotal de una línea tipo `item`. Resultado redondeado
      * a 2 decimales — pensado para mostrar al usuario.
      *
-     * @param string $rendimientoBase Ej: "0.850000"
-     * @param string $desperdicioPorcentaje Ej: "5.00"
+     * El rendimiento se interpreta como valor EFECTIVO (estilo Excel).
+     * El desperdicio queda como metadato informativo y NO entra al cálculo.
+     *
+     * @param string $rendimiento Ej: "0.892500" (rendimiento efectivo)
+     * @param string $desperdicioPorcentaje Ej: "5.00" (informativo, no se aplica)
      * @param string $precioUnitarioItem Ej: "220.00"
      */
     public function calcularLineaItem(
-        string $rendimientoBase,
+        string $rendimiento,
         string $desperdicioPorcentaje,
         string $precioUnitarioItem,
     ): string {
         return $this->bcround(
-            $this->calcularLineaItemCrudo($rendimientoBase, $desperdicioPorcentaje, $precioUnitarioItem),
+            $this->calcularLineaItemCrudo($rendimiento, $desperdicioPorcentaje, $precioUnitarioItem),
             self::SCALE_FINAL,
         );
     }
@@ -83,21 +88,6 @@ final class CalcularPrecioFichaService
         return $this->bcround(
             $this->calcularLineaPorcentajeCrudo($porcentaje, $base),
             self::SCALE_FINAL,
-        );
-    }
-
-    /**
-     * Calcula el rendimiento efectivo de una línea tipo `item`.
-     * Útil para mostrar en el form/PDF el rendimiento "real" usado.
-     */
-    public function rendimientoEfectivo(string $rendimientoBase, string $desperdicioPorcentaje): string
-    {
-        $factorDesperdicio = bcdiv($desperdicioPorcentaje, '100', self::SCALE_INTERNO);
-        $multiplicador = bcadd('1', $factorDesperdicio, self::SCALE_INTERNO);
-
-        return $this->bcround(
-            bcmul($rendimientoBase, $multiplicador, self::SCALE_INTERNO),
-            6,
         );
     }
 
@@ -238,15 +228,16 @@ final class CalcularPrecioFichaService
     // ─── Cálculos crudos (internos, no redondeados) ────────────────
 
     private function calcularLineaItemCrudo(
-        string $rendimientoBase,
+        string $rendimiento,
         string $desperdicioPorcentaje,
         string $precioUnitarioItem,
     ): string {
-        $factorDesperdicio = bcdiv($desperdicioPorcentaje, '100', self::SCALE_INTERNO);
-        $multiplicador = bcadd('1', $factorDesperdicio, self::SCALE_INTERNO);
-        $rendimientoEfectivo = bcmul($rendimientoBase, $multiplicador, self::SCALE_INTERNO);
+        // El rendimiento ya es efectivo (con desperdicio incluido).
+        // Subtotal = rendimiento × precio. El desperdicio NO entra al cálculo
+        // — se conserva como metadato descriptivo en el campo correspondiente.
+        unset($desperdicioPorcentaje); // declared in signature for back-compat con consumidores
 
-        return bcmul($rendimientoEfectivo, $precioUnitarioItem, self::SCALE_INTERNO);
+        return bcmul($rendimiento, $precioUnitarioItem, self::SCALE_INTERNO);
     }
 
     private function calcularLineaPorcentajeCrudo(string $porcentaje, string $base): string
@@ -295,12 +286,16 @@ final class CalcularPrecioFichaService
 
         $subtotalCrudo = $this->calcularLineaItemCrudo($rendimiento, $desperdicio, $precio);
 
+        // En el modelo único, el rendimiento ES el efectivo. Se muestra
+        // tal cual lo escribió el ingeniero (con su precisión completa).
+        $rendEfectivoMostrar = $this->bcround($rendimiento, 6);
+
         $detalle = new DetalleLineaCalculada(
             lineaId: $linea->id,
             seccion: $item->categoria,
             descripcion: $item->nombre,
             unidad: $item->unidadMedida->codigo,
-            rendimientoEfectivo: $this->rendimientoEfectivo($rendimiento, $desperdicio),
+            rendimientoEfectivo: $rendEfectivoMostrar,
             precioUnitario: $precio,
             subtotal: $this->bcround($subtotalCrudo, self::SCALE_FINAL),
         );

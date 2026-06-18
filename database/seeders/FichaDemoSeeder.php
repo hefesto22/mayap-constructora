@@ -206,9 +206,14 @@ class FichaDemoSeeder extends Seeder
     }
 
     /**
-     * Crea las 17 líneas de la ficha real. Los rendimientos base están
-     * calibrados para que el cálculo crudo (sin redondear intermedios)
-     * reproduzca al céntimo cada subtotal del Excel original.
+     * Crea las 17 líneas de la ficha real con rendimientos EFECTIVOS
+     * (con desperdicio ya considerado, igual a como Excel los almacena
+     * internamente con su precisión completa).
+     *
+     * Cada efectivo = teórico × (1 + desperdicio/100), redondeado a 6
+     * decimales. El campo `desperdicio_porcentaje` queda como metadato
+     * informativo: documenta de dónde proviene el efectivo, pero NO se
+     * aplica al cálculo del subtotal (subtotal = rendimiento × precio).
      *
      * @param array<string, Item> $items
      */
@@ -216,28 +221,36 @@ class FichaDemoSeeder extends Seeder
     {
         $orden = 0;
 
-        // [nombreItem, rendimientoBase, desperdicioPorcentaje]
-        // Rendimientos calibrados: rendimiento_base × (1 + desp/100) × precio_item
-        // = subtotal del Excel cuando se redondea con bcround half-up al final.
+        // [nombreItem, rendimientoEfectivo, desperdicioInformativo]
+        // El efectivo es el valor que Excel almacena internamente
+        // aunque despliegue 3 decimales en su columna RENDIMIENTO.
         $lineasItem = [
-            // Materiales
-            ['CEMENTO',           '0.850000',  '5.00'],
-            ['ARENA',             '0.052000', '10.00'],
-            ['GRAVA TRIT 3/4',    '0.078000', '10.00'],
-            ['AGUA',              '0.020000', '25.00'],
-            ['LAMINA DE ALUZINC', '3.280000',  '5.00'],
-            ['CANALETA 2X4',      '0.500000',  '5.00'],
-            ['VAR#4',             '1.111111',  '5.00'],
-            ['ALAMBRE DE AMARRE', '0.333333',  '5.00'],
-            ['TORNILLOS',         '0.156364', '10.00'],
-            ['CLAVOS',            '0.044571',  '5.00'],
+            // ─── Materiales ──────────────────────────────────────────
+            // Concreto 3000 PSI por M² losa (volumen 0.10 M³/M²):
+            //   CEMENTO  = 8.5 bolsas/M³ × 0.10 M³ × 1.05 desp = 0.892500
+            //   ARENA    = 0.52 M³/M³  × 0.10 M³ × 1.10 desp = 0.057200
+            //   GRAVA    = 0.78 M³/M³  × 0.10 M³ × 1.10 desp = 0.085800
+            //   AGUA     = 0.20 M³/M³  × 0.10 M³ × 1.25 desp = 0.025000
+            ['CEMENTO',           '0.892500',  '5.00'],
+            ['ARENA',             '0.057200', '10.00'],
+            ['GRAVA TRIT 3/4',    '0.085800', '10.00'],
+            ['AGUA',              '0.025000', '25.00'],
+            // Formaleta y armadura:
+            ['LAMINA DE ALUZINC', '3.444000',  '5.00'],
+            ['CANALETA 2X4',      '0.525000',  '5.00'],
+            ['VAR#4',             '1.166667',  '5.00'],
+            ['ALAMBRE DE AMARRE', '0.350000',  '5.00'],
+            ['TORNILLOS',         '0.172000', '10.00'],
+            ['CLAVOS',            '0.046800',  '5.00'],
 
-            // Mano de obra
+            // ─── Mano de obra ────────────────────────────────────────
+            // Sin desperdicio (la MO no se desperdicia). 1 jornada / 2 M².
             ['ALBAÑIL',           '0.500000',  '0.00'],
             ['SOLDADOR',          '0.500000',  '0.00'],
-            ['AYUDANTE',           '0.500000',  '0.00'],
+            ['AYUDANTE',          '0.500000',  '0.00'],
 
-            // Herramienta y equipo (sin la línea %)
+            // ─── Herramienta y equipo ────────────────────────────────
+            // 0.10 M³/M² ÷ ~9 M³/día = 0.0111 día/M².
             ['CONCRETERA',        '0.011111',  '0.00'],
             ['VIBRADOR',          '0.011114',  '0.00'],
             ['SOLDADORA',         '0.011000',  '0.00'],

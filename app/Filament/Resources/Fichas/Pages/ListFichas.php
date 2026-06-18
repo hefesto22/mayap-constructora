@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace App\Filament\Resources\Items\Pages;
+namespace App\Filament\Resources\Fichas\Pages;
 
-use App\Filament\Resources\Items\ItemResource;
-use App\Models\Item;
+use App\Filament\Resources\Fichas\FichaResource;
+use App\Models\Ficha;
 use App\Models\Zona;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
 
-class ListItems extends ListRecords
+class ListFichas extends ListRecords
 {
-    protected static string $resource = ItemResource::class;
+    protected static string $resource = FichaResource::class;
 
     protected function getHeaderActions(): array
     {
@@ -24,29 +24,35 @@ class ListItems extends ListRecords
     }
 
     /**
-     * Tabs por zona para filtrar la base de precios rápidamente.
+     * Tabs por zona para filtrar el listado rápidamente.
      *
-     * Patrón espejo del de ListFichas (consistencia entre módulos):
-     *  - Tab "Todas" siempre primero, badge = total global de items.
+     * Patrón:
+     *  - Tab "Todas" siempre primero, badge = total global de fichas.
      *  - Un tab por zona ACTIVA, ordenadas alfabéticamente por código.
-     *  - Badge ÁMBAR si la zona tiene items con precios desactualizados
-     *    (precio_actualizado_at > 90 días o null) — señal visual para
-     *    revisar precios antes de cotizar.
-     *  - El tab activo se persiste en query string (?activeTab=TGU).
+     *    El badge muestra la cantidad de fichas en esa zona.
+     *  - Si una zona tiene fichas con cache desactualizado, el badge
+     *    se pinta de WARNING (ámbar) para señalarlo visualmente.
+     *  - El tab activo se persiste en query string (?activeTab=TGU),
+     *    así URLs compartidas conservan el filtro.
      *
-     * Crece automáticamente con cada zona nueva.
+     * Crece automáticamente: cuando se agregan zonas nuevas (CEI, COM,
+     * etc.), sus tabs aparecen sin tocar este archivo.
      *
-     * Performance: dos queries con GROUP BY (totales + stale), no N+1.
+     * Performance: dos queries totales (con/sin stale) usando GROUP BY,
+     * en lugar de N+1 (una por zona). Aguanta cientos de zonas sin
+     * degradación visible.
      */
     public function getTabs(): array
     {
-        $conteosTotales = Item::query()
+        // Conteo total por zona — una sola query.
+        $conteosTotales = Ficha::query()
             ->selectRaw('zona_id, COUNT(*) as total')
             ->groupBy('zona_id')
             ->pluck('total', 'zona_id');
 
-        $conteosStale = Item::query()
-            ->preciosDesactualizados()
+        // Conteo de fichas con cache stale por zona — segunda query.
+        $conteosStale = Ficha::query()
+            ->cacheDesactualizado()
             ->selectRaw('zona_id, COUNT(*) as total')
             ->groupBy('zona_id')
             ->pluck('total', 'zona_id');

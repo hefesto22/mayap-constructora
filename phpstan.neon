@@ -95,7 +95,7 @@ parameters:
 
         # Filament Tables/Schemas reciben Model de la query builder generic.
         # No podemos tipar $record como User dentro de cierres anónimos.
-        - '#Call to an undefined method Illuminate\\Database\\Eloquent\\(Model|Builder)<.*>::(hasRole|visibleTo|preciosDesactualizados)\(\)\.#'
+        - '#Call to an undefined method Illuminate\\Database\\Eloquent\\(Model|Builder)(<.*>)?::(hasRole|visibleTo|preciosDesactualizados|cacheDesactualizado)\(\)\.#'
 
         # ── Macros Filament registrados en AppServiceProvider ───────────────
         # ->mayusculas() es un macro que aplica CSS uppercase + dehydrate.
@@ -121,15 +121,28 @@ parameters:
               - app/Models/UnidadMedida.php
               - app/Models/Ficha.php
               - app/Models/FichaLinea.php
+              - app/Models/Cliente.php
+              - app/Models/Proyecto.php
+              - app/Models/ProyectoRenglon.php
+              - app/Models/Bodega.php
+              - app/Models/Existencia.php
 
-        # ── bcmath en el calculador de fichas ───────────────────────────────
+        # ── bcmath en calculadores y factories ──────────────────────────────
         # Los strings que llegan a bcmul/bcadd/bcsub/bccomp/bcdiv vienen de
         # columnas decimal con CHECK constraint de no-negatividad y rangos
         # válidos. PHPStan los infiere como `string` plain en vez de
         # `numeric-string`. La defensa real vive en los CHECK constraints
         # + bcmath que lanza excepción runtime ante valores no numéricos.
         - identifier: argument.type
-          path: app/Services/Fichas/CalcularPrecioFichaService.php
+          paths:
+              - app/Services/Fichas/CalcularPrecioFichaService.php
+              - app/Services/Fichas/CalcularDesdeStateFicha.php
+              - app/Services/Proyectos/CalcularPrecioProyectoService.php
+              - app/Services/Proyectos/AgregarRenglonAProyectoService.php
+              - app/Services/Proyectos/ActualizarPreciosProyectoService.php
+              - app/Services/Proyectos/DuplicarProyectoService.php
+              - database/factories/ProyectoRenglonFactory.php
+              - app/Models/Existencia.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no

@@ -29,6 +29,13 @@ use Illuminate\Support\Carbon;
  *    Activos: descripcion, porcentaje, categoria_base, categoria_destino.
  *    NULOS: item_id, rendimiento, desperdicio_porcentaje.
  *
+ * Modelo de captura del rendimiento (decisión Sprint 2 — Sesión 3):
+ *  - El campo `rendimiento` siempre almacena el valor EFECTIVO (con la
+ *    pérdida ya considerada), con precisión de 6 decimales.
+ *  - El campo `desperdicio_porcentaje` es METADATO informativo: documenta
+ *    de dónde viene el rendimiento efectivo, NO se aplica al cálculo.
+ *  - Fórmula única en runtime: subtotal = rendimiento × precio_unitario.
+ *
  * Los CHECK constraints en DB validan la consistencia de cada tipo.
  *
  * El cálculo del subtotal de cada línea NO vive aquí — vive en
