@@ -109,7 +109,7 @@ parameters:
 
         # ── Spatie ActivityLog: ->activities() es magic via trait ───────────
         # LogsActivity declara un MorphMany dinámico que PHPStan no ve.
-        - '#Call to an undefined method App\\Models\\(Item|Zona|UnidadMedida)::activities\(\)#'
+        - '#Call to an undefined method App\\Models\\(Item|Zona|UnidadMedida|Bodega)::activities\(\)#'
 
         # ── Eloquent Casts\Attribute — generics opcionales en mutators ──────
         # Laravel 11 no obliga a especificar Attribute<TGet, TSet> aunque
@@ -158,11 +158,13 @@ parameters:
               - app/Filament/Resources/Items/Tables/*
               - app/Filament/Resources/Zonas/Tables/*
               - app/Filament/Resources/UnidadesMedida/Tables/*
+              - app/Filament/Resources/Bodegas/Tables/*
         - identifier: method.notFound
           paths:
               - app/Filament/Resources/Items/Tables/*
               - app/Filament/Resources/Zonas/Tables/*
               - app/Filament/Resources/UnidadesMedida/Tables/*
+              - app/Filament/Resources/Bodegas/Tables/*
 
         # config/filesystems.php es archivo de Laravel — no nuestro
         - identifier: argument.type
