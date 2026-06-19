@@ -8,6 +8,7 @@ use App\Enums\EstadoRequisicion;
 use App\Filament\Resources\Requisiciones\Actions\AccionesTransicion;
 use App\Models\Requisicion;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -69,6 +70,7 @@ class RequisicionesTable
                     ->preload(),
             ])
             ->recordActions([
+                ViewAction::make(),
                 EditAction::make()
                     ->visible(fn (Requisicion $record): bool => $record->estado->permiteEditarLineas()),
                 AccionesTransicion::autorizar(),
