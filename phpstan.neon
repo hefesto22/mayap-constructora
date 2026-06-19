@@ -127,6 +127,7 @@ parameters:
               - app/Models/Bodega.php
               - app/Models/Existencia.php
               - app/Models/Requisicion.php
+              - app/Models/Proveedor.php
 
         # ── bcmath en calculadores y factories ──────────────────────────────
         # Los strings que llegan a bcmul/bcadd/bcsub/bccomp/bcdiv vienen de
