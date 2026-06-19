@@ -1,0 +1,13 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Filament\Resources\Compras\Pages;
+
+use App\Filament\Resources\Compras\CompraResource;
+use Filament\Resources\Pages\EditRecord;
+
+class EditCompra extends EditRecord
+{
+    protected static string $resource = CompraResource::class;
+}
