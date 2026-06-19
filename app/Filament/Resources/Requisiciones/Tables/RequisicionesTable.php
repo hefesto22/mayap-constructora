@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Requisiciones\Tables;
 
 use App\Enums\EstadoRequisicion;
+use App\Filament\Resources\Requisiciones\Actions\AccionesTransicion;
 use App\Models\Requisicion;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
@@ -70,6 +71,12 @@ class RequisicionesTable
             ->recordActions([
                 EditAction::make()
                     ->visible(fn (Requisicion $record): bool => $record->estado->permiteEditarLineas()),
+                AccionesTransicion::autorizar(),
+                AccionesTransicion::despachar(),
+                AccionesTransicion::marcarEnTransito(),
+                AccionesTransicion::recibir(),
+                AccionesTransicion::conciliar(),
+                AccionesTransicion::rechazar(),
             ])
             ->paginated([25, 50, 100])
             ->poll('60s');
