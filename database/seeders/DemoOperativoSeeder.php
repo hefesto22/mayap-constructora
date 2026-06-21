@@ -14,8 +14,8 @@ use App\Models\CompraLinea;
 use App\Models\CuentaPorCobrar;
 use App\Models\CuentaPorPagar;
 use App\Models\Empleado;
-use App\Models\Item;
 use App\Models\Maquina;
+use App\Models\Material;
 use App\Models\Planilla;
 use App\Models\PlanillaLinea;
 use App\Models\Proveedor;
@@ -75,10 +75,10 @@ class DemoOperativoSeeder extends Seeder
 
         $bodega = Bodega::factory()->create(['nombre' => 'BODEGA CENTRAL']);
 
-        $cemento = Item::factory()->enZona($zona)->deCategoria(CategoriaItem::Materiales)
-            ->create(['nombre' => 'CEMENTO GRIS 42.5KG', 'precio_unitario' => 250]);
-        $hierro = Item::factory()->enZona($zona)->deCategoria(CategoriaItem::Materiales)
-            ->create(['nombre' => 'HIERRO #4 LEGÍTIMO', 'precio_unitario' => 320]);
+        $cemento = Material::factory()->deCategoria(CategoriaItem::Materiales)
+            ->create(['nombre' => 'CEMENTO GRIS 42.5KG']);
+        $hierro = Material::factory()->deCategoria(CategoriaItem::Materiales)
+            ->create(['nombre' => 'HIERRO #4 LEGÍTIMO']);
 
         $this->comprasYMateriales($obra, $bodega, $cemento, $hierro);
         $this->maquinaria($obra);
@@ -89,7 +89,7 @@ class DemoOperativoSeeder extends Seeder
         $this->command?->info('Revisa Comercial → Proyectos → Costos, y el dashboard.');
     }
 
-    private function comprasYMateriales(Proyecto $obra, Bodega $bodega, Item $cemento, Item $hierro): void
+    private function comprasYMateriales(Proyecto $obra, Bodega $bodega, Material $cemento, Material $hierro): void
     {
         $proveedor = Proveedor::factory()->aCredito(30)->create([
             'nombre' => 'FERRETERÍA EL CONSTRUCTOR S. DE R.L.',
@@ -102,8 +102,8 @@ class DemoOperativoSeeder extends Seeder
             ->aCredito()
             ->create(['numero_factura' => 'F-00123']);
 
-        CompraLinea::factory()->paraItem($cemento)->create(['compra_id' => $compra->id, 'cantidad' => 400, 'costo_unitario' => 250]);
-        CompraLinea::factory()->paraItem($hierro)->create(['compra_id' => $compra->id, 'cantidad' => 200, 'costo_unitario' => 320]);
+        CompraLinea::factory()->paraMaterial($cemento)->create(['compra_id' => $compra->id, 'cantidad' => 400, 'costo_unitario' => 250]);
+        CompraLinea::factory()->paraMaterial($hierro)->create(['compra_id' => $compra->id, 'cantidad' => 200, 'costo_unitario' => 320]);
 
         app(ConfirmarCompraService::class)->confirmar($compra);
 
@@ -117,13 +117,13 @@ class DemoOperativoSeeder extends Seeder
         // Despacho de material a la obra (imputa costo de materiales a la obra).
         $inventario = app(RegistrarMovimientoService::class);
         $inventario->salidaDespacho(
-            itemId: $cemento->id,
+            materialId: $cemento->id,
             origen: Ubicacion::bodega($bodega->id),
             destino: Ubicacion::obra($obra->id),
             cantidad: '300',
         );
         $inventario->salidaDespacho(
-            itemId: $hierro->id,
+            materialId: $hierro->id,
             origen: Ubicacion::bodega($bodega->id),
             destino: Ubicacion::obra($obra->id),
             cantidad: '150',

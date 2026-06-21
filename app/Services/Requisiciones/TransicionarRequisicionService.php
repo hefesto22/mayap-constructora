@@ -97,7 +97,7 @@ final readonly class TransicionarRequisicionService
                     }
 
                     $this->inventario->salidaDespacho(
-                        itemId: $linea->item_id,
+                        materialId: $linea->material_id,
                         origen: $bodega,
                         destino: $obra,
                         cantidad: $cantidad,

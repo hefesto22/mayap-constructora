@@ -6,7 +6,7 @@ use App\Enums\EstadoRequisicion;
 use App\Filament\Resources\Requisiciones\Pages\ListRequisiciones;
 use App\Models\Bodega;
 use App\Models\Existencia;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
@@ -49,11 +49,11 @@ beforeEach(function (): void {
 });
 
 test('la acción Autorizar avanza el estado y fija la cantidad autorizada', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $requisicion = Requisicion::factory()->paraProyecto($this->proyecto)->create();
     $linea = RequisicionLinea::factory()->create([
         'requisicion_id'      => $requisicion->id,
-        'item_id'             => $item->id,
+        'material_id'         => $material->id,
         'cantidad_solicitada' => 100,
     ]);
 
@@ -61,7 +61,7 @@ test('la acción Autorizar avanza el estado y fija la cantidad autorizada', func
         ->callTableAction('autorizar', $requisicion, [
             'lineas' => [[
                 'linea_id'            => $linea->id,
-                'item'                => 'X',
+                'material'            => 'X',
                 'cantidad_solicitada' => '100',
                 'cantidad'            => '80',
             ]],
@@ -73,13 +73,13 @@ test('la acción Autorizar avanza el estado y fija la cantidad autorizada', func
 });
 
 test('la acción Despachar mueve stock real de la bodega a la obra', function (): void {
-    $item = Item::factory()->create();
-    $this->inventario->entradaCompra($item->id, Ubicacion::bodega($this->bodega->id), '200', '10');
+    $material = Material::factory()->create();
+    $this->inventario->entradaCompra($material->id, Ubicacion::bodega($this->bodega->id), '200', '10');
 
     $requisicion = Requisicion::factory()->paraProyecto($this->proyecto)->create();
     RequisicionLinea::factory()->create([
         'requisicion_id'      => $requisicion->id,
-        'item_id'             => $item->id,
+        'material_id'         => $material->id,
         'cantidad_solicitada' => 100,
     ]);
 
@@ -96,12 +96,12 @@ test('la acción Despachar mueve stock real de la bodega a la obra', function ()
     expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::Despachada);
 
     $stockBodega = Existencia::query()
-        ->where('item_id', $item->id)
+        ->where('material_id', $material->id)
         ->where('bodega_id', $this->bodega->id)
         ->value('cantidad');
 
     $stockObra = Existencia::query()
-        ->where('item_id', $item->id)
+        ->where('material_id', $material->id)
         ->where('proyecto_id', $this->proyecto->id)
         ->value('cantidad');
 
@@ -110,11 +110,11 @@ test('la acción Despachar mueve stock real de la bodega a la obra', function ()
 });
 
 test('Despachar sin stock manda la requisición a Requisición de compra', function (): void {
-    $item = Item::factory()->create(); // sin stock
+    $material = Material::factory()->create(); // sin stock
     $requisicion = Requisicion::factory()->paraProyecto($this->proyecto)->create();
     RequisicionLinea::factory()->create([
         'requisicion_id'      => $requisicion->id,
-        'item_id'             => $item->id,
+        'material_id'         => $material->id,
         'cantidad_solicitada' => 10,
     ]);
     $this->transiciones->autorizar($requisicion);

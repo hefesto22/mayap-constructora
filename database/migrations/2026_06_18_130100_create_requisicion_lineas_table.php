@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Tabla `requisicion_lineas` — un item pedido dentro de una requisición.
+ * Tabla `requisicion_lineas` — un material pedido dentro de una requisición.
  *
  * Lleva las cuatro cantidades que permiten la trazabilidad eslabón por
  * eslabón (docs/arquitectura/sistema-completo.md §3):
@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
  *  - cantidad_recibida:   lo que la obra confirmó que llegó.
  *
  * Si despachada ≠ recibida, la requisición cae en Discrepancia y se sabe
- * exactamente en qué item y por cuánto. Las nulables (autorizada) se
+ * exactamente en qué material y por cuánto. Las nulables (autorizada) se
  * llenan al avanzar el estado; las default 0 arrancan en cero.
  *
  * Cantidades con 4 decimales (materiales fraccionarios: m³, kg, ml).
@@ -34,8 +34,8 @@ return new class extends Migration
                 ->constrained('requisiciones')
                 ->cascadeOnDelete();
 
-            $table->foreignId('item_id')
-                ->constrained('items')
+            $table->foreignId('material_id')
+                ->constrained('materiales')
                 ->restrictOnDelete();
 
             $table->decimal('cantidad_solicitada', 16, 4);
@@ -45,10 +45,10 @@ return new class extends Migration
 
             $table->timestamps();
 
-            // Un item aparece una sola vez por requisición.
-            $table->unique(['requisicion_id', 'item_id'], 'requisicion_lineas_req_item_unique');
+            // Un material aparece una sola vez por requisición.
+            $table->unique(['requisicion_id', 'material_id'], 'requisicion_lineas_req_material_unique');
 
-            $table->index('item_id');
+            $table->index('material_id');
         });
 
         DB::statement(

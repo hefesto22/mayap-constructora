@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Enums\EstadoRequisicion;
 use App\Filament\Resources\Requisiciones\Pages\CreateRequisicion;
 use App\Filament\Resources\Requisiciones\Pages\ListRequisiciones;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Models\Requisicion;
 use App\Models\User;
@@ -44,7 +44,7 @@ test('RequisicionResource: lista renderiza sin error', function (): void {
 
 test('RequisicionResource: crea una requisición con líneas y solicitante', function (): void {
     $proyecto = Proyecto::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     Livewire::test(CreateRequisicion::class)
         ->fillForm([
@@ -52,7 +52,7 @@ test('RequisicionResource: crea una requisición con líneas y solicitante', fun
             'fecha_solicitud' => '2026-06-18',
             'fecha_necesaria' => '2026-06-25',
             'lineas'          => [
-                ['item_id' => $item->id, 'cantidad_solicitada' => '100'],
+                ['material_id' => $material->id, 'cantidad_solicitada' => '100'],
             ],
         ])
         ->call('create')

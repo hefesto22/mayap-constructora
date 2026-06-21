@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Models\Bodega;
-use App\Models\Item;
 use App\Models\Maquina;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
@@ -28,7 +28,7 @@ beforeEach(function (): void {
 
     $this->obra = Proyecto::factory()->create(['subtotal_cache' => 100000]);
     $this->bodega = Bodega::factory()->create();
-    $this->item = Item::factory()->create();
+    $this->material = Material::factory()->create();
 });
 
 test('una obra sin costos tiene margen igual al presupuesto', function (): void {
@@ -42,7 +42,7 @@ test('una obra sin costos tiene margen igual al presupuesto', function (): void 
 test('el costo de materiales es lo despachado a la obra menos lo devuelto', function (): void {
     // Entra stock a bodega: 100 u a L.50 = 5,000.
     $this->inventario->entradaCompra(
-        itemId: $this->item->id,
+        materialId: $this->material->id,
         destino: Ubicacion::bodega($this->bodega->id),
         cantidad: '100',
         costoUnitario: '50',
@@ -50,7 +50,7 @@ test('el costo de materiales es lo despachado a la obra menos lo devuelto', func
 
     // Despacha 60 u a la obra → 60 × 50 = 3,000.
     $this->inventario->salidaDespacho(
-        itemId: $this->item->id,
+        materialId: $this->material->id,
         origen: Ubicacion::bodega($this->bodega->id),
         destino: Ubicacion::obra($this->obra->id),
         cantidad: '60',
@@ -58,7 +58,7 @@ test('el costo de materiales es lo despachado a la obra menos lo devuelto', func
 
     // Devuelve 10 u a bodega → 10 × 50 = 500 de regreso.
     $this->inventario->devolucion(
-        itemId: $this->item->id,
+        materialId: $this->material->id,
         origen: Ubicacion::obra($this->obra->id),
         destino: Ubicacion::bodega($this->bodega->id),
         cantidad: '10',
@@ -88,13 +88,13 @@ test('el costo de maquinaria suma partes de trabajo y combustible', function ():
 test('GOLDEN: el costo total junta materiales y maquinaria y calcula el margen', function (): void {
     // Materiales: despacha 40 u a L.25 = 1,000.
     $this->inventario->entradaCompra(
-        itemId: $this->item->id,
+        materialId: $this->material->id,
         destino: Ubicacion::bodega($this->bodega->id),
         cantidad: '40',
         costoUnitario: '25',
     );
     $this->inventario->salidaDespacho(
-        itemId: $this->item->id,
+        materialId: $this->material->id,
         origen: Ubicacion::bodega($this->bodega->id),
         destino: Ubicacion::obra($this->obra->id),
         cantidad: '40',

@@ -6,6 +6,7 @@ namespace Database\Factories;
 
 use App\Enums\CategoriaItem;
 use App\Models\Item;
+use App\Models\Material;
 use App\Models\UnidadMedida;
 use App\Models\Zona;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -24,6 +25,7 @@ class ItemFactory extends Factory
     public function definition(): array
     {
         return [
+            'material_id'          => null,
             'zona_id'              => Zona::factory(),
             'unidad_medida_id'     => UnidadMedida::factory(),
             'categoria'            => $this->faker->randomElement(CategoriaItem::cases()),
@@ -59,5 +61,10 @@ class ItemFactory extends Factory
     public function inactivo(): self
     {
         return $this->state(fn (): array => ['activo' => false]);
+    }
+
+    public function conMaterial(Material $material): self
+    {
+        return $this->state(fn (): array => ['material_id' => $material->id]);
     }
 }

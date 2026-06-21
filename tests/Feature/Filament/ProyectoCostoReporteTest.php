@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Filament\Resources\Proyectos\Pages\ListProyectos;
 use App\Filament\Resources\Proyectos\Pages\ViewProyecto;
 use App\Models\Bodega;
-use App\Models\Item;
 use App\Models\Maquina;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
@@ -45,16 +45,16 @@ test('la vista de la obra muestra el desglose de costo real', function (): void 
 
     // Materiales: despacha 40 u a L.25 = 1,000.
     $bodega = Bodega::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $inventario = new RegistrarMovimientoService;
     $inventario->entradaCompra(
-        itemId: $item->id,
+        materialId: $material->id,
         destino: Ubicacion::bodega($bodega->id),
         cantidad: '40',
         costoUnitario: '25',
     );
     $inventario->salidaDespacho(
-        itemId: $item->id,
+        materialId: $material->id,
         origen: Ubicacion::bodega($bodega->id),
         destino: Ubicacion::obra($obra->id),
         cantidad: '40',

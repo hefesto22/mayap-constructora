@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\EstadoRequisicion;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
@@ -83,12 +83,12 @@ test('CHECK rechaza cantidad_solicitada cero o negativa', function (): void {
     RequisicionLinea::factory()->create(['cantidad_solicitada' => 0]);
 })->throws(QueryException::class);
 
-test('un item no se repite dentro de la misma requisición', function (): void {
+test('un material no se repite dentro de la misma requisición', function (): void {
     $requisicion = Requisicion::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
-    RequisicionLinea::factory()->create(['requisicion_id' => $requisicion->id, 'item_id' => $item->id]);
-    RequisicionLinea::factory()->create(['requisicion_id' => $requisicion->id, 'item_id' => $item->id]);
+    RequisicionLinea::factory()->create(['requisicion_id' => $requisicion->id, 'material_id' => $material->id]);
+    RequisicionLinea::factory()->create(['requisicion_id' => $requisicion->id, 'material_id' => $material->id]);
 })->throws(QueryException::class);
 
 test('borrar la requisición arrastra sus líneas y transiciones (cascade)', function (): void {

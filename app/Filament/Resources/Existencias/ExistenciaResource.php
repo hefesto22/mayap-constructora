@@ -48,14 +48,14 @@ class ExistenciaResource extends Resource
 
     /**
      * Eager loading: la ubicación se arma con bodega o proyecto, y el
-     * nombre/código del item — evita N+1 en el listado.
+     * nombre/código del material — evita N+1 en el listado.
      */
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with([
-                'item:id,codigo,nombre,unidad_medida_id',
-                'item.unidadMedida:id,simbolo',
+                'material:id,codigo,nombre,unidad_medida_id',
+                'material.unidadMedida:id,simbolo',
                 'bodega:id,codigo,nombre',
                 'proyecto:id,codigo,nombre',
             ]);

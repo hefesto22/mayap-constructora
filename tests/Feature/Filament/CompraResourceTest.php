@@ -10,7 +10,7 @@ use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\Existencia;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proveedor;
 use App\Models\User;
 use BezhanSalleh\FilamentShield\Support\Utils;
@@ -44,7 +44,7 @@ test('CompraResource: lista renderiza sin error', function (): void {
 });
 
 test('CompraResource: crea una compra con líneas en borrador', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     Livewire::test(CreateCompra::class)
         ->fillForm([
@@ -54,7 +54,7 @@ test('CompraResource: crea una compra con líneas en borrador', function (): voi
             'condicion_pago' => CondicionPago::Contado->value,
             'aplica_isv'     => true,
             'lineas'         => [
-                ['item_id' => $item->id, 'cantidad' => '100', 'costo_unitario' => '10'],
+                ['material_id' => $material->id, 'cantidad' => '100', 'costo_unitario' => '10'],
             ],
         ])
         ->call('create')
@@ -76,10 +76,10 @@ test('al elegir un proveedor a crédito, la compra hereda su condición de pago'
 });
 
 test('la acción Confirmar registra el stock y marca la compra confirmada', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create(['aplica_isv' => true, 'isv_porcentaje' => 15]);
     CompraLinea::factory()->create([
-        'compra_id' => $compra->id, 'item_id' => $item->id, 'cantidad' => 50, 'costo_unitario' => 20,
+        'compra_id' => $compra->id, 'material_id' => $material->id, 'cantidad' => 50, 'costo_unitario' => 20,
     ]);
 
     Livewire::test(ListCompras::class)
@@ -89,7 +89,7 @@ test('la acción Confirmar registra el stock y marca la compra confirmada', func
     expect($compra->fresh()->estado)->toBe(EstadoCompra::Confirmada);
 
     $existencia = Existencia::query()
-        ->where('item_id', $item->id)
+        ->where('material_id', $material->id)
         ->where('bodega_id', $this->bodega->id)
         ->firstOrFail();
 

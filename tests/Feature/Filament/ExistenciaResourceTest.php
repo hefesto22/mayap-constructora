@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Filament\Resources\Existencias\Pages\ListExistencias;
 use App\Models\Bodega;
 use App\Models\Existencia;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\User;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Support\Facades\Gate;
@@ -41,12 +41,12 @@ test('ExistenciaResource: lista renderiza sin error', function (): void {
 });
 
 test('la acción Registrar entrada crea existencia y aplica el costo promedio', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $bodega = Bodega::factory()->create();
 
     Livewire::test(ListExistencias::class)
         ->callAction('registrar_entrada', [
-            'item_id'        => $item->id,
+            'material_id'    => $material->id,
             'bodega_id'      => $bodega->id,
             'cantidad'       => '25',
             'costo_unitario' => '8',
@@ -54,7 +54,7 @@ test('la acción Registrar entrada crea existencia y aplica el costo promedio', 
         ->assertHasNoActionErrors();
 
     $existencia = Existencia::query()
-        ->where('item_id', $item->id)
+        ->where('material_id', $material->id)
         ->where('bodega_id', $bodega->id)
         ->firstOrFail();
 
@@ -63,26 +63,26 @@ test('la acción Registrar entrada crea existencia y aplica el costo promedio', 
         ->and($existencia->costo_promedio)->toBe('8.00');
 });
 
-test('dos entradas del mismo item recalculan el promedio ponderado', function (): void {
-    $item = Item::factory()->create();
+test('dos entradas del mismo material recalculan el promedio ponderado', function (): void {
+    $material = Material::factory()->create();
     $bodega = Bodega::factory()->create();
 
     Livewire::test(ListExistencias::class)
         ->callAction('registrar_entrada', [
-            'item_id'        => $item->id,
+            'material_id'    => $material->id,
             'bodega_id'      => $bodega->id,
             'cantidad'       => '10',
             'costo_unitario' => '10',
         ])
         ->callAction('registrar_entrada', [
-            'item_id'        => $item->id,
+            'material_id'    => $material->id,
             'bodega_id'      => $bodega->id,
             'cantidad'       => '10',
             'costo_unitario' => '20',
         ]);
 
     $existencia = Existencia::query()
-        ->where('item_id', $item->id)
+        ->where('material_id', $material->id)
         ->where('bodega_id', $bodega->id)
         ->firstOrFail();
 

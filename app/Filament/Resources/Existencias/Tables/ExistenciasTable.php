@@ -18,14 +18,14 @@ class ExistenciasTable
     {
         return $table
             ->columns([
-                TextColumn::make('item.codigo')
+                TextColumn::make('material.codigo')
                     ->label('Código')
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
                     ->copyable(),
-                TextColumn::make('item.nombre')
-                    ->label('Item')
+                TextColumn::make('material.nombre')
+                    ->label('Material')
                     ->searchable()
                     ->limit(40),
                 TextColumn::make('ubicacion')
@@ -40,7 +40,7 @@ class ExistenciasTable
                     ->numeric(decimalPlaces: 4)
                     ->sortable()
                     ->alignEnd(),
-                TextColumn::make('item.unidadMedida.simbolo')
+                TextColumn::make('material.unidadMedida.simbolo')
                     ->label('Unidad')
                     ->placeholder('—'),
                 TextColumn::make('costo_promedio')

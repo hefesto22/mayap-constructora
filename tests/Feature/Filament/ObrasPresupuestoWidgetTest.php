@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Widgets\ObrasPresupuestoWidget;
 use App\Models\Bodega;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
@@ -39,17 +39,17 @@ test('el widget de presupuesto renderiza sin error', function (): void {
 test('el widget cuenta una obra en riesgo cuando supera el 80%', function (): void {
     $obra = Proyecto::factory()->create(['subtotal_cache' => 10000]);
     $bodega = Bodega::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     $inventario = new RegistrarMovimientoService;
     $inventario->entradaCompra(
-        itemId: $item->id,
+        materialId: $material->id,
         destino: Ubicacion::bodega($bodega->id),
         cantidad: '90',
         costoUnitario: '100',
     );
     $inventario->salidaDespacho(
-        itemId: $item->id,
+        materialId: $material->id,
         origen: Ubicacion::bodega($bodega->id),
         destino: Ubicacion::obra($obra->id),
         cantidad: '90',

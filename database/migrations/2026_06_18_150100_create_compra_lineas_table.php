@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Tabla `compra_lineas` — un item comprado dentro de una compra.
+ * Tabla `compra_lineas` — un material comprado dentro de una compra.
  *
  * `costo_unitario` es el costo NETO que capitaliza a inventario (alimenta el
  * promedio ponderado al confirmar). `subtotal` = cantidad × costo_unitario.
@@ -26,8 +26,8 @@ return new class extends Migration
                 ->constrained('compras')
                 ->cascadeOnDelete();
 
-            $table->foreignId('item_id')
-                ->constrained('items')
+            $table->foreignId('material_id')
+                ->constrained('materiales')
                 ->restrictOnDelete();
 
             $table->decimal('cantidad', 16, 4);
@@ -36,8 +36,8 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->unique(['compra_id', 'item_id'], 'compra_lineas_compra_item_unique');
-            $table->index('item_id');
+            $table->unique(['compra_id', 'material_id'], 'compra_lineas_compra_material_unique');
+            $table->index('material_id');
         });
 
         DB::statement(

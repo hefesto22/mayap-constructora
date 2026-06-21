@@ -44,6 +44,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * un edit de descripción ensucie el indicador.
  *
  * @property int $id
+ * @property int|null $material_id
  * @property int $zona_id
  * @property int $unidad_medida_id
  * @property CategoriaItem $categoria
@@ -56,6 +57,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property bool $activo
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property-read Material|null  $material
  * @property-read Zona           $zona
  * @property-read UnidadMedida   $unidadMedida
  */
@@ -70,6 +72,7 @@ class Item extends Model
 
     /** @var list<string> */
     protected $fillable = [
+        'material_id',
         'zona_id',
         'unidad_medida_id',
         'categoria',
@@ -99,6 +102,7 @@ class Item extends Model
     {
         return LogOptions::defaults()
             ->logOnly([
+                'material_id',
                 'zona_id',
                 'unidad_medida_id',
                 'categoria',
@@ -210,6 +214,17 @@ class Item extends Model
     }
 
     // ─── Relaciones ────────────────────────────────────────────────
+
+    /**
+     * Material físico al que corresponde este item de precio. Null para
+     * categorías no inventariables (mano de obra, indirectos).
+     *
+     * @return BelongsTo<Material, $this>
+     */
+    public function material(): BelongsTo
+    {
+        return $this->belongsTo(Material::class);
+    }
 
     /**
      * @return BelongsTo<Zona, $this>

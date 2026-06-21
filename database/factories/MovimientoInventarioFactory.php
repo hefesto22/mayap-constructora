@@ -6,7 +6,7 @@ namespace Database\Factories;
 
 use App\Enums\TipoMovimientoInventario;
 use App\Models\Bodega;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\MovimientoInventario;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -30,7 +30,7 @@ class MovimientoInventarioFactory extends Factory
 
         return [
             'tipo'                => TipoMovimientoInventario::EntradaCompra,
-            'item_id'             => Item::factory(),
+            'material_id'         => Material::factory(),
             'bodega_origen_id'    => null,
             'proyecto_origen_id'  => null,
             'bodega_destino_id'   => Bodega::factory(),

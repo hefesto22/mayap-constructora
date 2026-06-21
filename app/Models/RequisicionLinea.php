@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Línea de una requisición — un item con sus cuatro cantidades de
+ * Línea de una requisición — un material con sus cuatro cantidades de
  * trazabilidad (solicitada / autorizada / despachada / recibida).
  *
  * La comparación despachada vs recibida es la que detecta discrepancias.
@@ -21,7 +21,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property int $requisicion_id
- * @property int $item_id
+ * @property int $material_id
  * @property string $cantidad_solicitada
  * @property string|null $cantidad_autorizada
  * @property string $cantidad_despachada
@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Requisicion $requisicion
- * @property-read Item $item
+ * @property-read Material $material
  */
 class RequisicionLinea extends Model
 {
@@ -41,7 +41,7 @@ class RequisicionLinea extends Model
     /** @var list<string> */
     protected $fillable = [
         'requisicion_id',
-        'item_id',
+        'material_id',
         'cantidad_solicitada',
         'cantidad_autorizada',
         'cantidad_despachada',
@@ -72,11 +72,11 @@ class RequisicionLinea extends Model
     }
 
     /**
-     * @return BelongsTo<Item, $this>
+     * @return BelongsTo<Material, $this>
      */
-    public function item(): BelongsTo
+    public function material(): BelongsTo
     {
-        return $this->belongsTo(Item::class);
+        return $this->belongsTo(Material::class);
     }
 
     // ─── Scopes ────────────────────────────────────────────────────

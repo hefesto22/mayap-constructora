@@ -31,7 +31,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property TipoMovimientoInventario $tipo
- * @property int $item_id
+ * @property int $material_id
  * @property int|null $bodega_origen_id
  * @property int|null $proyecto_origen_id
  * @property int|null $bodega_destino_id
@@ -46,7 +46,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $fecha
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Item $item
+ * @property-read Material $material
  */
 class MovimientoInventario extends Model
 {
@@ -58,7 +58,7 @@ class MovimientoInventario extends Model
     /** @var list<string> */
     protected $fillable = [
         'tipo',
-        'item_id',
+        'material_id',
         'bodega_origen_id',
         'proyecto_origen_id',
         'bodega_destino_id',
@@ -90,11 +90,11 @@ class MovimientoInventario extends Model
     // ─── Relaciones ────────────────────────────────────────────────
 
     /**
-     * @return BelongsTo<Item, $this>
+     * @return BelongsTo<Material, $this>
      */
-    public function item(): BelongsTo
+    public function material(): BelongsTo
     {
-        return $this->belongsTo(Item::class);
+        return $this->belongsTo(Material::class);
     }
 
     /**
@@ -154,9 +154,9 @@ class MovimientoInventario extends Model
      *
      * @return Builder<self>
      */
-    public function scopeDeItem(Builder $query, int $itemId): Builder
+    public function scopeDeMaterial(Builder $query, int $materialId): Builder
     {
-        return $query->where('item_id', $itemId);
+        return $query->where('material_id', $materialId);
     }
 
     /**

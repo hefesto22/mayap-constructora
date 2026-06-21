@@ -6,6 +6,7 @@ namespace Database\Seeders;
 
 use App\Enums\CategoriaItem;
 use App\Models\Item;
+use App\Models\Material;
 use App\Models\UnidadMedida;
 use App\Models\Zona;
 use Illuminate\Database\Seeder;
@@ -27,6 +28,12 @@ use Illuminate\Database\Seeder;
  *
  * Idempotente vía la combinación zona+categoría+nombre (no se duplican
  * si se corre múltiples veces).
+ *
+ * BASE DE PRECIOS ↔ MATERIAL FÍSICO (ADR-0003): para las categorías
+ * inventariables (materiales, herramienta y equipo) este seeder además
+ * busca-o-crea el `Material` físico canónico (global) y enlaza el item de
+ * precio a él vía `material_id`. Así el inventario referencia el material
+ * único, mientras el item conserva el precio de venta de su zona.
  */
 class ItemDemoSeeder extends Seeder
 {
@@ -95,8 +102,13 @@ class ItemDemoSeeder extends Seeder
                 continue;
             }
 
+            // Material físico canónico para categorías inventariables; las
+            // no inventariables (mano de obra, indirectos) quedan sin material.
+            $materialId = $this->materialParaItem($categoria, $nombre, $unidades[$unidadCodigo]);
+
             // Código se autogenera vía el creating event del modelo
             Item::create([
+                'material_id'          => $materialId,
                 'zona_id'              => $zona->id,
                 'unidad_medida_id'     => $unidades[$unidadCodigo],
                 'categoria'            => $categoria,
@@ -110,5 +122,33 @@ class ItemDemoSeeder extends Seeder
         }
 
         $this->command->info("✓ ItemDemoSeeder: {$creados} items creados, {$existentes} ya existían.");
+    }
+
+    /**
+     * Devuelve el id del Material físico canónico para un item, creándolo si
+     * no existe. Solo aplica a categorías inventariables; para el resto
+     * devuelve null (mano de obra e indirectos no son materiales).
+     *
+     * Global por (categoría, nombre): items de distintas zonas con el mismo
+     * nombre comparten el MISMO material físico.
+     */
+    private function materialParaItem(CategoriaItem $categoria, string $nombre, int $unidadId): ?int
+    {
+        if (! in_array($categoria, [CategoriaItem::Materiales, CategoriaItem::HerramientaEquipo], true)) {
+            return null;
+        }
+
+        $material = Material::query()
+            ->where('categoria', $categoria->value)
+            ->whereRaw('UPPER(nombre) = ?', [mb_strtoupper($nombre, 'UTF-8')])
+            ->first()
+            ?? Material::create([
+                'unidad_medida_id' => $unidadId,
+                'categoria'        => $categoria,
+                'nombre'           => $nombre,
+                'activo'           => true,
+            ]);
+
+        return $material->id;
     }
 }

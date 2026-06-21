@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Requisiciones\Schemas;
 
 use App\Enums\EstadoRequisicion;
+use App\Models\Material;
 use App\Models\Requisicion;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
@@ -74,8 +75,8 @@ class RequisicionForm
                         ->schema([
                             Repeater::make('lineas')
                                 ->relationship()
-                                ->label('Items')
-                                ->addActionLabel('+ Agregar item')
+                                ->label('Materiales')
+                                ->addActionLabel('+ Agregar material')
                                 ->reorderable(false)
                                 ->defaultItems(1)
                                 ->minItems(1)
@@ -87,10 +88,11 @@ class RequisicionForm
                                         && ! $estado->permiteEditarLineas();
                                 })
                                 ->schema([
-                                    Select::make('item_id')
-                                        ->label('Item')
-                                        ->relationship('item', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
-                                        ->searchable()
+                                    Select::make('material_id')
+                                        ->label('Material')
+                                        ->relationship('material', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                                        ->getOptionLabelFromRecordUsing(fn (Material $record): string => "{$record->codigo} — {$record->nombre}")
+                                        ->searchable(['codigo', 'nombre'])
                                         ->preload()
                                         ->required()
                                         ->columnSpan(2),

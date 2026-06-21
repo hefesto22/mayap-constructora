@@ -6,7 +6,7 @@ use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Models\Compra;
 use App\Models\CompraLinea;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proveedor;
 use Illuminate\Database\QueryException;
 
@@ -58,12 +58,12 @@ test('CHECK rechaza cantidad de línea cero o negativa', function (): void {
     CompraLinea::factory()->create(['cantidad' => 0]);
 })->throws(QueryException::class);
 
-test('un item no se repite dentro de la misma compra', function (): void {
+test('un material no se repite dentro de la misma compra', function (): void {
     $compra = Compra::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
-    CompraLinea::factory()->create(['compra_id' => $compra->id, 'item_id' => $item->id]);
-    CompraLinea::factory()->create(['compra_id' => $compra->id, 'item_id' => $item->id]);
+    CompraLinea::factory()->create(['compra_id' => $compra->id, 'material_id' => $material->id]);
+    CompraLinea::factory()->create(['compra_id' => $compra->id, 'material_id' => $material->id]);
 })->throws(QueryException::class);
 
 test('borrar la compra arrastra sus líneas (cascade)', function (): void {

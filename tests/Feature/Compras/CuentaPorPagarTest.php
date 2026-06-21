@@ -7,7 +7,7 @@ use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\CuentaPorPagar;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proveedor;
 use App\Services\Compras\ConfirmarCompraService;
 use App\Services\Inventario\RegistrarMovimientoService;
@@ -25,7 +25,7 @@ beforeEach(function (): void {
 
 test('confirmar una compra a crédito genera la cuenta por pagar', function (): void {
     $proveedor = Proveedor::factory()->aCredito(30)->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     $compra = Compra::factory()
         ->paraProveedor($proveedor)
@@ -33,7 +33,7 @@ test('confirmar una compra a crédito genera la cuenta por pagar', function (): 
         ->aCredito()
         ->create(['fecha' => '2026-06-18', 'aplica_isv' => true, 'isv_porcentaje' => 15]);
     CompraLinea::factory()->create([
-        'compra_id' => $compra->id, 'item_id' => $item->id, 'cantidad' => 10, 'costo_unitario' => 100,
+        'compra_id' => $compra->id, 'material_id' => $material->id, 'cantidad' => 10, 'costo_unitario' => 100,
     ]);
 
     $this->confirmar->confirmar($compra);
@@ -48,9 +48,9 @@ test('confirmar una compra a crédito genera la cuenta por pagar', function (): 
 });
 
 test('confirmar una compra al contado NO genera cuenta por pagar', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create(); // contado por defecto
-    CompraLinea::factory()->create(['compra_id' => $compra->id, 'item_id' => $item->id]);
+    CompraLinea::factory()->create(['compra_id' => $compra->id, 'material_id' => $material->id]);
 
     $this->confirmar->confirmar($compra);
 

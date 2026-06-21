@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Bodega;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
@@ -24,16 +24,16 @@ test('el HTML del reporte incluye la obra y su desglose de costo', function (): 
 
     // Materiales: despacha 40 u a L.25 = 1,000 a la obra.
     $bodega = Bodega::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $inventario = new RegistrarMovimientoService;
     $inventario->entradaCompra(
-        itemId: $item->id,
+        materialId: $material->id,
         destino: Ubicacion::bodega($bodega->id),
         cantidad: '40',
         costoUnitario: '25',
     );
     $inventario->salidaDespacho(
-        itemId: $item->id,
+        materialId: $material->id,
         origen: Ubicacion::bodega($bodega->id),
         destino: Ubicacion::obra($obra->id),
         cantidad: '40',

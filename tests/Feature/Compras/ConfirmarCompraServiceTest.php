@@ -8,7 +8,7 @@ use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\Existencia;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\MovimientoInventario;
 use App\Services\Compras\ConfirmarCompraService;
 use App\Services\Inventario\RegistrarMovimientoService;
@@ -25,18 +25,18 @@ beforeEach(function (): void {
 });
 
 test('GOLDEN: confirmar registra stock con WAC y calcula totales con ISV', function (): void {
-    $itemA = Item::factory()->create();
-    $itemB = Item::factory()->create();
+    $materialA = Material::factory()->create();
+    $materialB = Material::factory()->create();
 
     $compra = Compra::factory()->paraBodega($this->bodega)->create([
         'aplica_isv'     => true,
         'isv_porcentaje' => 15.00,
     ]);
     CompraLinea::factory()->create([
-        'compra_id' => $compra->id, 'item_id' => $itemA->id, 'cantidad' => 100, 'costo_unitario' => 10,
+        'compra_id' => $compra->id, 'material_id' => $materialA->id, 'cantidad' => 100, 'costo_unitario' => 10,
     ]);
     CompraLinea::factory()->create([
-        'compra_id' => $compra->id, 'item_id' => $itemB->id, 'cantidad' => 50, 'costo_unitario' => 20,
+        'compra_id' => $compra->id, 'material_id' => $materialB->id, 'cantidad' => 50, 'costo_unitario' => 20,
     ]);
 
     $this->service->confirmar($compra);
@@ -51,8 +51,8 @@ test('GOLDEN: confirmar registra stock con WAC y calcula totales con ISV', funct
         ->and($compra->fecha_recepcion)->not->toBeNull();
 
     // Stock real con su costo promedio.
-    $stockA = Existencia::query()->where('item_id', $itemA->id)->where('bodega_id', $this->bodega->id)->firstOrFail();
-    $stockB = Existencia::query()->where('item_id', $itemB->id)->where('bodega_id', $this->bodega->id)->firstOrFail();
+    $stockA = Existencia::query()->where('material_id', $materialA->id)->where('bodega_id', $this->bodega->id)->firstOrFail();
+    $stockB = Existencia::query()->where('material_id', $materialB->id)->where('bodega_id', $this->bodega->id)->firstOrFail();
 
     expect($stockA->cantidad)->toBe('100.0000')
         ->and($stockA->costo_promedio)->toBe('10.00')
@@ -61,10 +61,10 @@ test('GOLDEN: confirmar registra stock con WAC y calcula totales con ISV', funct
 });
 
 test('cada movimiento de inventario queda enlazado a la compra', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create();
     CompraLinea::factory()->create([
-        'compra_id' => $compra->id, 'item_id' => $item->id, 'cantidad' => 30, 'costo_unitario' => 12,
+        'compra_id' => $compra->id, 'material_id' => $material->id, 'cantidad' => 30, 'costo_unitario' => 12,
     ]);
 
     $this->service->confirmar($compra);
@@ -74,18 +74,18 @@ test('cada movimiento de inventario queda enlazado a la compra', function (): vo
         ->where('referencia_id', $compra->id)
         ->firstOrFail();
 
-    expect($movimiento->item_id)->toBe($item->id)
+    expect($movimiento->material_id)->toBe($material->id)
         ->and($movimiento->cantidad)->toBe('30.0000');
 });
 
 test('una compra sin ISV calcula total = subtotal', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create([
         'aplica_isv'     => false,
         'isv_porcentaje' => 0,
     ]);
     CompraLinea::factory()->create([
-        'compra_id' => $compra->id, 'item_id' => $item->id, 'cantidad' => 10, 'costo_unitario' => 50,
+        'compra_id' => $compra->id, 'material_id' => $material->id, 'cantidad' => 10, 'costo_unitario' => 50,
     ]);
 
     $this->service->confirmar($compra);
@@ -97,9 +97,9 @@ test('una compra sin ISV calcula total = subtotal', function (): void {
 });
 
 test('no se puede confirmar una compra ya confirmada', function (): void {
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create();
-    CompraLinea::factory()->create(['compra_id' => $compra->id, 'item_id' => $item->id]);
+    CompraLinea::factory()->create(['compra_id' => $compra->id, 'material_id' => $material->id]);
 
     $this->service->confirmar($compra);
     $this->service->confirmar($compra->fresh());

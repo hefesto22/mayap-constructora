@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Items\Schemas;
 
 use App\Enums\CategoriaItem;
 use App\Models\Item;
+use App\Models\Material;
 use App\Models\UnidadMedida;
 use App\Models\Zona;
 use Filament\Forms\Components\Placeholder;
@@ -73,6 +74,15 @@ class ItemForm
                     ->disabledOn('edit')
                     ->dehydrated()
                     ->helperText('Materiales / Mano de obra / Herramienta y equipo / Indirectos. NO editable después de crear.'),
+
+                Select::make('material_id')
+                    ->label('Material físico (inventario)')
+                    ->relationship('material', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                    ->getOptionLabelFromRecordUsing(fn (Material $record): string => "{$record->codigo} — {$record->nombre}")
+                    ->searchable(['codigo', 'nombre'])
+                    ->preload()
+                    ->prefixIcon('heroicon-o-cube')
+                    ->helperText('Vincula este precio de venta con el material físico de inventario. Solo para materiales y herramienta; déjalo vacío en mano de obra e indirectos.'),
 
                 TextInput::make('codigo')
                     ->label('Código del sistema')

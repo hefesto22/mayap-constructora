@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Tabla `existencias` — stock de un item en UNA ubicación.
+ * Tabla `existencias` — stock de un MATERIAL físico en UNA ubicación.
  *
  * MULTI-UBICACIÓN (ADR-0002 §1): una ubicación es una bodega física O un
  * proyecto. Cada obra es una mini-bodega. Por eso la fila tiene
@@ -22,9 +22,9 @@ use Illuminate\Support\Facades\Schema;
  * se recalcula solo cuando entra mercadería; las salidas usan el promedio
  * vigente sin alterarlo.
  *
- * Hay como máximo UNA fila por (item, ubicación). El Service de inventario
- * hace firstOrCreate + lockForUpdate sobre esta fila en cada movimiento,
- * serializando escrituras concurrentes sobre el mismo stock.
+ * Hay como máximo UNA fila por (material, ubicación). El Service de
+ * inventario hace firstOrCreate + lockForUpdate sobre esta fila en cada
+ * movimiento, serializando escrituras concurrentes sobre el mismo stock.
  *
  * `cantidad` usa 4 decimales porque los materiales de construcción se
  * miden en fracciones (m³, kg, ml). `valor_total` usa 2 (HNL).
@@ -36,9 +36,9 @@ return new class extends Migration
         Schema::create('existencias', function (Blueprint $table): void {
             $table->id();
 
-            // No se elimina un item con existencias registradas.
-            $table->foreignId('item_id')
-                ->constrained('items')
+            // No se elimina un material con existencias registradas.
+            $table->foreignId('material_id')
+                ->constrained('materiales')
                 ->restrictOnDelete();
 
             // Ubicación: bodega XOR proyecto (ver CHECK más abajo).
@@ -62,8 +62,8 @@ return new class extends Migration
 
             $table->timestamps();
 
-            // Búsqueda de stock de un item en cualquier ubicación.
-            $table->index('item_id');
+            // Búsqueda de stock de un material en cualquier ubicación.
+            $table->index('material_id');
             $table->index('bodega_id');
             $table->index('proyecto_id');
         });
@@ -83,17 +83,17 @@ return new class extends Migration
              CHECK (cantidad >= 0 AND valor_total >= 0)'
         );
 
-        // Unicidad de (item, ubicación). Índices únicos parciales porque
+        // Unicidad de (material, ubicación). Índices únicos parciales porque
         // una de las dos columnas de ubicación siempre es NULL.
         DB::statement(
-            'CREATE UNIQUE INDEX existencias_item_bodega_unique
-             ON existencias (item_id, bodega_id)
+            'CREATE UNIQUE INDEX existencias_material_bodega_unique
+             ON existencias (material_id, bodega_id)
              WHERE bodega_id IS NOT NULL'
         );
 
         DB::statement(
-            'CREATE UNIQUE INDEX existencias_item_proyecto_unique
-             ON existencias (item_id, proyecto_id)
+            'CREATE UNIQUE INDEX existencias_material_proyecto_unique
+             ON existencias (material_id, proyecto_id)
              WHERE proyecto_id IS NOT NULL'
         );
     }

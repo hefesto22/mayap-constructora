@@ -6,7 +6,7 @@ namespace Database\Factories;
 
 use App\Models\Compra;
 use App\Models\CompraLinea;
-use App\Models\Item;
+use App\Models\Material;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -26,15 +26,15 @@ class CompraLineaFactory extends Factory
 
         return [
             'compra_id'      => Compra::factory(),
-            'item_id'        => Item::factory(),
+            'material_id'    => Material::factory(),
             'cantidad'       => $cantidad,
             'costo_unitario' => $costo,
             'subtotal'       => round($cantidad * $costo, 2),
         ];
     }
 
-    public function paraItem(Item $item): self
+    public function paraMaterial(Material $material): self
     {
-        return $this->state(fn (): array => ['item_id' => $item->id]);
+        return $this->state(fn (): array => ['material_id' => $material->id]);
     }
 }

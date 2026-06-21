@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Existencia — saldo de stock de un item en UNA ubicación.
+ * Existencia — saldo de stock de un MATERIAL físico en UNA ubicación.
  *
  * Ubicación = bodega física XOR proyecto (CHECK en la tabla garantiza que
  * exactamente una esté poblada). Cada obra es una mini-bodega (ADR-0002 §1).
@@ -27,7 +27,7 @@ use Illuminate\Support\Carbon;
  * la fila — nunca se modifica directamente desde un Resource.
  *
  * @property int $id
- * @property int $item_id
+ * @property int $material_id
  * @property int|null $bodega_id
  * @property int|null $proyecto_id
  * @property string $cantidad
@@ -35,7 +35,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read string $costo_promedio
- * @property-read Item $item
+ * @property-read Material $material
  * @property-read Bodega|null $bodega
  * @property-read Proyecto|null $proyecto
  */
@@ -48,7 +48,7 @@ class Existencia extends Model
 
     /** @var list<string> */
     protected $fillable = [
-        'item_id',
+        'material_id',
         'bodega_id',
         'proyecto_id',
         'cantidad',
@@ -94,11 +94,11 @@ class Existencia extends Model
     // ─── Relaciones ────────────────────────────────────────────────
 
     /**
-     * @return BelongsTo<Item, $this>
+     * @return BelongsTo<Material, $this>
      */
-    public function item(): BelongsTo
+    public function material(): BelongsTo
     {
-        return $this->belongsTo(Item::class);
+        return $this->belongsTo(Material::class);
     }
 
     /**

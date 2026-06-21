@@ -11,19 +11,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Línea de una compra — un item con cantidad y costo unitario NETO (el que
+ * Línea de una compra — un material con cantidad y costo unitario NETO (el que
  * capitaliza a inventario al confirmar la compra).
  *
  * @property int $id
  * @property int $compra_id
- * @property int $item_id
+ * @property int $material_id
  * @property string $cantidad
  * @property string $costo_unitario
  * @property string $subtotal
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Compra $compra
- * @property-read Item $item
+ * @property-read Material $material
  */
 class CompraLinea extends Model
 {
@@ -35,7 +35,7 @@ class CompraLinea extends Model
     /** @var list<string> */
     protected $fillable = [
         'compra_id',
-        'item_id',
+        'material_id',
         'cantidad',
         'costo_unitario',
         'subtotal',
@@ -64,10 +64,10 @@ class CompraLinea extends Model
     }
 
     /**
-     * @return BelongsTo<Item, $this>
+     * @return BelongsTo<Material, $this>
      */
-    public function item(): BelongsTo
+    public function material(): BelongsTo
     {
-        return $this->belongsTo(Item::class);
+        return $this->belongsTo(Material::class);
     }
 }

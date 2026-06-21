@@ -6,7 +6,7 @@ namespace Database\Factories;
 
 use App\Models\Bodega;
 use App\Models\Existencia;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -29,7 +29,7 @@ class ExistenciaFactory extends Factory
         $costo = $this->faker->randomFloat(2, 5, 500);
 
         return [
-            'item_id'     => Item::factory(),
+            'material_id' => Material::factory(),
             'bodega_id'   => Bodega::factory(),
             'proyecto_id' => null,
             'cantidad'    => $cantidad,

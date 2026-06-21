@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Compras\Schemas;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Models\Compra;
+use App\Models\Material;
 use App\Models\Proveedor;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
@@ -110,13 +111,13 @@ class CompraForm
 
     private static function tabLineas(): Tab
     {
-        return Tab::make('Items comprados')
+        return Tab::make('Materiales comprados')
             ->icon('heroicon-o-cube')
             ->schema([
                 Repeater::make('lineas')
                     ->relationship()
                     ->label('Líneas')
-                    ->addActionLabel('+ Agregar item')
+                    ->addActionLabel('+ Agregar material')
                     ->reorderable(false)
                     ->defaultItems(1)
                     ->minItems(1)
@@ -127,10 +128,11 @@ class CompraForm
                         return $estado instanceof EstadoCompra && ! $estado->permiteEditar();
                     })
                     ->schema([
-                        Select::make('item_id')
-                            ->label('Item')
-                            ->relationship('item', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
-                            ->searchable()
+                        Select::make('material_id')
+                            ->label('Material')
+                            ->relationship('material', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                            ->getOptionLabelFromRecordUsing(fn (Material $record): string => "{$record->codigo} — {$record->nombre}")
+                            ->searchable(['codigo', 'nombre'])
                             ->preload()
                             ->required()
                             ->columnSpan(2),

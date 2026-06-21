@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -23,7 +23,7 @@ class RequisicionLineaFactory extends Factory
     {
         return [
             'requisicion_id'      => Requisicion::factory(),
-            'item_id'             => Item::factory(),
+            'material_id'         => Material::factory(),
             'cantidad_solicitada' => $this->faker->randomFloat(2, 1, 500),
             'cantidad_autorizada' => null,
             'cantidad_despachada' => 0,
@@ -31,8 +31,8 @@ class RequisicionLineaFactory extends Factory
         ];
     }
 
-    public function paraItem(Item $item): self
+    public function paraMaterial(Material $material): self
     {
-        return $this->state(fn (): array => ['item_id' => $item->id]);
+        return $this->state(fn (): array => ['material_id' => $material->id]);
     }
 }

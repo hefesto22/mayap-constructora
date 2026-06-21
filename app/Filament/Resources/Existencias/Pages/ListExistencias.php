@@ -6,7 +6,7 @@ namespace App\Filament\Resources\Existencias\Pages;
 
 use App\Filament\Resources\Existencias\ExistenciaResource;
 use App\Models\Bodega;
-use App\Models\Item;
+use App\Models\Material;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
 use Filament\Actions\Action;
@@ -27,17 +27,17 @@ class ListExistencias extends ListRecords
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('success')
                 ->modalHeading('Registrar entrada de inventario')
-                ->modalDescription('Suma stock a una bodega. El costo alimenta el promedio ponderado del item.')
+                ->modalDescription('Suma stock a una bodega. El costo alimenta el promedio ponderado del material.')
                 ->modalSubmitActionLabel('Registrar entrada')
                 ->schema([
-                    Select::make('item_id')
-                        ->label('Item')
-                        ->options(fn (): array => Item::query()
+                    Select::make('material_id')
+                        ->label('Material')
+                        ->options(fn (): array => Material::query()
                             ->where('activo', true)
                             ->orderBy('nombre')
                             ->get()
-                            ->mapWithKeys(fn (Item $item): array => [
-                                $item->id => "{$item->codigo} — {$item->nombre}",
+                            ->mapWithKeys(fn (Material $material): array => [
+                                $material->id => "{$material->codigo} — {$material->nombre}",
                             ])
                             ->all())
                         ->searchable()
@@ -72,7 +72,7 @@ class ListExistencias extends ListRecords
                 ])
                 ->action(function (array $data): void {
                     app(RegistrarMovimientoService::class)->entradaCompra(
-                        itemId: (int) $data['item_id'],
+                        materialId: (int) $data['material_id'],
                         destino: Ubicacion::bodega((int) $data['bodega_id']),
                         cantidad: (string) $data['cantidad'],
                         costoUnitario: (string) $data['costo_unitario'],

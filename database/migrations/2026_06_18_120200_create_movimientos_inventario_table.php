@@ -44,8 +44,8 @@ return new class extends Migration
             $table->string('tipo', 30)
                 ->comment('Enum TipoMovimientoInventario: entrada_compra, salida_despacho, traslado, consumo_obra, devolucion, ajuste_positivo, ajuste_negativo');
 
-            $table->foreignId('item_id')
-                ->constrained('items')
+            $table->foreignId('material_id')
+                ->constrained('materiales')
                 ->restrictOnDelete();
 
             // Ubicación de ORIGEN (de dónde sale el stock).
@@ -98,10 +98,10 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->index('item_id');
+            $table->index('material_id');
             $table->index('tipo');
             $table->index('fecha');
-            $table->index(['item_id', 'fecha']);
+            $table->index(['material_id', 'fecha']);
         });
 
         // CHECK: tipo dentro del conjunto válido.

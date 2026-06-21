@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\NivelPresupuesto;
 use App\Models\Bodega;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\Proyecto;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
@@ -31,18 +31,18 @@ test('el nivel se clasifica por el porcentaje consumido', function (string $porc
 test('una obra que pasa el 80% del presupuesto queda en riesgo', function (): void {
     $obra = Proyecto::factory()->create(['subtotal_cache' => 10000]);
     $bodega = Bodega::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     $inventario = new RegistrarMovimientoService;
     // Despacha 85 u a L.100 = 8,500 → 85% del presupuesto de 10,000.
     $inventario->entradaCompra(
-        itemId: $item->id,
+        materialId: $material->id,
         destino: Ubicacion::bodega($bodega->id),
         cantidad: '85',
         costoUnitario: '100',
     );
     $inventario->salidaDespacho(
-        itemId: $item->id,
+        materialId: $material->id,
         origen: Ubicacion::bodega($bodega->id),
         destino: Ubicacion::obra($obra->id),
         cantidad: '85',
@@ -57,18 +57,18 @@ test('una obra que pasa el 80% del presupuesto queda en riesgo', function (): vo
 test('una obra cuyo costo supera el presupuesto queda sobregirada', function (): void {
     $obra = Proyecto::factory()->create(['subtotal_cache' => 5000]);
     $bodega = Bodega::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     $inventario = new RegistrarMovimientoService;
     // Despacha 60 u a L.100 = 6,000 → 120% del presupuesto de 5,000.
     $inventario->entradaCompra(
-        itemId: $item->id,
+        materialId: $material->id,
         destino: Ubicacion::bodega($bodega->id),
         cantidad: '60',
         costoUnitario: '100',
     );
     $inventario->salidaDespacho(
-        itemId: $item->id,
+        materialId: $material->id,
         origen: Ubicacion::bodega($bodega->id),
         destino: Ubicacion::obra($obra->id),
         cantidad: '60',
@@ -92,17 +92,17 @@ test('una obra sin presupuesto y sin costo está sana', function (): void {
 test('una obra sin presupuesto pero con costo se considera sobregirada', function (): void {
     $obra = Proyecto::factory()->create(['subtotal_cache' => 0]);
     $bodega = Bodega::factory()->create();
-    $item = Item::factory()->create();
+    $material = Material::factory()->create();
 
     $inventario = new RegistrarMovimientoService;
     $inventario->entradaCompra(
-        itemId: $item->id,
+        materialId: $material->id,
         destino: Ubicacion::bodega($bodega->id),
         cantidad: '10',
         costoUnitario: '100',
     );
     $inventario->salidaDespacho(
-        itemId: $item->id,
+        materialId: $material->id,
         origen: Ubicacion::bodega($bodega->id),
         destino: Ubicacion::obra($obra->id),
         cantidad: '10',

@@ -66,7 +66,7 @@ final readonly class ConfirmarCompraService
 
                 // Entrada de stock real con costo neto, trazable a la compra.
                 $this->inventario->entradaCompra(
-                    itemId: $linea->item_id,
+                    materialId: $linea->material_id,
                     destino: $bodega,
                     cantidad: $cantidad,
                     costoUnitario: $costo,

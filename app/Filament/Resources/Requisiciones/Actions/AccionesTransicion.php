@@ -222,11 +222,11 @@ final class AccionesTransicion
     {
         return fn (Requisicion $record): array => [
             'lineas' => $record->lineas()
-                ->with('item:id,codigo,nombre')
+                ->with('material:id,codigo,nombre')
                 ->get()
                 ->map(fn (RequisicionLinea $linea): array => [
                     'linea_id'            => $linea->id,
-                    'item'                => $linea->item->codigo.' — '.$linea->item->nombre,
+                    'material'            => $linea->material->codigo.' — '.$linea->material->nombre,
                     'cantidad_solicitada' => (string) $linea->cantidad_solicitada,
                     'cantidad'            => (string) $linea->getAttribute($campoDefault),
                 ])
@@ -247,7 +247,7 @@ final class AccionesTransicion
             ->columnSpanFull()
             ->schema([
                 Hidden::make('linea_id'),
-                TextInput::make('item')->label('Item')->disabled()->columnSpan(2),
+                TextInput::make('material')->label('Material')->disabled()->columnSpan(2),
                 TextInput::make('cantidad_solicitada')->label('Solicitado')->disabled(),
                 TextInput::make('cantidad')
                     ->label($labelCantidad)

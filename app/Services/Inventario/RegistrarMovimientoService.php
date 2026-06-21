@@ -35,7 +35,7 @@ use Illuminate\Support\Facades\DB;
  *
  * CONCURRENCIA: cada operación corre en una transacción con `lockForUpdate`
  * sobre las filas de existencia afectadas. Dos despachos simultáneos del
- * mismo item+ubicación se serializan, evitando sobreventa y promedios
+ * mismo material+ubicación se serializan, evitando sobreventa y promedios
  * corruptos.
  *
  * Toda la aritmética usa bcmath con escala interna 12 y se redondea
@@ -58,7 +58,7 @@ final class RegistrarMovimientoService
      * bodega) con un costo de compra que alimenta el promedio ponderado.
      */
     public function entradaCompra(
-        int $itemId,
+        int $materialId,
         Ubicacion $destino,
         string $cantidad,
         string $costoUnitario,
@@ -68,7 +68,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::EntradaCompra,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: null,
             destino: $destino,
             cantidad: $cantidad,
@@ -86,7 +86,7 @@ final class RegistrarMovimientoService
      * que imputa costo al proyecto (ADR-0002 §2).
      */
     public function salidaDespacho(
-        int $itemId,
+        int $materialId,
         Ubicacion $origen,
         Ubicacion $destino,
         string $cantidad,
@@ -96,7 +96,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::SalidaDespacho,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: $origen,
             destino: $destino,
             cantidad: $cantidad,
@@ -112,7 +112,7 @@ final class RegistrarMovimientoService
      * Traslado entre dos ubicaciones, sin impacto en costo del proyecto.
      */
     public function traslado(
-        int $itemId,
+        int $materialId,
         Ubicacion $origen,
         Ubicacion $destino,
         string $cantidad,
@@ -122,7 +122,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::Traslado,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: $origen,
             destino: $destino,
             cantidad: $cantidad,
@@ -139,7 +139,7 @@ final class RegistrarMovimientoService
      * obra sin destino.
      */
     public function consumoObra(
-        int $itemId,
+        int $materialId,
         Ubicacion $origen,
         string $cantidad,
         ?string $motivo = null,
@@ -149,7 +149,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::ConsumoObra,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: $origen,
             destino: null,
             cantidad: $cantidad,
@@ -165,7 +165,7 @@ final class RegistrarMovimientoService
      * Devolución de obra a bodega: material no usado que regresa.
      */
     public function devolucion(
-        int $itemId,
+        int $materialId,
         Ubicacion $origen,
         Ubicacion $destino,
         string $cantidad,
@@ -175,7 +175,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::Devolucion,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: $origen,
             destino: $destino,
             cantidad: $cantidad,
@@ -191,7 +191,7 @@ final class RegistrarMovimientoService
      * Ajuste positivo: alta por conteo físico/hallazgo. Requiere motivo.
      */
     public function ajustePositivo(
-        int $itemId,
+        int $materialId,
         Ubicacion $destino,
         string $cantidad,
         string $costoUnitario,
@@ -201,7 +201,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::AjustePositivo,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: null,
             destino: $destino,
             cantidad: $cantidad,
@@ -218,7 +218,7 @@ final class RegistrarMovimientoService
      * Requiere motivo.
      */
     public function ajusteNegativo(
-        int $itemId,
+        int $materialId,
         Ubicacion $origen,
         string $cantidad,
         string $motivo,
@@ -227,7 +227,7 @@ final class RegistrarMovimientoService
     ): ResultadoMovimiento {
         return $this->registrar(
             tipo: TipoMovimientoInventario::AjusteNegativo,
-            itemId: $itemId,
+            materialId: $materialId,
             origen: $origen,
             destino: null,
             cantidad: $cantidad,
@@ -245,7 +245,7 @@ final class RegistrarMovimientoService
      */
     private function registrar(
         TipoMovimientoInventario $tipo,
-        int $itemId,
+        int $materialId,
         ?Ubicacion $origen,
         ?Ubicacion $destino,
         string $cantidad,
@@ -259,7 +259,7 @@ final class RegistrarMovimientoService
 
         return DB::transaction(function () use (
             $tipo,
-            $itemId,
+            $materialId,
             $origen,
             $destino,
             $cantidad,
@@ -275,11 +275,11 @@ final class RegistrarMovimientoService
 
             // ─── Lado ORIGEN: retiro proporcional ──────────────────
             if ($tipo->tieneOrigen() && $origen !== null) {
-                $existenciaOrigen = $this->existenciaBloqueada($itemId, $origen, crear: false);
+                $existenciaOrigen = $this->existenciaBloqueada($materialId, $origen, crear: false);
 
                 if ($existenciaOrigen === null) {
                     throw new StockInsuficienteException(
-                        itemId: $itemId,
+                        materialId: $materialId,
                         ubicacion: $origen->descripcion(),
                         solicitado: $cantidad,
                         disponible: '0',
@@ -288,7 +288,7 @@ final class RegistrarMovimientoService
 
                 if (bccomp((string) $existenciaOrigen->cantidad, $cantidad, self::SCALE_CANTIDAD) < 0) {
                     throw new StockInsuficienteException(
-                        itemId: $itemId,
+                        materialId: $materialId,
                         ubicacion: $origen->descripcion(),
                         solicitado: $cantidad,
                         disponible: (string) $existenciaOrigen->cantidad,
@@ -321,7 +321,7 @@ final class RegistrarMovimientoService
 
             // ─── Lado DESTINO: alta del valor correspondiente ──────
             if ($tipo->tieneDestino() && $destino !== null) {
-                $existenciaDestino = $this->existenciaBloqueada($itemId, $destino, crear: true);
+                $existenciaDestino = $this->existenciaBloqueada($materialId, $destino, crear: true);
 
                 $existenciaDestino->cantidad = bcadd((string) $existenciaDestino->cantidad, $cantidad, self::SCALE_CANTIDAD);
                 $existenciaDestino->valor_total = bcadd((string) $existenciaDestino->valor_total, $valorEntrada, self::SCALE_MONTO);
@@ -334,7 +334,7 @@ final class RegistrarMovimientoService
             $atributos = array_merge(
                 [
                     'tipo'           => $tipo,
-                    'item_id'        => $itemId,
+                    'material_id'    => $materialId,
                     'cantidad'       => $cantidad,
                     'costo_unitario' => $costoUnitario,
                     'valor_total'    => $valorEntrada,
@@ -398,16 +398,16 @@ final class RegistrarMovimientoService
      * Localiza (o crea) la fila de existencia de una ubicación y la bloquea
      * con lockForUpdate dentro de la transacción en curso.
      */
-    private function existenciaBloqueada(int $itemId, Ubicacion $ubicacion, bool $crear): ?Existencia
+    private function existenciaBloqueada(int $materialId, Ubicacion $ubicacion, bool $crear): ?Existencia
     {
         if ($crear) {
             Existencia::firstOrCreate(
-                array_merge(['item_id' => $itemId], $ubicacion->atributosExistencia()),
+                array_merge(['material_id' => $materialId], $ubicacion->atributosExistencia()),
                 ['cantidad' => '0', 'valor_total' => '0'],
             );
         }
 
-        $query = Existencia::query()->where('item_id', $itemId);
+        $query = Existencia::query()->where('material_id', $materialId);
 
         foreach ($ubicacion->atributosExistencia() as $columna => $valor) {
             $valor === null ? $query->whereNull($columna) : $query->where($columna, $valor);

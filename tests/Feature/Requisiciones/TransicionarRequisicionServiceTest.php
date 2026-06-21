@@ -7,7 +7,7 @@ use App\Exceptions\Requisiciones\RequisicionInvalidaException;
 use App\Exceptions\Requisiciones\TransicionInvalidaException;
 use App\Models\Bodega;
 use App\Models\Existencia;
-use App\Models\Item;
+use App\Models\Material;
 use App\Models\MovimientoInventario;
 use App\Models\Proyecto;
 use App\Models\Requisicion;
@@ -35,7 +35,7 @@ beforeEach(function (): void {
 });
 
 /**
- * @param array<int, array{item: Item, solicitada: int|string}> $lineas
+ * @param array<int, array{material: Material, solicitada: int|string}> $lineas
  */
 function crearRequisicion(Proyecto $proyecto, array $lineas): Requisicion
 {
@@ -44,7 +44,7 @@ function crearRequisicion(Proyecto $proyecto, array $lineas): Requisicion
     foreach ($lineas as $linea) {
         RequisicionLinea::factory()->create([
             'requisicion_id'      => $requisicion->id,
-            'item_id'             => $linea['item']->id,
+            'material_id'         => $linea['material']->id,
             'cantidad_solicitada' => $linea['solicitada'],
         ]);
     }
@@ -52,18 +52,18 @@ function crearRequisicion(Proyecto $proyecto, array $lineas): Requisicion
     return $requisicion;
 }
 
-function stockEn(int $itemId, int $bodegaId): string
+function stockEn(int $materialId, int $bodegaId): string
 {
     return (string) Existencia::query()
-        ->where('item_id', $itemId)
+        ->where('material_id', $materialId)
         ->where('bodega_id', $bodegaId)
         ->value('cantidad');
 }
 
-function stockObra(int $itemId, int $proyectoId): string
+function stockObra(int $materialId, int $proyectoId): string
 {
     return (string) Existencia::query()
-        ->where('item_id', $itemId)
+        ->where('material_id', $materialId)
         ->where('proyecto_id', $proyectoId)
         ->value('cantidad');
 }
@@ -71,15 +71,15 @@ function stockObra(int $itemId, int $proyectoId): string
 // ─── GOLDEN FLOW ────────────────────────────────────────────────────
 
 test('GOLDEN: flujo completo solicitud → autorización → despacho → recepción → cierre', function (): void {
-    $itemA = Item::factory()->create();
-    $itemB = Item::factory()->create();
+    $materialA = Material::factory()->create();
+    $materialB = Material::factory()->create();
 
-    $this->inventario->entradaCompra($itemA->id, $this->bodegaU, '200', '10');
-    $this->inventario->entradaCompra($itemB->id, $this->bodegaU, '100', '5');
+    $this->inventario->entradaCompra($materialA->id, $this->bodegaU, '200', '10');
+    $this->inventario->entradaCompra($materialB->id, $this->bodegaU, '100', '5');
 
     $requisicion = crearRequisicion($this->proyecto, [
-        ['item' => $itemA, 'solicitada' => 100],
-        ['item' => $itemB, 'solicitada' => 50],
+        ['material' => $materialA, 'solicitada' => 100],
+        ['material' => $materialB, 'solicitada' => 50],
     ]);
 
     // 1. Autorizar (completo).
@@ -89,9 +89,9 @@ test('GOLDEN: flujo completo solicitud → autorización → despacho → recepc
     // 2. Despachar: mueve stock real bodega → obra con WAC.
     $this->service->despachar($requisicion, $this->bodegaU);
     expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::Despachada)
-        ->and(stockEn($itemA->id, $this->bodega->id))->toBe('100.0000')
-        ->and(stockObra($itemA->id, $this->proyecto->id))->toBe('100.0000')
-        ->and(stockObra($itemB->id, $this->proyecto->id))->toBe('50.0000');
+        ->and(stockEn($materialA->id, $this->bodega->id))->toBe('100.0000')
+        ->and(stockObra($materialA->id, $this->proyecto->id))->toBe('100.0000')
+        ->and(stockObra($materialB->id, $this->proyecto->id))->toBe('50.0000');
 
     // 3. Tránsito.
     $this->service->marcarEnTransito($requisicion);
@@ -111,9 +111,9 @@ test('GOLDEN: flujo completo solicitud → autorización → despacho → recepc
 // ─── Trazabilidad: el movimiento de stock apunta a la requisición ───
 
 test('el despacho deja el movimiento de inventario enlazado a la requisición', function (): void {
-    $item = Item::factory()->create();
-    $this->inventario->entradaCompra($item->id, $this->bodegaU, '50', '8');
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 20]]);
+    $material = Material::factory()->create();
+    $this->inventario->entradaCompra($material->id, $this->bodegaU, '50', '8');
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 20]]);
 
     $this->service->autorizar($requisicion);
     $this->service->despachar($requisicion, $this->bodegaU);
@@ -124,16 +124,16 @@ test('el despacho deja el movimiento de inventario enlazado a la requisición', 
         ->first();
 
     expect($movimiento)->not->toBeNull()
-        ->and($movimiento->item_id)->toBe($item->id)
+        ->and($movimiento->material_id)->toBe($material->id)
         ->and($movimiento->cantidad)->toBe('20.0000');
 });
 
 // ─── Discrepancia ───────────────────────────────────────────────────
 
 test('si lo recibido no coincide con lo despachado, conciliar marca Discrepancia', function (): void {
-    $item = Item::factory()->create();
-    $this->inventario->entradaCompra($item->id, $this->bodegaU, '100', '10');
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 100]]);
+    $material = Material::factory()->create();
+    $this->inventario->entradaCompra($material->id, $this->bodegaU, '100', '10');
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 100]]);
     $linea = $requisicion->lineas()->first();
 
     $this->service->autorizar($requisicion);
@@ -151,8 +151,8 @@ test('si lo recibido no coincide con lo despachado, conciliar marca Discrepancia
 // ─── Sin stock → Requisición de compra ──────────────────────────────
 
 test('despachar sin stock manda la requisición a RequisicionCompra sin mover nada', function (): void {
-    $item = Item::factory()->create(); // sin entrada de stock
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 10]]);
+    $material = Material::factory()->create(); // sin entrada de stock
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
     $linea = $requisicion->lineas()->first();
 
     $this->service->autorizar($requisicion);
@@ -160,22 +160,22 @@ test('despachar sin stock manda la requisición a RequisicionCompra sin mover na
 
     expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::RequisicionCompra)
         ->and($linea->fresh()->cantidad_despachada)->toBe('0.0000')
-        ->and(stockObra($item->id, $this->proyecto->id))->toBe('');
+        ->and(stockObra($material->id, $this->proyecto->id))->toBe('');
 
     // Cuando entra el stock, ya se puede despachar.
-    $this->inventario->entradaCompra($item->id, $this->bodegaU, '10', '12');
+    $this->inventario->entradaCompra($material->id, $this->bodegaU, '10', '12');
     $this->service->despachar($requisicion, $this->bodegaU);
 
     expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::Despachada)
-        ->and(stockObra($item->id, $this->proyecto->id))->toBe('10.0000');
+        ->and(stockObra($material->id, $this->proyecto->id))->toBe('10.0000');
 });
 
 // ─── Autorización parcial ───────────────────────────────────────────
 
 test('se puede autorizar menos de lo solicitado y se despacha esa cantidad', function (): void {
-    $item = Item::factory()->create();
-    $this->inventario->entradaCompra($item->id, $this->bodegaU, '100', '10');
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 100]]);
+    $material = Material::factory()->create();
+    $this->inventario->entradaCompra($material->id, $this->bodegaU, '100', '10');
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 100]]);
     $linea = $requisicion->lineas()->first();
 
     $this->service->autorizar($requisicion, [$linea->id => '60']);
@@ -183,12 +183,12 @@ test('se puede autorizar menos de lo solicitado y se despacha esa cantidad', fun
 
     $this->service->despachar($requisicion, $this->bodegaU);
     expect($linea->fresh()->cantidad_despachada)->toBe('60.0000')
-        ->and(stockEn($item->id, $this->bodega->id))->toBe('40.0000');
+        ->and(stockEn($material->id, $this->bodega->id))->toBe('40.0000');
 });
 
 test('autorizar más de lo solicitado es rechazado', function (): void {
-    $item = Item::factory()->create();
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 100]]);
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 100]]);
     $linea = $requisicion->lineas()->first();
 
     $this->service->autorizar($requisicion, [$linea->id => '150']);
@@ -197,15 +197,15 @@ test('autorizar más de lo solicitado es rechazado', function (): void {
 // ─── Máquina de estados ─────────────────────────────────────────────
 
 test('no se puede saltar de Solicitada directo a EnTransito', function (): void {
-    $item = Item::factory()->create();
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 5]]);
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 5]]);
 
     $this->service->marcarEnTransito($requisicion);
 })->throws(TransicionInvalidaException::class);
 
 test('rechazar lleva la requisición a estado terminal Rechazada', function (): void {
-    $item = Item::factory()->create();
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 5]]);
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 5]]);
 
     $this->service->rechazar($requisicion, nota: 'proyecto cancelado');
 
@@ -214,9 +214,9 @@ test('rechazar lleva la requisición a estado terminal Rechazada', function (): 
 });
 
 test('cada transición registra un renglón en la bitácora con su responsable', function (): void {
-    $item = Item::factory()->create();
-    $this->inventario->entradaCompra($item->id, $this->bodegaU, '50', '10');
-    $requisicion = crearRequisicion($this->proyecto, [['item' => $item, 'solicitada' => 20]]);
+    $material = Material::factory()->create();
+    $this->inventario->entradaCompra($material->id, $this->bodegaU, '50', '10');
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 20]]);
 
     $this->service->autorizar($requisicion, userId: null, nota: 'ok ingeniero');
 
