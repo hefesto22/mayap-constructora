@@ -9,6 +9,7 @@ use App\Enums\EstadoCompra;
 use App\Models\Compra;
 use App\Models\Material;
 use App\Models\Proveedor;
+use App\Models\User;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
@@ -74,7 +75,18 @@ class CompraForm
 
                 Select::make('bodega_id')
                     ->label('Bodega destino')
-                    ->relationship('bodega', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                    ->relationship('bodega', 'nombre', function ($query) {
+                        $query->where('activo', true)->orderBy('nombre');
+
+                        // El usuario solo compra hacia SUS bodegas (Fase 2).
+                        $user = auth()->user();
+
+                        if ($user instanceof User) {
+                            $query->visibleParaUsuario($user);
+                        }
+
+                        return $query;
+                    })
                     ->searchable()
                     ->preload()
                     ->required()

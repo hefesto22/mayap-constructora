@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Existencias\Pages;
 use App\Filament\Resources\Existencias\ExistenciaResource;
 use App\Models\Bodega;
 use App\Models\Material;
+use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
 use Filament\Actions\Action;
@@ -46,11 +47,18 @@ class ListExistencias extends ListRecords
 
                     Select::make('bodega_id')
                         ->label('Bodega')
-                        ->options(fn (): array => Bodega::query()
-                            ->where('activo', true)
-                            ->orderBy('nombre')
-                            ->pluck('nombre', 'id')
-                            ->all())
+                        ->options(function (): array {
+                            $query = Bodega::query()->where('activo', true)->orderBy('nombre');
+
+                            // El usuario solo puede registrar entrada en SUS bodegas.
+                            $user = auth()->user();
+
+                            if ($user instanceof User) {
+                                $query->visibleParaUsuario($user);
+                            }
+
+                            return $query->pluck('nombre', 'id')->all();
+                        })
                         ->required()
                         ->native(false),
 
@@ -71,9 +79,28 @@ class ListExistencias extends ListRecords
                         ->helperText('Precio de compra por unidad. Define el promedio ponderado.'),
                 ])
                 ->action(function (array $data): void {
+                    $bodegaId = (int) $data['bodega_id'];
+
+                    // Defense in depth (Fase 2): el selector ya limita, pero
+                    // revalidamos que el usuario pueda escribir en esa bodega.
+                    $user = auth()->user();
+
+                    if ($user instanceof User
+                        && ! $user->puedeVerTodasLasBodegas()
+                        && ! in_array($bodegaId, $user->bodegasAsignadasIds(), true)
+                    ) {
+                        Notification::make()
+                            ->title('Bodega no autorizada')
+                            ->body('No tenés acceso a la bodega seleccionada.')
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
                     app(RegistrarMovimientoService::class)->entradaCompra(
                         materialId: (int) $data['material_id'],
-                        destino: Ubicacion::bodega((int) $data['bodega_id']),
+                        destino: Ubicacion::bodega($bodegaId),
                         cantidad: (string) $data['cantidad'],
                         costoUnitario: (string) $data['costo_unitario'],
                         userId: auth()->id(),

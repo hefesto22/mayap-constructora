@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Users\Schemas;
 
+use App\Models\Bodega;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -95,6 +96,22 @@ class UserForm
                             ->preload()
                             ->searchable()
                             ->placeholder('Seleccionar roles'),
+                    ]),
+
+                Section::make('Bodegas asignadas')
+                    ->description('Inventario que verá este usuario. Si NO tiene el permiso "ver todas las bodegas" (super_admin/gerencia), solo verá el stock, compras y movimientos de las bodegas elegidas aquí.')
+                    ->icon('heroicon-o-building-storefront')
+                    ->aside()
+                    ->schema([
+                        Select::make('bodegas')
+                            ->label('Bodegas')
+                            ->relationship('bodegas', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                            ->getOptionLabelFromRecordUsing(fn (Bodega $record): string => "{$record->codigo} — {$record->nombre}")
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->placeholder('Sin bodegas asignadas')
+                            ->helperText('Déjalo vacío para usuarios administrativos que ven todas las bodegas vía permiso.'),
                     ]),
 
                 Section::make('Estado de la Cuenta')

@@ -59,6 +59,20 @@ class RoleSeeder extends Seeder
             );
         }
 
+        // Permisos personalizados de dominio (no atados a un Resource).
+        // Fase 2: quien tenga este permiso ve el inventario de TODAS las
+        // bodegas; quien no, solo el de sus bodegas asignadas (bodega_user).
+        $customPermissions = [
+            'ver_todas_las_bodegas',
+        ];
+
+        foreach ($customPermissions as $permission) {
+            Permission::firstOrCreate(
+                ['name' => $permission],
+                ['guard_name' => 'web']
+            );
+        }
+
         // Super Admin gets all permissions
         $superAdmin->syncPermissions(Permission::all());
 

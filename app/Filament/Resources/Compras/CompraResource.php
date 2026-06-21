@@ -10,6 +10,7 @@ use App\Filament\Resources\Compras\Pages\ListCompras;
 use App\Filament\Resources\Compras\Schemas\CompraForm;
 use App\Filament\Resources\Compras\Tables\ComprasTable;
 use App\Models\Compra;
+use App\Models\User;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -48,8 +49,19 @@ class CompraResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with(['proveedor:id,codigo,nombre', 'bodega:id,codigo,nombre']);
+
+        // Fase 2: el usuario solo ve las compras de sus bodegas. Filtro inline
+        // para conservar el tipo Builder<Model>; la regla canónica vive en
+        // Compra::scopeVisibleParaUsuario.
+        $user = auth()->user();
+
+        if ($user instanceof User && ! $user->puedeVerTodasLasBodegas()) {
+            $query->whereIn('bodega_id', $user->bodegasAsignadasIds());
+        }
+
+        return $query;
     }
 
     public static function getPages(): array

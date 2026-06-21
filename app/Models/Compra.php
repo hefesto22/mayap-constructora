@@ -197,4 +197,21 @@ class Compra extends Model
     {
         return $query->where('estado', $estado->value);
     }
+
+    /**
+     * Limita las compras a la(s) bodega(s) que el usuario puede ver (Fase 2).
+     * Quien tiene `ver_todas_las_bodegas` (super_admin, gerencia) ve todas.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeVisibleParaUsuario(Builder $query, User $usuario): Builder
+    {
+        if ($usuario->puedeVerTodasLasBodegas()) {
+            return $query;
+        }
+
+        return $query->whereIn('bodega_id', $usuario->bodegasAsignadasIds());
+    }
 }

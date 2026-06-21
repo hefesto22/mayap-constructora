@@ -180,4 +180,29 @@ class MovimientoInventario extends Model
             ->when($desde, static fn (Builder $q, string $d): Builder => $q->whereDate('fecha', '>=', $d))
             ->when($hasta, static fn (Builder $q, string $h): Builder => $q->whereDate('fecha', '<=', $h));
     }
+
+    /**
+     * Limita los movimientos a los que tocan una bodega visible del usuario,
+     * más los de obra (consistente con la visibilidad de stock en obra de
+     * Fase 2). Quien tiene `ver_todas_las_bodegas` ve todo.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeVisibleParaUsuario(Builder $query, User $usuario): Builder
+    {
+        if ($usuario->puedeVerTodasLasBodegas()) {
+            return $query;
+        }
+
+        $bodegas = $usuario->bodegasAsignadasIds();
+
+        return $query->where(function (Builder $q) use ($bodegas): void {
+            $q->whereIn('bodega_origen_id', $bodegas)
+                ->orWhereIn('bodega_destino_id', $bodegas)
+                ->orWhereNotNull('proyecto_origen_id')
+                ->orWhereNotNull('proyecto_destino_id');
+        });
+    }
 }

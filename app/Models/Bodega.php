@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -149,6 +150,16 @@ class Bodega extends Model
         return $this->hasMany(Existencia::class);
     }
 
+    /**
+     * Usuarios asignados a esta bodega (Fase 2: visibilidad por bodega).
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class)->withTimestamps();
+    }
+
     // ─── Scopes ────────────────────────────────────────────────────
 
     /**
@@ -159,5 +170,23 @@ class Bodega extends Model
     public function scopeActivas(Builder $query): Builder
     {
         return $query->where('activo', true);
+    }
+
+    /**
+     * Limita las bodegas a las asignadas al usuario (Fase 2). Quien tiene
+     * `ver_todas_las_bodegas` ve todas. Útil para selectores (entrada,
+     * compra, despacho) donde el usuario solo debe elegir SU bodega.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeVisibleParaUsuario(Builder $query, User $usuario): Builder
+    {
+        if ($usuario->puedeVerTodasLasBodegas()) {
+            return $query;
+        }
+
+        return $query->whereIn('id', $usuario->bodegasAsignadasIds());
     }
 }

@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Existencias\Tables;
 
 use App\Models\Bodega;
 use App\Models\Existencia;
+use App\Models\User;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -58,10 +59,17 @@ class ExistenciasTable
             ->filters([
                 SelectFilter::make('bodega_id')
                     ->label('Bodega')
-                    ->options(fn (): array => Bodega::query()
-                        ->orderBy('nombre')
-                        ->pluck('nombre', 'id')
-                        ->all()),
+                    ->options(function (): array {
+                        $query = Bodega::query()->orderBy('nombre');
+
+                        $user = auth()->user();
+
+                        if ($user instanceof User) {
+                            $query->visibleParaUsuario($user);
+                        }
+
+                        return $query->pluck('nombre', 'id')->all();
+                    }),
                 Filter::make('solo_con_stock')
                     ->label('Solo con stock disponible')
                     ->query(fn (Builder $query): Builder => $query->where('cantidad', '>', 0))

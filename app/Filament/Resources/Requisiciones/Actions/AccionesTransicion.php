@@ -8,6 +8,7 @@ use App\Enums\EstadoRequisicion;
 use App\Models\Bodega;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
+use App\Models\User;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Requisiciones\TransicionarRequisicionService;
 use Closure;
@@ -78,11 +79,18 @@ final class AccionesTransicion
             ->schema([
                 Select::make('bodega_id')
                     ->label('Bodega de salida')
-                    ->options(fn (): array => Bodega::query()
-                        ->where('activo', true)
-                        ->orderBy('nombre')
-                        ->pluck('nombre', 'id')
-                        ->all())
+                    ->options(function (): array {
+                        $query = Bodega::query()->where('activo', true)->orderBy('nombre');
+
+                        // El usuario solo despacha desde SUS bodegas (Fase 2).
+                        $user = auth()->user();
+
+                        if ($user instanceof User) {
+                            $query->visibleParaUsuario($user);
+                        }
+
+                        return $query->pluck('nombre', 'id')->all();
+                    })
                     ->required()
                     ->native(false),
                 Textarea::make('nota')->label('Nota (opcional)')->rows(2),

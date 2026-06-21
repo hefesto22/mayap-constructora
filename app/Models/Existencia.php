@@ -154,4 +154,27 @@ class Existencia extends Model
     {
         return $query->where('cantidad', '>', 0);
     }
+
+    /**
+     * Limita las existencias a las bodegas visibles del usuario MÁS el stock
+     * en obra (decisión Fase 2: el bodeguero ve a dónde fue su material).
+     * Quien tiene `ver_todas_las_bodegas` ve todo.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeVisibleParaUsuario(Builder $query, User $usuario): Builder
+    {
+        if ($usuario->puedeVerTodasLasBodegas()) {
+            return $query;
+        }
+
+        $bodegas = $usuario->bodegasAsignadasIds();
+
+        return $query->where(function (Builder $q) use ($bodegas): void {
+            $q->whereIn('bodega_id', $bodegas)
+                ->orWhereNotNull('proyecto_id');
+        });
+    }
 }

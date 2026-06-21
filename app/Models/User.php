@@ -12,6 +12,7 @@ use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -103,6 +104,40 @@ class User extends Authenticatable implements FilamentUser
             'last_login_at' => now(),
             'last_login_ip' => $ip,
         ]);
+    }
+
+    // ─── Visibilidad por bodega (Fase 2) ──────────────────────
+
+    /**
+     * Bodegas a las que el usuario está asignado. Si NO tiene el permiso
+     * `ver_todas_las_bodegas`, su vista de inventario se limita a estas.
+     *
+     * @return BelongsToMany<Bodega, $this>
+     */
+    public function bodegas(): BelongsToMany
+    {
+        return $this->belongsToMany(Bodega::class)->withTimestamps();
+    }
+
+    /**
+     * IDs de las bodegas asignadas al usuario.
+     *
+     * @return array<int, int>
+     */
+    public function bodegasAsignadasIds(): array
+    {
+        return $this->bodegas()->pluck('bodegas.id')->all();
+    }
+
+    /**
+     * ¿El usuario ve el inventario de TODAS las bodegas?
+     *
+     * super_admin lo cumple vía el Gate::before de Shield; otros roles solo
+     * si se les asignó explícitamente el permiso `ver_todas_las_bodegas`.
+     */
+    public function puedeVerTodasLasBodegas(): bool
+    {
+        return $this->can('ver_todas_las_bodegas');
     }
 
     // ─── Relaciones jerárquicas ───────────────────────────────

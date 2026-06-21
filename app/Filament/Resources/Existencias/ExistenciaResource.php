@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Existencias;
 use App\Filament\Resources\Existencias\Pages\ListExistencias;
 use App\Filament\Resources\Existencias\Tables\ExistenciasTable;
 use App\Models\Existencia;
+use App\Models\User;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -52,13 +53,29 @@ class ExistenciaResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with([
                 'material:id,codigo,nombre,unidad_medida_id',
                 'material.unidadMedida:id,simbolo',
                 'bodega:id,codigo,nombre',
                 'proyecto:id,codigo,nombre',
             ]);
+
+        // Fase 2: el usuario solo ve el stock de sus bodegas (+ stock en obra).
+        // Se filtra inline para conservar el tipo Builder<Model> que exige la
+        // firma; la regla canónica vive en Existencia::scopeVisibleParaUsuario.
+        $user = auth()->user();
+
+        if ($user instanceof User && ! $user->puedeVerTodasLasBodegas()) {
+            $bodegas = $user->bodegasAsignadasIds();
+
+            $query->where(function (Builder $q) use ($bodegas): void {
+                $q->whereIn('bodega_id', $bodegas)
+                    ->orWhereNotNull('proyecto_id');
+            });
+        }
+
+        return $query;
     }
 
     public static function getPages(): array
