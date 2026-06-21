@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Tables;
 
 use App\Enums\EstadoProyecto;
+use App\Filament\Support\CostoObra;
 use App\Models\Proyecto;
 use App\Models\Zona;
 use App\Services\Proyectos\CalcularPrecioProyectoService;
@@ -12,6 +13,7 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\Summarizers\Sum;
@@ -83,6 +85,25 @@ class ProyectosTable
                     ->weight('bold')
                     ->color('emerald')
                     ->summarize(Sum::make()->money('HNL')->label('Total página')),
+
+                TextColumn::make('costo_real')
+                    ->label('Costo real')
+                    ->money('HNL')
+                    ->state(fn (Proyecto $record): string => CostoObra::para($record)->costoTotal)
+                    ->toggleable(),
+
+                TextColumn::make('margen')
+                    ->label('Margen')
+                    ->badge()
+                    ->color(fn (Proyecto $record): string => bccomp(CostoObra::para($record)->margen, '0', 2) >= 0 ? 'success' : 'danger')
+                    ->state(fn (Proyecto $record): string => 'L. '.number_format((float) CostoObra::para($record)->margen, 2).' ('.CostoObra::para($record)->margenPorcentaje.'%)'),
+
+                TextColumn::make('presupuesto_consumido')
+                    ->label('Presupuesto')
+                    ->badge()
+                    ->icon(fn (Proyecto $record): string => CostoObra::para($record)->nivel()->getIcon())
+                    ->color(fn (Proyecto $record): string => CostoObra::para($record)->nivel()->getColor())
+                    ->state(fn (Proyecto $record): string => CostoObra::para($record)->porcentajeConsumido.'% — '.CostoObra::para($record)->nivel()->getLabel()),
             ])
             ->filters([
                 SelectFilter::make('zona_id')
@@ -112,6 +133,7 @@ class ProyectosTable
                     }),
             ])
             ->recordActions([
+                ViewAction::make()->label('Costos'),
                 EditAction::make(),
                 Action::make('recalcular')
                     ->icon('heroicon-o-arrow-path')

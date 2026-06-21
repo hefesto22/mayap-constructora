@@ -7,6 +7,8 @@ namespace App\Filament\Resources\Proyectos;
 use App\Filament\Resources\Proyectos\Pages\CreateProyecto;
 use App\Filament\Resources\Proyectos\Pages\EditProyecto;
 use App\Filament\Resources\Proyectos\Pages\ListProyectos;
+use App\Filament\Resources\Proyectos\Pages\ViewProyecto;
+use App\Filament\Resources\Proyectos\Schemas\ProyectoCostoInfolist;
 use App\Filament\Resources\Proyectos\Schemas\ProyectoForm;
 use App\Filament\Resources\Proyectos\Tables\ProyectosTable;
 use App\Models\Proyecto;
@@ -41,6 +43,11 @@ class ProyectoResource extends Resource
         return ProyectoForm::configure($schema);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return ProyectoCostoInfolist::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return ProyectosTable::configure($table);
@@ -64,6 +71,7 @@ class ProyectoResource extends Resource
         return [
             'index'  => ListProyectos::route('/'),
             'create' => CreateProyecto::route('/create'),
+            'view'   => ViewProyecto::route('/{record}'),
             'edit'   => EditProyecto::route('/{record}/edit'),
         ];
     }

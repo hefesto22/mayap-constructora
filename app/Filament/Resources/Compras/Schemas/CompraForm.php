@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Compras\Schemas;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Models\Compra;
+use App\Models\Proveedor;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
@@ -16,6 +17,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 class CompraForm
@@ -53,6 +55,20 @@ class CompraForm
                     ->searchable()
                     ->preload()
                     ->required()
+                    ->live()
+                    // Hereda la condición de pago habitual del proveedor para
+                    // ahorrar clics. El usuario puede cambiarla en esta compra.
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        if ($state === null) {
+                            return;
+                        }
+
+                        $proveedor = Proveedor::query()->find($state);
+
+                        if ($proveedor instanceof Proveedor) {
+                            $set('condicion_pago', $proveedor->condicion_pago->value);
+                        }
+                    })
                     ->disabledOn('edit'),
 
                 Select::make('bodega_id')
@@ -75,7 +91,8 @@ class CompraForm
                     ->options(CondicionPago::options())
                     ->default(CondicionPago::Contado->value)
                     ->required()
-                    ->native(false),
+                    ->native(false)
+                    ->helperText('Se hereda del proveedor al elegirlo. Crédito genera una cuenta por pagar con su plazo; contado no.'),
 
                 TextInput::make('numero_factura')
                     ->label('N.º de factura')

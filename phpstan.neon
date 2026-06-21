@@ -109,7 +109,7 @@ parameters:
 
         # ── Spatie ActivityLog: ->activities() es magic via trait ───────────
         # LogsActivity declara un MorphMany dinámico que PHPStan no ve.
-        - '#Call to an undefined method App\\Models\\(Item|Zona|UnidadMedida|Bodega)::activities\(\)#'
+        - '#Call to an undefined method App\\Models\\(Item|Zona|UnidadMedida|Bodega|Maquina|Empleado)::activities\(\)#'
 
         # ── Eloquent Casts\Attribute — generics opcionales en mutators ──────
         # Laravel 11 no obliga a especificar Attribute<TGet, TSet> aunque
@@ -129,6 +129,8 @@ parameters:
               - app/Models/Requisicion.php
               - app/Models/Proveedor.php
               - app/Models/Compra.php
+              - app/Models/Maquina.php
+              - app/Models/Empleado.php
 
         # ── bcmath en calculadores y factories ──────────────────────────────
         # Los strings que llegan a bcmul/bcadd/bcsub/bccomp/bcdiv vienen de
@@ -149,6 +151,15 @@ parameters:
               - app/Services/Inventario/RegistrarMovimientoService.php
               - app/Services/Requisiciones/TransicionarRequisicionService.php
               - app/Services/Compras/ConfirmarCompraService.php
+              - app/Services/Compras/AbonarService.php
+              - app/Services/Maquinaria/RegistrarParteService.php
+              - app/Services/Maquinaria/RegistrarConsumoCombustibleService.php
+              - app/Services/Reportes/CostoProyectoService.php
+              - app/Enums/NivelPresupuesto.php
+              - app/Services/Planilla/ProcesarPlanillaService.php
+              - app/Services/Cobranza/CobrarService.php
+              - app/Filament/Resources/Proyectos/Tables/ProyectosTable.php
+              - app/Filament/Resources/Proyectos/Schemas/ProyectoCostoInfolist.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no
@@ -162,12 +173,26 @@ parameters:
               - app/Filament/Resources/Zonas/Tables/*
               - app/Filament/Resources/UnidadesMedida/Tables/*
               - app/Filament/Resources/Bodegas/Tables/*
+              - app/Filament/Resources/CuentasPorPagar/Tables/*
+              - app/Filament/Resources/CuentasPorCobrar/Tables/*
+              - app/Filament/Resources/Maquinas/Tables/*
+              - app/Filament/Resources/AsignacionesMaquina/Tables/*
+              - app/Filament/Resources/PartesTrabajo/Tables/*
+              - app/Filament/Resources/Mantenimientos/Tables/*
+              - app/Filament/Resources/Planillas/Tables/*
         - identifier: method.notFound
           paths:
               - app/Filament/Resources/Items/Tables/*
               - app/Filament/Resources/Zonas/Tables/*
               - app/Filament/Resources/UnidadesMedida/Tables/*
               - app/Filament/Resources/Bodegas/Tables/*
+              - app/Filament/Resources/CuentasPorPagar/Tables/*
+              - app/Filament/Resources/CuentasPorCobrar/Tables/*
+              - app/Filament/Resources/Maquinas/Tables/*
+              - app/Filament/Resources/AsignacionesMaquina/Tables/*
+              - app/Filament/Resources/PartesTrabajo/Tables/*
+              - app/Filament/Resources/Mantenimientos/Tables/*
+              - app/Filament/Resources/Planillas/Tables/*
 
         # config/filesystems.php es archivo de Laravel — no nuestro
         - identifier: argument.type

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Compras;
 
+use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
+use App\Enums\EstadoCuentaPorPagar;
 use App\Exceptions\Compras\CompraNoConfirmableException;
 use App\Models\Compra;
+use App\Models\CuentaPorPagar;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
 use Illuminate\Support\Facades\DB;
@@ -88,6 +91,22 @@ final readonly class ConfirmarCompraService
             $compra->estado = EstadoCompra::Confirmada;
             $compra->fecha_recepcion = $compra->fecha;
             $compra->save();
+
+            // Compra a crédito → genera la cuenta por pagar al proveedor.
+            if ($compra->condicion_pago === CondicionPago::Credito) {
+                $compra->loadMissing('proveedor');
+                $vencimiento = $compra->fecha->copy()->addDays($compra->proveedor->dias_credito);
+
+                CuentaPorPagar::create([
+                    'compra_id'         => $compra->id,
+                    'proveedor_id'      => $compra->proveedor_id,
+                    'monto_original'    => $compra->total_cache,
+                    'saldo'             => $compra->total_cache,
+                    'fecha_emision'     => $compra->fecha->toDateString(),
+                    'fecha_vencimiento' => $vencimiento->toDateString(),
+                    'estado'            => EstadoCuentaPorPagar::Pendiente,
+                ]);
+            }
         });
     }
 

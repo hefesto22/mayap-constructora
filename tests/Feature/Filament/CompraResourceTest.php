@@ -67,6 +67,14 @@ test('CompraResource: crea una compra con líneas en borrador', function (): voi
         ->and($compra->lineas)->toHaveCount(1);
 });
 
+test('al elegir un proveedor a crédito, la compra hereda su condición de pago', function (): void {
+    $proveedorCredito = Proveedor::factory()->aCredito(30)->create();
+
+    Livewire::test(CreateCompra::class)
+        ->fillForm(['proveedor_id' => $proveedorCredito->id])
+        ->assertFormSet(['condicion_pago' => CondicionPago::Credito->value]);
+});
+
 test('la acción Confirmar registra el stock y marca la compra confirmada', function (): void {
     $item = Item::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create(['aplica_isv' => true, 'isv_porcentaje' => 15]);
