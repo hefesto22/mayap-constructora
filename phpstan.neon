@@ -181,6 +181,9 @@ parameters:
               - tests/Feature/Compras/DestinoObraCompraTest.php
               - app/Services/Compras/CorregirRecepcionService.php
               - tests/Feature/Compras/CorregirRecepcionTest.php
+              - app/Services/Maquinaria/HojaDeVidaMaquinaService.php
+              - app/Services/Maquinaria/ResumenMaquina.php
+              - tests/Feature/Maquinaria/HojaDeVidaMaquinaServiceTest.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no

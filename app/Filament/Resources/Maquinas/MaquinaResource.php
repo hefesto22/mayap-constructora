@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Maquinas;
 
 use App\Filament\Resources\Maquinas\Pages\CreateMaquina;
 use App\Filament\Resources\Maquinas\Pages\EditMaquina;
+use App\Filament\Resources\Maquinas\Pages\HojaDeVidaMaquina;
 use App\Filament\Resources\Maquinas\Pages\ListMaquinas;
 use App\Filament\Resources\Maquinas\Schemas\MaquinaForm;
 use App\Filament\Resources\Maquinas\Tables\MaquinasTable;
@@ -48,9 +49,10 @@ class MaquinaResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListMaquinas::route('/'),
-            'create' => CreateMaquina::route('/create'),
-            'edit'   => EditMaquina::route('/{record}/edit'),
+            'index'        => ListMaquinas::route('/'),
+            'create'       => CreateMaquina::route('/create'),
+            'edit'         => EditMaquina::route('/{record}/edit'),
+            'hoja-de-vida' => HojaDeVidaMaquina::route('/{record}/hoja-de-vida'),
         ];
     }
 

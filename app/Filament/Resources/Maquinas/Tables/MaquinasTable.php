@@ -7,6 +7,9 @@ namespace App\Filament\Resources\Maquinas\Tables;
 use App\Enums\EstadoMaquina;
 use App\Enums\TipoMaquina;
 use App\Filament\Resources\Maquinas\Actions\AccionEnviarAMantenimiento;
+use App\Filament\Resources\Maquinas\MaquinaResource;
+use App\Models\Maquina;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -80,6 +83,14 @@ class MaquinasTable
                     ->falseLabel('Inactivas'),
             ])
             ->recordActions([
+                Action::make('hoja_de_vida')
+                    ->label('Hoja de vida')
+                    ->icon('heroicon-o-identification')
+                    ->color('gray')
+                    ->url(fn (Maquina $record): string => MaquinaResource::getUrl(
+                        'hoja-de-vida',
+                        ['record' => $record],
+                    )),
                 EditAction::make(),
                 AccionEnviarAMantenimiento::make(),
                 DeleteAction::make(),
