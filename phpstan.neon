@@ -74,6 +74,10 @@ parameters:
         # ?->command es defensivo — el comando puede ser null.
         - identifier: nullsafe.neverNull
           path: database/seeders/*
+        # $zona/$bodega se asignan al INICIO de run() (único entrypoint del
+        # seeder) antes de cualquier uso — falso positivo del patrón seeder.
+        - identifier: property.uninitialized
+          path: database/seeders/DemoSantaRosaSeeder.php
         # env() en seeders es válido (corren al setup, no en runtime cached).
         - identifier: larastan.noEnvCallsOutsideOfConfig
           path: database/seeders/*
