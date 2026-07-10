@@ -45,11 +45,20 @@ final class PdfRenderer
         }
 
         if (config('browsershot.no_sandbox') === true) {
-            // Modo VPS: www-data no puede crear el sandbox de Chromium ni
-            // el "crashpad" (reporteador de crashes exige un HOME escribible
-            // que el usuario del pool no tiene). Ambos flags van juntos.
+            // Modo VPS: www-data no puede crear el sandbox de Chromium, y su
+            // "crashpad" exige un HOME escribible para calcular su carpeta
+            // (el HOME de www-data, /var/www, no lo es — Chromium aborta con
+            // "--database is required" incluso con --disable-crashpad).
+            // Le damos un HOME propio dentro de storage/ del proyecto.
+            $home = storage_path('app/chrome-home');
+
+            if (! is_dir($home)) {
+                mkdir($home, 0755, true);
+            }
+
             $shot->noSandbox()
-                ->addChromiumArguments(['disable-crashpad']);
+                ->addChromiumArguments(['disable-crashpad'])
+                ->setEnvironmentOptions(['HOME' => $home]);
         }
 
         $shot->savePdf($rutaDestino);
