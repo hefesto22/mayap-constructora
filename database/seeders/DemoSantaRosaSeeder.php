@@ -59,7 +59,7 @@ class DemoSantaRosaSeeder extends Seeder
 
         $this->zona = Zona::firstOrCreate(
             ['codigo' => 'SRC'],
-            ['nombre' => 'SANTA ROSA DE COPAN', 'activo' => true],
+            ['nombre' => 'SANTA ROSA DE COPAN', 'activa' => true],
         );
 
         $this->crearUnidades();
