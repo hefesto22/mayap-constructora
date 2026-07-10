@@ -240,6 +240,38 @@ final class RegistrarMovimientoService
     }
 
     /**
+     * Anulación de compra: baja el stock que una entrada de compra metió,
+     * retirando el VALOR EXACTO que esa entrada registró (no el promedio
+     * vigente) — la valuación queda como si la compra nunca hubiera pasado.
+     * Si la baja deja la existencia en cero, arrastra el valor completo
+     * para no dejar residuos de céntimos. Requiere motivo.
+     */
+    public function anulacionCompra(
+        int $materialId,
+        Ubicacion $origen,
+        string $cantidad,
+        string $valorARevertir,
+        string $motivo,
+        ?string $fecha = null,
+        ?int $userId = null,
+        ?Model $referencia = null,
+    ): ResultadoMovimiento {
+        return $this->registrar(
+            tipo: TipoMovimientoInventario::AnulacionCompra,
+            materialId: $materialId,
+            origen: $origen,
+            destino: null,
+            cantidad: $cantidad,
+            costoPropio: null,
+            motivo: $motivo,
+            fecha: $fecha,
+            userId: $userId,
+            referencia: $referencia,
+            valorExacto: $valorARevertir,
+        );
+    }
+
+    /**
      * Núcleo: valida, bloquea existencias, aplica el efecto WAC y escribe
      * el renglón del libro mayor, todo en una transacción.
      */
@@ -254,6 +286,7 @@ final class RegistrarMovimientoService
         ?string $fecha,
         ?int $userId,
         ?Model $referencia,
+        ?string $valorExacto = null,
     ): ResultadoMovimiento {
         $this->validar($tipo, $origen, $destino, $cantidad, $costoPropio, $motivo);
 
@@ -267,7 +300,8 @@ final class RegistrarMovimientoService
             $motivo,
             $fecha,
             $userId,
-            $referencia
+            $referencia,
+            $valorExacto
         ): ResultadoMovimiento {
             $valorMovido = null;
             $saldoOrigen = null;
@@ -295,11 +329,13 @@ final class RegistrarMovimientoService
                     );
                 }
 
-                $valorMovido = $this->valorProporcional(
-                    (string) $existenciaOrigen->valor_total,
-                    (string) $existenciaOrigen->cantidad,
-                    $cantidad,
-                );
+                $valorMovido = $tipo->revierteValorExacto() && $valorExacto !== null
+                    ? $this->valorReversaExacta($existenciaOrigen, $cantidad, $valorExacto)
+                    : $this->valorProporcional(
+                        (string) $existenciaOrigen->valor_total,
+                        (string) $existenciaOrigen->cantidad,
+                        $cantidad,
+                    );
 
                 $existenciaOrigen->cantidad = bcsub((string) $existenciaOrigen->cantidad, $cantidad, self::SCALE_CANTIDAD);
                 $existenciaOrigen->valor_total = bcsub((string) $existenciaOrigen->valor_total, $valorMovido, self::SCALE_MONTO);
@@ -414,6 +450,30 @@ final class RegistrarMovimientoService
         }
 
         return $query->lockForUpdate()->first();
+    }
+
+    /**
+     * Valor que retira una ANULACIÓN: el valor exacto de la entrada que se
+     * revierte, con dos salvaguardas para no violar los CHECKs de la
+     * existencia (valor y cantidad nunca negativos):
+     *
+     *  - si la baja deja la existencia en CERO unidades, arrastra el valor
+     *    completo (sin residuos de céntimos huérfanos);
+     *  - nunca retira más valor del que la existencia tiene (si parte del
+     *    valor ya salió imputado a otra parte, esa parte ya no es
+     *    reversible — se retira lo disponible).
+     */
+    private function valorReversaExacta(Existencia $existencia, string $cantidad, string $valorExacto): string
+    {
+        $cantidadRestante = bcsub((string) $existencia->cantidad, $cantidad, self::SCALE_CANTIDAD);
+
+        if (bccomp($cantidadRestante, '0', self::SCALE_CANTIDAD) === 0) {
+            return (string) $existencia->valor_total;
+        }
+
+        return bccomp($valorExacto, (string) $existencia->valor_total, self::SCALE_MONTO) > 0
+            ? (string) $existencia->valor_total
+            : $this->bcround($valorExacto, self::SCALE_MONTO);
     }
 
     /**

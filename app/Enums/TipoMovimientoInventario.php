@@ -38,40 +38,49 @@ enum TipoMovimientoInventario: string implements HasColor, HasIcon, HasLabel
     case AjustePositivo = 'ajuste_positivo';
     case AjusteNegativo = 'ajuste_negativo';
 
+    /**
+     * Reversa de una compra anulada: baja el stock que la compra metió,
+     * al VALOR EXACTO que registró la entrada (no al promedio vigente),
+     * para que la valuación quede como si la compra nunca hubiera pasado.
+     */
+    case AnulacionCompra = 'anulacion_compra';
+
     public function getLabel(): string
     {
         return match ($this) {
-            self::EntradaCompra  => 'Entrada por compra',
-            self::SalidaDespacho => 'Salida / despacho a obra',
-            self::Traslado       => 'Traslado entre ubicaciones',
-            self::ConsumoObra    => 'Consumo en obra',
-            self::Devolucion     => 'Devolución a bodega',
-            self::AjustePositivo => 'Ajuste positivo',
-            self::AjusteNegativo => 'Ajuste negativo / merma',
+            self::EntradaCompra   => 'Entrada por compra',
+            self::SalidaDespacho  => 'Salida / despacho a obra',
+            self::Traslado        => 'Traslado entre ubicaciones',
+            self::ConsumoObra     => 'Consumo en obra',
+            self::Devolucion      => 'Devolución a bodega',
+            self::AjustePositivo  => 'Ajuste positivo',
+            self::AjusteNegativo  => 'Ajuste negativo / merma',
+            self::AnulacionCompra => 'Anulación de compra',
         };
     }
 
     public function getColor(): string
     {
         return match ($this) {
-            self::EntradaCompra, self::AjustePositivo => 'success',
-            self::SalidaDespacho, self::ConsumoObra   => 'info',
-            self::Traslado                            => 'gray',
-            self::Devolucion                          => 'warning',
-            self::AjusteNegativo                      => 'danger',
+            self::EntradaCompra, self::AjustePositivo   => 'success',
+            self::SalidaDespacho, self::ConsumoObra     => 'info',
+            self::Traslado                              => 'gray',
+            self::Devolucion                            => 'warning',
+            self::AjusteNegativo, self::AnulacionCompra => 'danger',
         };
     }
 
     public function getIcon(): string
     {
         return match ($this) {
-            self::EntradaCompra  => 'heroicon-o-arrow-down-tray',
-            self::SalidaDespacho => 'heroicon-o-truck',
-            self::Traslado       => 'heroicon-o-arrows-right-left',
-            self::ConsumoObra    => 'heroicon-o-fire',
-            self::Devolucion     => 'heroicon-o-arrow-uturn-left',
-            self::AjustePositivo => 'heroicon-o-plus-circle',
-            self::AjusteNegativo => 'heroicon-o-minus-circle',
+            self::EntradaCompra   => 'heroicon-o-arrow-down-tray',
+            self::SalidaDespacho  => 'heroicon-o-truck',
+            self::Traslado        => 'heroicon-o-arrows-right-left',
+            self::ConsumoObra     => 'heroicon-o-fire',
+            self::Devolucion      => 'heroicon-o-arrow-uturn-left',
+            self::AjustePositivo  => 'heroicon-o-plus-circle',
+            self::AjusteNegativo  => 'heroicon-o-minus-circle',
+            self::AnulacionCompra => 'heroicon-o-receipt-refund',
         };
     }
 
@@ -100,9 +109,19 @@ enum TipoMovimientoInventario: string implements HasColor, HasIcon, HasLabel
     public function tieneDestino(): bool
     {
         return match ($this) {
-            self::ConsumoObra, self::AjusteNegativo => false,
-            default                                 => true,
+            self::ConsumoObra, self::AjusteNegativo, self::AnulacionCompra => false,
+            default                                                        => true,
         };
+    }
+
+    /**
+     * ¿La baja retira el VALOR EXACTO indicado en vez del proporcional al
+     * promedio? Solo la anulación de compra: revierte la valuación que la
+     * entrada original metió, dejando el WAC como si nunca hubiera pasado.
+     */
+    public function revierteValorExacto(): bool
+    {
+        return $this === self::AnulacionCompra;
     }
 
     /**
@@ -128,8 +147,8 @@ enum TipoMovimientoInventario: string implements HasColor, HasIcon, HasLabel
     public function requiereMotivo(): bool
     {
         return match ($this) {
-            self::AjustePositivo, self::AjusteNegativo => true,
-            default                                    => false,
+            self::AjustePositivo, self::AjusteNegativo, self::AnulacionCompra => true,
+            default                                                           => false,
         };
     }
 

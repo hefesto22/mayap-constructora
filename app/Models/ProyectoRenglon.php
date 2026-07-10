@@ -89,6 +89,24 @@ class ProyectoRenglon extends Model
         ];
     }
 
+    // ─── Lifecycle: subtotal coherente ────────────────────────────
+
+    protected static function booted(): void
+    {
+        // El subtotal SIEMPRE = cantidad × precio_snapshot. Recalcular en
+        // cada guardado mantiene la coherencia del CHECK constraint sin
+        // importar desde dónde se edite (tabla Filament, service, etc.).
+        static::saving(static function (ProyectoRenglon $renglon): void {
+            $cantidad = (string) ($renglon->cantidad ?? '0');
+            $precio = (string) ($renglon->precio_unitario_snapshot ?? '0');
+            $crudo = bcmul($cantidad, $precio, 4);
+
+            $renglon->subtotal_cache = bccomp($crudo, '0', 4) >= 0
+                ? bcadd($crudo, '0.005', 2)
+                : bcsub($crudo, '0.005', 2);
+        });
+    }
+
     // ─── Mutators uppercase ────────────────────────────────────────
 
     protected function capitulo(): Attribute

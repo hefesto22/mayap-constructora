@@ -25,6 +25,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Confiar en proxies (necesario detrás de Cloudflare, Nginx, etc.).
         $middleware->trustProxies(at: '*');
+
+        // El middleware `auth` de rutas custom (ej. /reportes/*) redirige
+        // invitados al login de Filament — la ruta con nombre `login` de
+        // Laravel no existe porque el panel registra la suya propia.
+        $middleware->redirectGuestsTo(fn (): string => '/login');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Sentry captura excepciones automáticamente vía su Service Provider.

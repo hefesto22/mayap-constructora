@@ -158,7 +158,7 @@ class Existencia extends Model
     /**
      * Limita las existencias a las bodegas visibles del usuario MÁS el stock
      * en obra (decisión Fase 2: el bodeguero ve a dónde fue su material).
-     * Quien tiene `ver_todas_las_bodegas` ve todo.
+     * Quien tiene `VerTodasLasBodegas:Bodega` ve todo.
      *
      * @param Builder<self> $query
      *

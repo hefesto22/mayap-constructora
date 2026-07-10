@@ -184,7 +184,7 @@ class MovimientoInventario extends Model
     /**
      * Limita los movimientos a los que tocan una bodega visible del usuario,
      * más los de obra (consistente con la visibilidad de stock en obra de
-     * Fase 2). Quien tiene `ver_todas_las_bodegas` ve todo.
+     * Fase 2). Quien tiene `VerTodasLasBodegas:Bodega` ve todo.
      *
      * @param Builder<self> $query
      *

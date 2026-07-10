@@ -5,26 +5,42 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Tables;
 
 use App\Enums\EstadoProyecto;
+use App\Filament\Resources\Proyectos\Actions\AccionesEjecucion;
 use App\Filament\Support\CostoObra;
 use App\Models\Proyecto;
 use App\Models\Zona;
-use App\Services\Proyectos\CalcularPrecioProyectoService;
-use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
-use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class ProyectosTable
 {
+    /**
+     * ¿La tab activa del listado corresponde a la fase de ejecución?
+     *
+     * Las columnas son contextuales a la fase: en tabs comerciales
+     * (borrador, enviada, aprobada...) se muestran fechas de emisión y
+     * validez; en tabs de ejecución (en ejecución, pausada, finalizada)
+     * se muestran costo real, margen, avance y plazo.
+     */
+    private static function faseEjecucionActiva(mixed $livewire): bool
+    {
+        $tab = $livewire->activeTab ?? null;
+
+        return is_string($tab)
+            && (EstadoProyecto::tryFrom($tab)?->esEjecucion() ?? false);
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
@@ -65,13 +81,19 @@ class ProyectosTable
                 TextColumn::make('fecha_emision')
                     ->label('Emitido')
                     ->date('d/M/Y')
-                    ->sortable(),
+                    ->sortable()
+                    ->visible(fn (mixed $livewire): bool => ! self::faseEjecucionActiva($livewire)),
 
                 TextColumn::make('fecha_validez')
                     ->label('Válido hasta')
                     ->date('d/M/Y')
                     ->sortable()
-                    ->color(fn (Proyecto $record): string => $record->fecha_validez->isPast() ? 'danger' : 'gray'),
+                    // Solo alerta en Enviada: es el único estado donde el
+                    // vencimiento es accionable (follow-up con el cliente).
+                    ->color(fn (Proyecto $record): string => $record->estado === EstadoProyecto::Enviada && $record->fecha_validez->isPast()
+                        ? 'danger'
+                        : 'gray')
+                    ->visible(fn (mixed $livewire): bool => ! self::faseEjecucionActiva($livewire)),
 
                 TextColumn::make('renglones_count')
                     ->label('Renglones')
@@ -83,27 +105,58 @@ class ProyectosTable
                     ->money('HNL')
                     ->sortable()
                     ->weight('bold')
-                    ->color('emerald')
-                    ->summarize(Sum::make()->money('HNL')->label('Total página')),
+                    ->color('emerald'),
 
                 TextColumn::make('costo_real')
                     ->label('Costo real')
                     ->money('HNL')
                     ->state(fn (Proyecto $record): string => CostoObra::para($record)->costoTotal)
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
 
                 TextColumn::make('margen')
                     ->label('Margen')
                     ->badge()
                     ->color(fn (Proyecto $record): string => bccomp(CostoObra::para($record)->margen, '0', 2) >= 0 ? 'success' : 'danger')
-                    ->state(fn (Proyecto $record): string => 'L. '.number_format((float) CostoObra::para($record)->margen, 2).' ('.CostoObra::para($record)->margenPorcentaje.'%)'),
+                    ->state(fn (Proyecto $record): string => 'L. '.number_format((float) CostoObra::para($record)->margen, 2).' ('.CostoObra::para($record)->margenPorcentaje.'%)')
+                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
 
                 TextColumn::make('presupuesto_consumido')
                     ->label('Presupuesto')
                     ->badge()
                     ->icon(fn (Proyecto $record): string => CostoObra::para($record)->nivel()->getIcon())
                     ->color(fn (Proyecto $record): string => CostoObra::para($record)->nivel()->getColor())
-                    ->state(fn (Proyecto $record): string => CostoObra::para($record)->porcentajeConsumido.'% — '.CostoObra::para($record)->nivel()->getLabel()),
+                    ->state(fn (Proyecto $record): string => CostoObra::para($record)->porcentajeConsumido.'% — '.CostoObra::para($record)->nivel()->getLabel())
+                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
+
+                TextColumn::make('avance_fisico_cache')
+                    ->label('Avance obra')
+                    ->badge()
+                    ->state(fn (Proyecto $record): string => $record->avance_fisico_cache.'%')
+                    ->color(fn (Proyecto $record): string => match (true) {
+                        (float) $record->avance_fisico_cache >= 100.0 => 'success',
+                        $record->estaAtrasado()                       => 'danger',
+                        (float) $record->avance_fisico_cache > 0.0    => 'info',
+                        default                                       => 'gray',
+                    })
+                    ->toggleable()
+                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
+
+                TextColumn::make('plazo_restante')
+                    ->label('Plazo')
+                    ->badge()
+                    ->state(function (Proyecto $record): string {
+                        if ($record->fecha_inicio === null) {
+                            return '—';
+                        }
+
+                        $rest = $record->diasRestantes() ?? 0;
+
+                        return $rest >= 0 ? $rest.' días' : abs($rest).' días atraso';
+                    })
+                    ->color(fn (Proyecto $record): string => $record->estaAtrasado() ? 'danger' : 'gray')
+                    ->toggleable()
+                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
             ])
             ->filters([
                 SelectFilter::make('zona_id')
@@ -135,22 +188,56 @@ class ProyectosTable
             ->recordActions([
                 ViewAction::make()->label('Costos'),
                 EditAction::make(),
-                Action::make('recalcular')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('warning')
-                    ->action(function (Proyecto $record): void {
-                        app(CalcularPrecioProyectoService::class)->recalcular($record);
-
-                        Notification::make()
-                            ->title('Totales recalculados')
-                            ->success()
-                            ->send();
-                    })
-                    ->visible(fn (Proyecto $record): bool => $record->renglones()->exists()),
+                ActionGroup::make([
+                    AccionesEjecucion::iniciar(),
+                    AccionesEjecucion::registrarAnticipo(),
+                    AccionesEjecucion::ajustarPlazo(),
+                    AccionesEjecucion::pausar(),
+                    AccionesEjecucion::reactivar(),
+                    AccionesEjecucion::finalizar(),
+                    AccionesEjecucion::cancelar(),
+                ])
+                    ->label('Ejecución')
+                    ->icon('heroicon-o-play-circle')
+                    ->color('primary')
+                    ->button()
+                    ->visible(fn (?Proyecto $record): bool => $record !== null && in_array(
+                        $record->estado,
+                        [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
+                        strict: true,
+                    )),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    // Solo se eliminan Borradores: una cotización enviada o
+                    // una obra en ejecución jamás se borra en masa. Coincide
+                    // con la regla del DeleteAction individual (EditProyecto).
+                    DeleteBulkAction::make()
+                        ->modalDescription('Solo se eliminarán los proyectos en estado Borrador. Los demás se omitirán.')
+                        ->action(function (Collection $records): void {
+                            /** @var Collection<int, Proyecto> $records */
+                            [$eliminables, $protegidos] = $records->partition(
+                                fn (Proyecto $p): bool => $p->estado === EstadoProyecto::Borrador,
+                            );
+
+                            $eliminables->each(fn (Proyecto $p) => $p->delete());
+
+                            if ($protegidos->isNotEmpty()) {
+                                Notification::make()
+                                    ->warning()
+                                    ->title("{$eliminables->count()} borradores eliminados")
+                                    ->body("{$protegidos->count()} proyectos no se eliminaron porque ya no son borradores.")
+                                    ->send();
+
+                                return;
+                            }
+
+                            Notification::make()
+                                ->success()
+                                ->title("{$eliminables->count()} borradores eliminados")
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                 ]),
             ])
             ->defaultSort('codigo', 'desc')

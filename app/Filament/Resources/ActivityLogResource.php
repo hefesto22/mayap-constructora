@@ -44,6 +44,16 @@ class ActivityLogResource extends Resource
         return false;
     }
 
+    /**
+     * La auditoría es sensible: solo quien tenga el permiso explícito
+     * (gestionable desde la pantalla de Roles). El super_admin pasa por
+     * el Gate::before de Shield.
+     */
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->can('ViewAny:Activity') ?? false;
+    }
+
     public static function canEdit($record): bool
     {
         return false;

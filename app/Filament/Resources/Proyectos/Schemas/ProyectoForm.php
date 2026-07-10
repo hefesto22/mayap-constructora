@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Proyectos\Schemas;
 
+use App\Enums\EstadoProyecto;
 use App\Models\Cliente;
-use App\Models\Ficha;
 use App\Models\Proyecto;
 use App\Models\Zona;
+use App\Services\Requisiciones\PresupuestoMaterial;
+use App\Services\Requisiciones\PresupuestoMaterialesProyectoService;
+use App\Support\Roles;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Schemas\Components\Component;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -47,8 +49,10 @@ class ProyectoForm
                 ->persistTabInQueryString()
                 ->tabs([
                     self::tabIdentificacion(),
-                    self::tabComposicion(),
                     self::tabResumen(),
+                    self::tabEjecucion(),
+                    self::tabControlMateriales(),
+                    self::tabActividades(),
                     self::tabEstado(),
                 ]),
         ]);
@@ -107,6 +111,21 @@ class ProyectoForm
                         return Cliente::create([...$data, 'activo' => true])->id;
                     }),
 
+                Select::make('encargados')
+                    ->label('Encargados de obra')
+                    ->multiple()
+                    ->relationship(
+                        'encargados',
+                        'name',
+                        fn ($query) => $query
+                            ->whereHas('roles', fn ($q) => $q->where('name', Roles::ENCARGADO_OBRA))
+                            ->orderBy('name'),
+                    )
+                    ->searchable()
+                    ->preload()
+                    ->prefixIcon('heroicon-o-user-circle')
+                    ->helperText('Responsables en campo: piden material para esta obra y confirman lo que llega. Solo ven SUS obras. Varios para cubrir ausencias.'),
+
                 TextInput::make('nombre')
                     ->label('Nombre del proyecto')
                     ->required()
@@ -154,143 +173,6 @@ class ProyectoForm
             ->columns(2);
     }
 
-    private static function tabComposicion(): Tab
-    {
-        return Tab::make('Composición')
-            ->icon('heroicon-o-squares-plus')
-            ->badge(fn (?Proyecto $record): ?int => $record?->renglones_count)
-            ->schema([
-                Repeater::make('renglones')
-                    ->relationship()
-                    ->hiddenLabel()
-                    ->columnSpanFull()
-                    ->reorderableWithDragAndDrop()
-                    ->orderColumn('orden')
-                    ->addActionLabel('+ Agregar renglón')
-                    ->collapsible()
-                    ->collapsed()
-                    ->cloneable()
-                    ->itemLabel(fn (array $state): HtmlString => self::etiquetaRenglonCompacta($state))
-                    ->schema(self::renglonSchema())
-                    ->defaultItems(0)
-                    ->minItems(0)
-                    ->live(debounce: 500)
-                    ->disabled(fn (?Proyecto $record): bool => $record !== null && ! $record->estado->permiteEditar())
-                    ->helperText(fn (?Proyecto $record): ?string => $record !== null && ! $record->estado->permiteEditar()
-                        ? 'Este proyecto está en estado '.$record->estado->getLabel().'. Para editar renglones, duplica el proyecto.'
-                        : null),
-            ]);
-    }
-
-    /**
-     * @return array<int, Component>
-     */
-    private static function renglonSchema(): array
-    {
-        return [
-            Grid::make(12)
-                ->schema([
-                    TextInput::make('capitulo')
-                        ->label('Capítulo')
-                        ->maxLength(100)
-                        ->placeholder('01 PRELIMINARES')
-                        ->datalist(function (Get $get): array {
-                            // Sugiere capítulos previos del mismo proyecto.
-                            $renglones = $get('../../renglones') ?? [];
-
-                            if (! is_array($renglones)) {
-                                return [];
-                            }
-
-                            return collect($renglones)
-                                ->pluck('capitulo')
-                                ->filter()
-                                ->unique()
-                                ->values()
-                                ->all();
-                        })
-                        ->mayusculas()
-                        ->columnSpan(['default' => 12, 'md' => 4]),
-
-                    Select::make('ficha_id')
-                        ->label('Ficha APU')
-                        ->options(function (Get $get): array {
-                            $zonaId = $get('../../zona_id');
-
-                            if ($zonaId === null) {
-                                return [];
-                            }
-
-                            return Ficha::query()
-                                ->where('zona_id', $zonaId)
-                                ->where('activa', true)
-                                ->with('unidadMedida:id,codigo')
-                                ->orderBy('nombre')
-                                ->get()
-                                ->mapWithKeys(fn (Ficha $f): array => [
-                                    $f->id => sprintf(
-                                        '%s · %s [%s] · L %s',
-                                        $f->codigo,
-                                        $f->nombre,
-                                        $f->unidadMedida->codigo,
-                                        number_format((float) $f->precio_venta_cache, 2)
-                                    ),
-                                ])
-                                ->all();
-                        })
-                        ->searchable()
-                        ->required()
-                        ->live()
-                        ->afterStateUpdated(function ($state, Set $set): void {
-                            if ($state !== null) {
-                                $ficha = Ficha::find($state);
-
-                                if ($ficha !== null) {
-                                    $set('precio_unitario_snapshot', (string) $ficha->precio_venta_cache);
-                                }
-                            }
-                        })
-                        ->columnSpan(['default' => 12, 'md' => 8]),
-                ]),
-
-            Grid::make(12)
-                ->schema([
-                    TextInput::make('cantidad')
-                        ->label('Cantidad')
-                        ->required()
-                        ->numeric()
-                        ->step(0.0001)
-                        ->minValue(0.0001)
-                        ->live(debounce: 500)
-                        ->placeholder('120.5')
-                        ->columnSpan(['default' => 4, 'md' => 3]),
-
-                    TextInput::make('precio_unitario_snapshot')
-                        ->label('Precio unitario (L)')
-                        ->required()
-                        ->numeric()
-                        ->step(0.01)
-                        ->minValue(0)
-                        ->live(debounce: 500)
-                        ->prefix('L')
-                        ->helperText('Snapshot al agregar. Cambios futuros en la ficha NO afectan este renglón.')
-                        ->columnSpan(['default' => 4, 'md' => 4]),
-
-                    Placeholder::make('subtotal_renglon_preview')
-                        ->label('Subtotal')
-                        ->columnSpan(['default' => 4, 'md' => 5])
-                        ->content(fn (Get $get): HtmlString => self::renderSubtotalRenglon($get)),
-                ]),
-
-            TextInput::make('notas')
-                ->label('Notas opcionales')
-                ->maxLength(500)
-                ->placeholder('Observaciones del renglón')
-                ->mayusculas()
-                ->columnSpanFull(),
-        ];
-    }
-
     private static function tabResumen(): Tab
     {
         return Tab::make('Resumen')
@@ -301,9 +183,121 @@ class ProyectoForm
                         Placeholder::make('resumen_en_vivo')
                             ->hiddenLabel()
                             ->columnSpanFull()
-                            ->content(fn (Get $get): HtmlString => self::renderResumenProyecto($get)),
+                            ->content(fn (?Proyecto $record): HtmlString => self::renderResumenProyecto($record)),
                     ])
                     ->columnSpanFull(),
+            ]);
+    }
+
+    private static function tabEjecucion(): Tab
+    {
+        return Tab::make('Ejecución')
+            ->icon('heroicon-o-play-circle')
+            ->schema([
+                Section::make('Ejecución de la obra')
+                    ->description('Plazo, anticipo y avance. Las acciones (Iniciar, Pausar, Finalizar, Cancelar) están en los botones de la cabecera.')
+                    ->schema([
+                        Placeholder::make('panel_ejecucion')
+                            ->hiddenLabel()
+                            ->columnSpanFull()
+                            ->content(fn (?Proyecto $record): HtmlString => self::renderPanelEjecucion($record)),
+                    ])
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    /**
+     * Control presupuestario de materiales: qué dicen las fichas que se
+     * necesita vs qué se ha pedido en requisiciones. Los excesos y los
+     * materiales fuera de presupuesto se marcan en rojo/ámbar — aquí es
+     * donde el dueño ve las fugas de la obra.
+     */
+    private static function tabControlMateriales(): Tab
+    {
+        return Tab::make('Control de materiales')
+            ->icon('heroicon-o-cube')
+            ->visible(fn (?Proyecto $record): bool => $record !== null)
+            ->badge(function (?Proyecto $record): ?string {
+                if ($record === null) {
+                    return null;
+                }
+
+                $excedidos = app(PresupuestoMaterialesProyectoService::class)
+                    ->porProyecto($record->id)
+                    ->filter(fn (PresupuestoMaterial $pm): bool => $pm->excedido())
+                    ->count();
+
+                return $excedidos > 0 ? (string) $excedidos : null;
+            })
+            ->badgeColor('danger')
+            ->schema([
+                Section::make('Presupuesto vs pedidos')
+                    ->description('Cantidades según las fichas de la obra contra lo comprometido en requisiciones.')
+                    ->schema([
+                        Placeholder::make('control_materiales')
+                            ->hiddenLabel()
+                            ->columnSpanFull()
+                            ->content(fn (?Proyecto $record): HtmlString => new HtmlString(
+                                view('filament.proyectos.control-materiales', [
+                                    'filas' => $record !== null
+                                        ? app(PresupuestoMaterialesProyectoService::class)->porProyecto($record->id)
+                                        : collect(),
+                                ])->render()
+                            )),
+                    ])
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    private static function tabActividades(): Tab
+    {
+        return Tab::make('Actividades')
+            ->icon('heroicon-o-check-circle')
+            ->badge(fn (?Proyecto $record): ?string => $record !== null
+                ? $record->avance_fisico_cache.'%'
+                : null)
+            ->schema([
+                Placeholder::make('avance_preview')
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->content(fn (Get $get): HtmlString => self::renderAvancePreview($get)),
+
+                Repeater::make('actividades')
+                    ->relationship()
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->table([
+                        TableColumn::make('Actividad'),
+                        TableColumn::make('Peso %')->width('120px'),
+                        TableColumn::make('Completada')->width('130px'),
+                    ])
+                    ->reorderableWithDragAndDrop()
+                    ->orderColumn('orden')
+                    ->addActionLabel('+ Agregar actividad')
+                    ->defaultItems(0)
+                    ->minItems(0)
+                    ->live()
+                    ->schema([
+                        TextInput::make('nombre')
+                            ->hiddenLabel()
+                            ->required()
+                            ->maxLength(255)
+                            ->placeholder('ARRANQUE PLANTEL')
+                            ->mayusculas(),
+
+                        TextInput::make('peso')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->minValue(0)
+                            ->step(0.01)
+                            ->suffix('%')
+                            ->placeholder('Opcional'),
+
+                        Toggle::make('completada')
+                            ->hiddenLabel()
+                            ->inline(false),
+                    ])
+                    ->helperText('Marcá las actividades completadas. El % de avance se calcula solo. El "Peso" es opcional: si lo dejás vacío, todas valen igual.'),
             ]);
     }
 
@@ -315,14 +309,28 @@ class ProyectoForm
                 Placeholder::make('estado_actual_label')
                     ->label('Estado actual')
                     ->visible(fn (string $operation): bool => $operation === 'edit')
-                    ->content(fn (?Proyecto $record): HtmlString => $record !== null
-                        ? new HtmlString(
-                            '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-'
-                            .$record->estado->getColor().'-100 text-'.$record->estado->getColor().'-800">'
+                    ->content(function (?Proyecto $record): HtmlString {
+                        if ($record === null) {
+                            return new HtmlString('—');
+                        }
+
+                        // Inline (el CSS del panel no compila clases custom).
+                        $hex = match ($record->estado->getColor()) {
+                            'success' => '#10b981',
+                            'info'    => '#0ea5e9',
+                            'warning' => '#f59e0b',
+                            'danger'  => '#ef4444',
+                            'primary' => '#6366f1',
+                            default   => '#9ca3af',
+                        };
+
+                        return new HtmlString(
+                            '<span style="display:inline-flex; align-items:center; padding:4px 14px; border-radius:9999px; '
+                            .'font-size:.875rem; font-weight:600; color:'.$hex.'; background:'.$hex.'1a; border:1px solid '.$hex.'66;">'
                             .$record->estado->getLabel()
                             .'</span>'
-                        )
-                        : new HtmlString('—')),
+                        );
+                    }),
 
                 Toggle::make('aplica_isv')
                     ->label('Aplica ISV')
@@ -396,122 +404,161 @@ class ProyectoForm
     }
 
     /**
-     * Subtotal del renglón en vivo: cantidad × precio.
+     * Resumen del proyecto: lee los totales YA persistidos (se recalculan
+     * al agregar/editar renglones en la tabla de Composición y al guardar).
      */
-    private static function renderSubtotalRenglon(Get $get): HtmlString
+    private static function renderResumenProyecto(?Proyecto $record): HtmlString
     {
-        $cantidad = (float) ($get('cantidad') ?? 0);
-        $precio = (float) ($get('precio_unitario_snapshot') ?? 0);
-
-        if ($cantidad <= 0 || $precio <= 0) {
-            return new HtmlString('<span class="text-gray-400 text-sm">—</span>');
-        }
-
-        $subtotal = $cantidad * $precio;
-        $fmt = 'L '.number_format($subtotal, 2);
-
-        return new HtmlString(
-            '<div class="text-sm">'
-            .'<div class="font-bold text-emerald-600 dark:text-emerald-400 text-xl">'.$fmt.'</div>'
-            .'<div class="text-xs text-gray-500">'.number_format($cantidad, 4).' × L '.number_format($precio, 2).'</div>'
-            .'</div>'
-        );
-    }
-
-    /**
-     * Resumen completo del proyecto: subtotal + ISV + BIG NUMBER del total.
-     */
-    private static function renderResumenProyecto(Get $get): HtmlString
-    {
-        $renglones = $get('renglones') ?? [];
-        $aplicaIsv = (bool) ($get('aplica_isv') ?? true);
-        $isvPorcentaje = (float) ($get('isv_porcentaje') ?? 15);
-
-        if (! is_array($renglones) || $renglones === []) {
+        // NOTA DE ESTILOS: HTML dentro del panel Filament — su CSS compilado
+        // NO incluye clases Tailwind arbitrarias, por eso todo va inline
+        // (colores translúcidos funcionan en tema claro y oscuro).
+        if ($record === null || $record->renglones()->count() === 0) {
             return new HtmlString(
-                '<div class="text-center text-gray-500 py-6">'
-                .'Agrega renglones en la pestaña Composición para ver el resumen.'
+                '<div style="text-align:center; opacity:.55; padding:24px 0;">'
+                .'Guardá el proyecto y agregá renglones en la tabla de Composición (abajo) para ver el resumen.'
                 .'</div>'
             );
         }
 
-        $subtotal = 0.0;
+        $subtotal = (float) $record->subtotal_cache;
+        $isv = (float) $record->isv_cache;
+        $total = (float) $record->total_cache;
+        $aplicaIsv = $record->aplica_isv;
+        $isvPorcentaje = (float) $record->isv_porcentaje;
 
-        foreach ($renglones as $r) {
-            $cantidad = (float) ($r['cantidad'] ?? 0);
-            $precio = (float) ($r['precio_unitario_snapshot'] ?? 0);
-            $subtotal += $cantidad * $precio;
-        }
-
-        $isv = $aplicaIsv ? round($subtotal * ($isvPorcentaje / 100), 2) : 0.0;
-        $total = round($subtotal + $isv, 2);
-
-        $totalesHtml = '<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">'
-            .'<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">'
-            .'<div class="text-xs uppercase tracking-wide text-gray-500">Subtotal</div>'
-            .'<div class="text-2xl font-bold">L '.number_format($subtotal, 2).'</div>'
-            .'</div>'
-            .'<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">'
-            .'<div class="text-xs uppercase tracking-wide text-gray-500">ISV '
-            .($aplicaIsv ? number_format($isvPorcentaje, 2).'%' : '(EXENTO)').'</div>'
-            .'<div class="text-2xl font-bold">L '.number_format($isv, 2).'</div>'
-            .'</div>'
+        $totalesHtml = '<div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:16px;">'
+            .self::dato('Subtotal', 'L '.number_format($subtotal, 2), grande: true)
+            .self::dato('ISV '.($aplicaIsv ? number_format($isvPorcentaje, 2).'%' : '(EXENTO)'), 'L '.number_format($isv, 2), grande: true)
             .'</div>';
 
-        $bigNumberHtml = '<div class="rounded-xl border-4 border-emerald-600 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/40 dark:to-emerald-800/40 p-6 text-center">'
-            .'<div class="text-sm uppercase tracking-widest text-emerald-700 dark:text-emerald-300 font-semibold">Total de la cotización</div>'
-            .'<div class="text-5xl font-black text-emerald-700 dark:text-emerald-300 mt-2">L '.number_format($total, 2).'</div>'
-            .'<div class="text-xs text-emerald-600 mt-2">Vista previa en vivo. Se persiste al guardar.</div>'
+        $bigNumberHtml = '<div style="border:3px solid #059669; border-radius:16px; background:rgba(16,185,129,0.08); padding:28px; text-align:center;">'
+            .'<div style="font-size:.8rem; text-transform:uppercase; letter-spacing:.15em; color:#10b981; font-weight:600;">Total de la cotización</div>'
+            .'<div style="font-size:3rem; line-height:1.1; font-weight:900; color:#10b981; margin-top:8px;">L '.number_format($total, 2).'</div>'
+            .'<div style="font-size:.75rem; opacity:.55; margin-top:10px;">Se actualiza al cambiar renglones y al guardar.</div>'
             .'</div>';
 
         return new HtmlString($totalesHtml.$bigNumberHtml);
     }
 
     /**
-     * Etiqueta enriquecida del renglón cuando está colapsado.
-     *
-     * @param array<string, mixed> $state
+     * Panel de ejecución: plazo, fechas, reloj de avance de tiempo,
+     * barra de avance físico y anticipo. Se adapta al estado del proyecto.
      */
-    private static function etiquetaRenglonCompacta(array $state): HtmlString
+    private static function renderPanelEjecucion(?Proyecto $record): HtmlString
     {
-        $fichaId = $state['ficha_id'] ?? null;
-        $cantidad = $state['cantidad'] ?? null;
-        $precio = $state['precio_unitario_snapshot'] ?? null;
-        $capitulo = $state['capitulo'] ?? null;
+        if ($record === null || $record->fecha_inicio === null) {
+            $mensaje = $record !== null && $record->estado === EstadoProyecto::Aprobada
+                ? 'Proyecto aprobado y listo para arrancar. Usá el botón <strong>"Iniciar proyecto"</strong> en la cabecera para definir la fecha de inicio y el plazo.'
+                : 'La ejecución se habilita cuando el proyecto está <strong>Aprobado</strong>. Primero envialo y registrá la aprobación del cliente.';
 
-        if ($fichaId === null) {
-            return new HtmlString('<span class="text-gray-400 italic text-sm">Renglón nuevo — click para configurar</span>');
+            return new HtmlString(
+                '<div style="border:1px dashed rgba(128,128,128,0.45); border-radius:12px; padding:28px; text-align:center; opacity:.7;">'
+                .$mensaje.self::renderAnticipoBloque($record).'</div>'
+            );
         }
 
-        $ficha = Ficha::find($fichaId);
+        $modo = $record->modo_plazo?->getLabel() ?? '—';
+        $diasTrans = $record->diasTranscurridos() ?? 0;
+        $diasRest = $record->diasRestantes() ?? 0;
+        $pctTiempo = $record->porcentajeTiempo() ?? 0.0;
+        $avance = (float) $record->avance_fisico_cache;
+        $atrasado = $record->estaAtrasado();
 
-        if ($ficha === null) {
-            return new HtmlString('<span class="text-gray-400 italic text-sm">Ficha no encontrada</span>');
-        }
+        $restanteTxt = $diasRest >= 0
+            ? '<span style="font-weight:700; color:#10b981;">'.$diasRest.' días restantes</span>'
+            : '<span style="font-weight:700; color:#ef4444;">'.abs($diasRest).' días de atraso</span>';
 
-        $subtotalFmt = '—';
+        $fechas = '<div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:16px;">'
+            .self::dato('Inicio', $record->fecha_inicio->format('d/M/Y'))
+            .self::dato('Fin estimado', $record->fecha_fin_estimada?->format('d/M/Y') ?? '—')
+            .self::dato('Plazo', $record->plazo_dias.' días · '.$modo)
+            .self::dato('Fin real', $record->fecha_fin_real?->format('d/M/Y') ?? '—')
+            .'</div>';
 
-        if ($cantidad !== null && $cantidad !== '' && $precio !== null && $precio !== '') {
-            $subtotal = (float) $cantidad * (float) $precio;
-            $subtotalFmt = 'L '.number_format($subtotal, 2);
-        }
-
-        $unidad = $ficha->unidadMedida->codigo;
-        $cantidadFmt = $cantidad !== null && $cantidad !== '' ? number_format((float) $cantidad, 2) : '?';
-        $capituloHtml = $capitulo !== null && $capitulo !== ''
-            ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">'.htmlspecialchars((string) $capitulo).'</span>'
+        $alerta = $atrasado
+            ? '<div style="border:1px solid rgba(239,68,68,0.4); border-radius:10px; background:rgba(239,68,68,0.08); color:#ef4444; font-size:.875rem; font-weight:500; padding:10px 14px; margin-bottom:14px;">⚠️ Obra atrasada: pasó la fecha estimada y el avance no llegó al 100%.</div>'
             : '';
 
-        return new HtmlString(
-            '<div class="flex items-center gap-2 text-sm">'
-            .$capituloHtml
-            .'<span class="font-mono text-xs text-gray-500">'.htmlspecialchars((string) $ficha->codigo).'</span>'
-            .'<span class="font-medium truncate max-w-md">'.htmlspecialchars((string) $ficha->nombre).'</span>'
-            .'<span class="text-gray-500">·</span>'
-            .'<span class="text-gray-600 dark:text-gray-300">'.$cantidadFmt.' '.htmlspecialchars($unidad).'</span>'
-            .'<span class="text-gray-500">·</span>'
-            .'<span class="font-bold text-emerald-600 dark:text-emerald-400 ml-auto">'.$subtotalFmt.'</span>'
-            .'</div>'
-        );
+        $barras = self::renderBarra('Avance de tiempo ('.$diasTrans.' días) — '.$restanteTxt, $pctTiempo, $atrasado ? '#ef4444' : '#0ea5e9')
+            .self::renderBarra('Avance físico de obra', $avance, '#10b981');
+
+        return new HtmlString($alerta.$fechas.$barras.self::renderAnticipoBloque($record));
+    }
+
+    /**
+     * Vista previa en vivo del % de avance físico calculado desde las
+     * actividades del formulario (peso vacío = peso 1).
+     */
+    private static function renderAvancePreview(Get $get): HtmlString
+    {
+        $actividades = $get('actividades') ?? [];
+
+        if (! is_array($actividades) || $actividades === []) {
+            return new HtmlString(
+                '<div style="text-align:center; opacity:.55; padding:16px 0;">Agregá actividades para llevar el avance de la obra.</div>'
+            );
+        }
+
+        $total = 0.0;
+        $completadas = 0.0;
+
+        foreach ($actividades as $a) {
+            $peso = ($a['peso'] ?? null) !== null && $a['peso'] !== '' ? (float) $a['peso'] : 1.0;
+            $total += $peso;
+
+            if (! empty($a['completada'])) {
+                $completadas += $peso;
+            }
+        }
+
+        $pct = $total > 0 ? round(($completadas / $total) * 100, 2) : 0.0;
+
+        return new HtmlString(self::renderBarra('Avance físico (vista previa)', $pct, '#10b981'));
+    }
+
+    /**
+     * Bloque resumido del anticipo del cliente.
+     */
+    private static function renderAnticipoBloque(?Proyecto $record): string
+    {
+        if ($record === null || ! $record->anticipo_recibido) {
+            return '<div style="margin-top:16px; font-size:.875rem; opacity:.55;">Sin anticipo registrado.</div>';
+        }
+
+        return '<div style="margin-top:16px; border:1px solid rgba(16,185,129,0.4); border-radius:10px; background:rgba(16,185,129,0.08); padding:12px 16px;">'
+            .'<span style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:#10b981;">Anticipo recibido</span>'
+            .'<div style="font-size:1.25rem; font-weight:700; color:#10b981;">L '.number_format((float) $record->anticipo_monto, 2).'</div>'
+            .'<div style="font-size:.75rem; opacity:.55;">'.($record->anticipo_fecha?->format('d/M/Y') ?? '').'</div>'
+            .'</div>';
+    }
+
+    /**
+     * Tarjeta de dato (label pequeño arriba, valor abajo). $grande usa
+     * tipografía de destacado para los totales del Resumen.
+     */
+    private static function dato(string $label, string $valor, bool $grande = false): string
+    {
+        $tamanoValor = $grande ? '1.5rem' : '.9rem';
+
+        return '<div style="border:1px solid rgba(128,128,128,0.25); border-radius:10px; padding:12px 16px;">'
+            .'<div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; opacity:.55;">'.htmlspecialchars($label).'</div>'
+            .'<div style="font-size:'.$tamanoValor.'; font-weight:700; margin-top:2px;">'.htmlspecialchars($valor).'</div>'
+            .'</div>';
+    }
+
+    /**
+     * Barra de progreso. El texto del label puede contener HTML (badges).
+     */
+    private static function renderBarra(string $labelHtml, float $pct, string $colorHex): string
+    {
+        $ancho = max(0.0, min(100.0, $pct));
+
+        return '<div style="margin-bottom:14px;">'
+            .'<div style="display:flex; justify-content:space-between; align-items:center; font-size:.875rem; margin-bottom:6px;">'
+            .'<span>'.$labelHtml.'</span>'
+            .'<span style="font-weight:700;">'.number_format($pct, 2).'%</span></div>'
+            .'<div style="width:100%; height:10px; border-radius:9999px; background:rgba(128,128,128,0.2); overflow:hidden;">'
+            .'<div style="width:'.$ancho.'%; height:100%; border-radius:9999px; background:'.$colorHex.';"></div>'
+            .'</div></div>';
     }
 }

@@ -11,6 +11,7 @@ use App\Models\Proyecto;
 use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
+use App\Support\Permisos;
 use Spatie\Permission\Models\Permission;
 
 /*
@@ -19,11 +20,11 @@ use Spatie\Permission\Models\Permission;
 |--------------------------------------------------------------------------
 | Un usuario asignado a la bodega A NO ve el stock, compras ni movimientos
 | de la bodega B. Sí ve el stock en obra (decisión de producto). Quien tiene
-| el permiso `ver_todas_las_bodegas` ve todo.
+| el permiso Permisos::VER_TODAS_LAS_BODEGAS ve todo.
 */
 
 beforeEach(function (): void {
-    Permission::findOrCreate('ver_todas_las_bodegas', 'web');
+    Permission::findOrCreate(Permisos::VER_TODAS_LAS_BODEGAS, 'web');
 
     $this->bodegaA = Bodega::factory()->create(['nombre' => 'BODEGA A']);
     $this->bodegaB = Bodega::factory()->create(['nombre' => 'BODEGA B']);
@@ -46,9 +47,9 @@ test('usuario restringido ve el stock de sus bodegas y el de obra, no el de otra
         ->and($ids)->not->toContain($this->exB->id);
 });
 
-test('usuario con permiso ver_todas_las_bodegas ve todas las existencias', function (): void {
+test('usuario con permiso VerTodasLasBodegas ve todas las existencias', function (): void {
     $user = User::factory()->create();
-    $user->givePermissionTo('ver_todas_las_bodegas');
+    $user->givePermissionTo(Permisos::VER_TODAS_LAS_BODEGAS);
 
     expect(Existencia::query()->visibleParaUsuario($user)->count())->toBe(3)
         ->and($user->puedeVerTodasLasBodegas())->toBeTrue();

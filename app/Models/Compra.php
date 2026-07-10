@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Models\Concerns\HasUppercaseAttributes;
+use App\Services\Inventario\Ubicacion;
 use Database\Factories\CompraFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +45,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $isv_cache
  * @property string $total_cache
  * @property string|null $notas
+ * @property string|null $motivo_anulacion
+ * @property Carbon|null $anulada_at
+ * @property int|null $anulada_por
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
@@ -64,6 +70,8 @@ class Compra extends Model
         'codigo',
         'proveedor_id',
         'bodega_id',
+        'proyecto_id',
+        'requisicion_id',
         'estado',
         'condicion_pago',
         'fecha',
@@ -71,10 +79,15 @@ class Compra extends Model
         'numero_factura',
         'aplica_isv',
         'isv_porcentaje',
+        'costo_envio',
+        'descuento',
         'subtotal_cache',
         'isv_cache',
         'total_cache',
         'notas',
+        'motivo_anulacion',
+        'anulada_at',
+        'anulada_por',
     ];
 
     /**
@@ -87,8 +100,11 @@ class Compra extends Model
             'condicion_pago'  => CondicionPago::class,
             'fecha'           => 'date',
             'fecha_recepcion' => 'date',
+            'anulada_at'      => 'datetime',
             'aplica_isv'      => 'boolean',
             'isv_porcentaje'  => 'decimal:2',
+            'costo_envio'     => 'decimal:2',
+            'descuento'       => 'decimal:2',
             'subtotal_cache'  => 'decimal:2',
             'isv_cache'       => 'decimal:2',
             'total_cache'     => 'decimal:2',
@@ -179,11 +195,80 @@ class Compra extends Model
     }
 
     /**
+     * Obra destino cuando la compra se entrega directo (XOR con bodega).
+     *
+     * @return BelongsTo<Proyecto, $this>
+     */
+    public function proyecto(): BelongsTo
+    {
+        return $this->belongsTo(Proyecto::class);
+    }
+
+    /**
+     * Requisición que originó la compra (trazabilidad / despacho directo).
+     *
+     * @return BelongsTo<Requisicion, $this>
+     */
+    public function requisicion(): BelongsTo
+    {
+        return $this->belongsTo(Requisicion::class);
+    }
+
+    /**
+     * ¿La compra se entrega directo a una obra (sin pasar por bodega)?
+     */
+    public function esDirectaAObra(): bool
+    {
+        return $this->proyecto_id !== null;
+    }
+
+    /**
+     * Destino efectivo de una línea — ÚNICA fuente de la regla: el propio
+     * si lo define, si no el de la cabecera (bodega XOR obra, garantizado
+     * por CHECKs). La consumen confirmación, notificaciones y verificación.
+     */
+    public function destinoDeLinea(CompraLinea $linea): Ubicacion
+    {
+        if ($linea->proyecto_id !== null) {
+            return Ubicacion::obra($linea->proyecto_id);
+        }
+
+        if ($linea->bodega_id !== null) {
+            return Ubicacion::bodega($linea->bodega_id);
+        }
+
+        return $this->esDirectaAObra()
+            ? Ubicacion::obra((int) $this->proyecto_id)
+            : Ubicacion::bodega($this->bodega_id);
+    }
+
+    /**
      * @return HasMany<CompraLinea, $this>
      */
     public function lineas(): HasMany
     {
         return $this->hasMany(CompraLinea::class);
+    }
+
+    /**
+     * Cuenta por pagar generada al confirmar (solo compras a crédito).
+     *
+     * @return HasOne<CuentaPorPagar, $this>
+     */
+    public function cuentaPorPagar(): HasOne
+    {
+        return $this->hasOne(CuentaPorPagar::class);
+    }
+
+    /**
+     * Movimientos de inventario que esta compra originó (entradas, consumo
+     * inmediato, anulación) — la trazabilidad documento ↔ libro mayor.
+     *
+     * @return MorphMany<MovimientoInventario, $this>
+     */
+    public function movimientos(): MorphMany
+    {
+        return $this->morphMany(MovimientoInventario::class, 'referencia');
     }
 
     // ─── Scopes ────────────────────────────────────────────────────
@@ -200,7 +285,7 @@ class Compra extends Model
 
     /**
      * Limita las compras a la(s) bodega(s) que el usuario puede ver (Fase 2).
-     * Quien tiene `ver_todas_las_bodegas` (super_admin, gerencia) ve todas.
+     * Quien tiene `VerTodasLasBodegas:Bodega` (super_admin, gerencia) ve todas.
      *
      * @param Builder<self> $query
      *

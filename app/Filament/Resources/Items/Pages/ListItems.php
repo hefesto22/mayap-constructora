@@ -26,8 +26,10 @@ class ListItems extends ListRecords
     /**
      * Tabs por zona para filtrar la base de precios rápidamente.
      *
-     * Patrón espejo del de ListFichas (consistencia entre módulos):
-     *  - Tab "Todas" siempre primero, badge = total global de items.
+     * SOLO tabs por zona (sin "Todas"): los precios son POR ZONA y mostrarlos
+     * todos juntos mezcla el mismo material a distinto precio, lo que confunde
+     * al usuario. Por defecto se abre en Santa Rosa (ver getDefaultActiveTab).
+     *
      *  - Un tab por zona ACTIVA, ordenadas alfabéticamente por código.
      *  - Badge ÁMBAR si la zona tiene items con precios desactualizados
      *    (precio_actualizado_at > 90 días o null) — señal visual para
@@ -51,16 +53,7 @@ class ListItems extends ListRecords
             ->groupBy('zona_id')
             ->pluck('total', 'zona_id');
 
-        $totalGlobal = (int) $conteosTotales->sum();
-        $totalStaleGlobal = (int) $conteosStale->sum();
-
-        $tabs = [
-            'todas' => Tab::make('Todas')
-                ->label('Todas las zonas')
-                ->icon('heroicon-o-rectangle-stack')
-                ->badge($totalGlobal)
-                ->badgeColor($totalStaleGlobal > 0 ? 'warning' : 'gray'),
-        ];
+        $tabs = [];
 
         $zonas = Zona::activas()->orderBy('codigo')->get();
 
@@ -79,5 +72,17 @@ class ListItems extends ListRecords
         }
 
         return $tabs;
+    }
+
+    /**
+     * Zona por defecto al abrir la base de precios: Santa Rosa de Copán (SRC).
+     * Si esa zona no existe, cae en la primera zona activa. Evita arrancar en
+     * una vista global que mezclaría precios de distintas zonas.
+     */
+    public function getDefaultActiveTab(): string|int|null
+    {
+        $codigos = Zona::activas()->orderBy('codigo')->pluck('codigo');
+
+        return $codigos->contains('SRC') ? 'SRC' : $codigos->first();
     }
 }

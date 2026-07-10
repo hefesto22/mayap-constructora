@@ -110,6 +110,18 @@ class MaterialForm
                     ->helperText('Los materiales inactivos no aparecen al registrar entradas, compras ni requisiciones. El historial de inventario se preserva.')
                     ->columnSpanFull(),
 
+                Toggle::make('exento_isv')
+                    ->label('Exento de ISV')
+                    ->default(false)
+                    ->helperText('Producto exento por ley (no lleva ISV 15%). Al comprarlo, la línea se marca exenta automáticamente y el ISV de la factura se calcula solo sobre lo gravado.')
+                    ->columnSpanFull(),
+
+                Toggle::make('consumo_inmediato')
+                    ->label('Consumo inmediato (no almacenable)')
+                    ->default(false)
+                    ->helperText('Para consumibles que no se guardan en bodega, como el agua de pipa: se compran con entrega directa a obra y el sistema los da por consumidos al recibirlos — el costo queda en la obra sin dejar stock fantasma. No se pueden comprar a bodega.')
+                    ->columnSpanFull(),
+
                 Section::make('Información del registro')
                     ->icon('heroicon-o-information-circle')
                     ->visible(fn (string $operation): bool => $operation === 'edit')

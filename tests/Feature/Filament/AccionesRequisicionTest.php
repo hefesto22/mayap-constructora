@@ -43,7 +43,8 @@ beforeEach(function (): void {
     $this->actingAs($this->admin);
 
     $this->inventario = new RegistrarMovimientoService;
-    $this->transiciones = new TransicionarRequisicionService($this->inventario);
+    // Por el container: el constructor también inyecta el notificador.
+    $this->transiciones = app(TransicionarRequisicionService::class);
     $this->bodega = Bodega::factory()->create();
     $this->proyecto = Proyecto::factory()->create();
 });

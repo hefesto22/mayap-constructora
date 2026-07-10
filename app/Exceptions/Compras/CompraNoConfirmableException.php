@@ -24,4 +24,49 @@ final class CompraNoConfirmableException extends CompraException
     {
         return new self("La compra {$codigo} no tiene líneas que confirmar.");
     }
+
+    public static function descuentoExcedeValor(string $codigo): self
+    {
+        return new self(
+            "La compra {$codigo} no se puede confirmar: el descuento prorrateado ".
+            'deja alguna línea con valor negativo. Revisá el descuento global.'
+        );
+    }
+
+    public static function consumoInmediatoABodega(string $codigoCompra, string $material): self
+    {
+        return new self(
+            "La compra {$codigoCompra} incluye '{$material}', que es de consumo inmediato ".
+            '(no almacenable, ej: agua de pipa). Ese material se compra con entrega '.
+            'DIRECTA A OBRA, no a bodega.'
+        );
+    }
+
+    public static function obraNoRecibeMaterial(string $codigoCompra, string $obra, string $estadoObra): self
+    {
+        return new self(
+            "La compra {$codigoCompra} envía material a la obra '{$obra}', que está ".
+            "en estado {$estadoObra}. Solo las obras EN EJECUCIÓN o PAUSADAS reciben ".
+            'material — a una obra terminada, cancelada o sin iniciar no se le imputa costo.'
+        );
+    }
+
+    public static function materialNoPresupuestado(string $codigoCompra, string $material, string $obra): self
+    {
+        return new self(
+            "La compra {$codigoCompra} envía '{$material}' a la obra '{$obra}', pero ese ".
+            'material NO está en el presupuesto de la obra (sus fichas no lo contemplan). '.
+            'Un imprevisto legítimo lo autoriza quien tenga el permiso "Comprar fuera de '.
+            'presupuesto" (pantalla de Roles).'
+        );
+    }
+
+    public static function requisicionDeOtraObra(string $codigoCompra, string $codigoRequisicion): self
+    {
+        return new self(
+            "La compra {$codigoCompra} está enlazada a la requisición {$codigoRequisicion}, ".
+            'pero la obra destino de la compra no coincide con la obra de la requisición. '.
+            'El costo se imputaría al proyecto equivocado.'
+        );
+    }
 }

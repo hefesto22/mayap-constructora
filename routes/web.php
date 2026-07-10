@@ -18,3 +18,27 @@ declare(strict_types=1);
 | Las rutas internas del panel (/login, /dashboard, /users, /shield/roles,
 | /horizon, etc.) las gestiona Filament automáticamente.
 */
+
+use App\Http\Controllers\Reportes\ActaRecepcionPdfController;
+use App\Http\Controllers\Reportes\ComposicionProyectoPdfController;
+use App\Http\Controllers\Reportes\CostoObraPdfController;
+use Illuminate\Support\Facades\Route;
+
+/*
+| Vista previa de reportes PDF — se sirven INLINE (visor del navegador en
+| pestaña nueva) en vez de forzar descarga. Cada controller re-valida el
+| permiso en servidor: la URL directa sin permiso responde 403.
+*/
+Route::middleware(['auth', 'throttle:pdfs'])
+    ->prefix('reportes')
+    ->name('reportes.')
+    ->group(function (): void {
+        Route::get('compras/{compra}/acta-recepcion', ActaRecepcionPdfController::class)
+            ->name('acta-recepcion');
+
+        Route::get('proyectos/{proyecto}/costos', CostoObraPdfController::class)
+            ->name('costo-obra');
+
+        Route::get('proyectos/{proyecto}/composicion', ComposicionProyectoPdfController::class)
+            ->name('composicion-proyecto');
+    });

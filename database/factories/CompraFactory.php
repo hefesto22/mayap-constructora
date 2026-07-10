@@ -9,6 +9,8 @@ use App\Enums\EstadoCompra;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\Proveedor;
+use App\Models\Proyecto;
+use App\Models\Requisicion;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -59,5 +61,21 @@ class CompraFactory extends Factory
     public function aCredito(): self
     {
         return $this->state(fn (): array => ['condicion_pago' => CondicionPago::Credito->value]);
+    }
+
+    /**
+     * Entrega directa a obra: destino = proyecto, sin bodega (XOR en DB).
+     */
+    public function directaAObra(Proyecto $proyecto): self
+    {
+        return $this->state(fn (): array => [
+            'bodega_id'   => null,
+            'proyecto_id' => $proyecto->id,
+        ]);
+    }
+
+    public function paraRequisicion(Requisicion $requisicion): self
+    {
+        return $this->state(fn (): array => ['requisicion_id' => $requisicion->id]);
     }
 }

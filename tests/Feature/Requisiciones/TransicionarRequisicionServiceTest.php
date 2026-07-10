@@ -28,7 +28,8 @@ use App\Services\Requisiciones\TransicionarRequisicionService;
 
 beforeEach(function (): void {
     $this->inventario = new RegistrarMovimientoService;
-    $this->service = new TransicionarRequisicionService($this->inventario);
+    // Por el container: el constructor también inyecta el notificador.
+    $this->service = app(TransicionarRequisicionService::class);
     $this->bodega = Bodega::factory()->create();
     $this->bodegaU = Ubicacion::bodega($this->bodega->id);
     $this->proyecto = Proyecto::factory()->create();

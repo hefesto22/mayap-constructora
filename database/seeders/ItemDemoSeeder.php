@@ -6,9 +6,9 @@ namespace Database\Seeders;
 
 use App\Enums\CategoriaItem;
 use App\Models\Item;
-use App\Models\Material;
 use App\Models\UnidadMedida;
 use App\Models\Zona;
+use App\Services\Catalogos\VincularMaterialAItemService;
 use Illuminate\Database\Seeder;
 
 /**
@@ -47,50 +47,51 @@ class ItemDemoSeeder extends Seeder
             return;
         }
 
-        // Map de unidades por código para resolver IDs sin queries N+1
-        $unidades = UnidadMedida::pluck('id', 'codigo')->all();
+        // Asegura las unidades que usa la ficha real del cliente (crea las
+        // que falten). Devuelve mapa codigo => id.
+        $unidades = [
+            'BOLSA' => $this->unidad('BOLSA', 'Bolsa'),
+            'M3'    => $this->unidad('M3', 'Metro cúbico', 'm³'),
+            'PT'    => $this->unidad('PT', 'Pie tablar', 'pt'),
+            'LANCE' => $this->unidad('LANCE', 'Lance'),
+            'LIBRA' => $this->unidad('LIBRA', 'Libra', 'lb'),
+            'LB'    => $this->unidad('LB', 'Libra', 'lb'),
+            'JDR'   => $this->unidad('JDR', 'Jornada'),
+            'DIA'   => $this->unidad('DIA', 'Día'),
+        ];
 
+        // Precios y desperdicios EXACTOS de la ficha real del cliente (Excel
+        // "LOSA DE CONCRETO ALIGERADA"). Armar esa ficha con estos items
+        // reproduce el total L2,604.37.
+        // Formato: [nombre, unidad, categoría, precio (PU), desperdicio %, observaciones]
         $items = [
             // ─── Materiales ──────────────────────────────────────────
-            ['Cemento gris saco 50kg Argos',     'BOLSA', CategoriaItem::Materiales,  280.00, 'Marca más usada en la zona'],
-            ['Cemento gris saco 50kg Holcim',    'BOLSA', CategoriaItem::Materiales,  295.00, null],
-            ['Varilla #3 corrugada 6m grado 40', 'VAR',   CategoriaItem::Materiales,  165.00, 'Para estructuras menores'],
-            ['Varilla #4 corrugada 6m grado 40', 'VAR',   CategoriaItem::Materiales,  290.00, null],
-            ['Varilla #5 corrugada 6m grado 60', 'VAR',   CategoriaItem::Materiales,  445.00, null],
-            ['Bloque de concreto 6"',            'UND',   CategoriaItem::Materiales,   18.50, null],
-            ['Bloque de concreto 4"',            'UND',   CategoriaItem::Materiales,   13.00, null],
-            ['Arena de río',                     'M3',    CategoriaItem::Materiales,  650.00, 'Precio en obra, incluye flete <10km'],
-            ['Grava 3/4"',                       'M3',    CategoriaItem::Materiales,  720.00, null],
-            ['Alambre de amarre #18',            'KG',    CategoriaItem::Materiales,   45.00, null],
+            ['Cemento',           'BOLSA', CategoriaItem::Materiales, 220.00,  5, 'Saco 42.5kg'],
+            ['Arena',             'M3',    CategoriaItem::Materiales, 600.00, 10, null],
+            ['Grava trit 3/4',    'M3',    CategoriaItem::Materiales, 750.00, 10, null],
+            ['Agua',              'M3',    CategoriaItem::Materiales, 100.00, 25, null],
+            ['Lámina de aluzinc', 'PT',    CategoriaItem::Materiales,  52.00,  5, null],
+            ['Canaleta 2x4',      'LANCE', CategoriaItem::Materiales, 450.00,  5, null],
+            ['Var#4',             'LANCE', CategoriaItem::Materiales, 270.00,  5, null],
+            ['Alambre de amarre', 'LIBRA', CategoriaItem::Materiales,  20.00,  5, null],
+            ['Tornillos',         'LB',    CategoriaItem::Materiales,   2.50, 10, null],
+            ['Clavos',            'LIBRA', CategoriaItem::Materiales,  25.00,  5, null],
 
             // ─── Mano de obra ────────────────────────────────────────
-            ['Jornada albañil',                  'JDR',   CategoriaItem::ManoObra,    550.00, 'Sin alimentación'],
-            ['Jornada ayudante',                 'JDR',   CategoriaItem::ManoObra,    380.00, null],
-            ['Jornada maestro de obra',          'JDR',   CategoriaItem::ManoObra,    900.00, 'Especialidad: estructuras'],
-            ['Jornada fontanero',                'JDR',   CategoriaItem::ManoObra,    700.00, null],
-            ['Jornada electricista',             'JDR',   CategoriaItem::ManoObra,    750.00, null],
+            ['Albañil',           'JDR',   CategoriaItem::ManoObra,   750.00,  0, null],
+            ['Soldador',          'JDR',   CategoriaItem::ManoObra,   750.00,  0, null],
+            ['Ayudante',          'JDR',   CategoriaItem::ManoObra,   450.00,  0, null],
 
             // ─── Herramienta y equipo ────────────────────────────────
-            ['Hora-máquina mezcladora 1 saco',   'HM',    CategoriaItem::HerramientaEquipo,  85.00, 'Incluye combustible'],
-            ['Hora-máquina vibrador concreto',   'HM',    CategoriaItem::HerramientaEquipo,  60.00, null],
-            ['Alquiler andamio metálico/cuerpo', 'JDR',   CategoriaItem::HerramientaEquipo, 120.00, 'Por día'],
-            ['Hora-máquina retroexcavadora',     'HM',    CategoriaItem::HerramientaEquipo, 950.00, 'Incluye operador y combustible'],
-
-            // ─── Indirectos ──────────────────────────────────────────
-            ['Transporte materiales <10 km',     'VIAJE', CategoriaItem::Indirectos,  450.00, 'Volqueta 7m³'],
-            ['Supervisión técnica obra',         'JDR',   CategoriaItem::Indirectos, 1200.00, 'Ingeniero residente medio tiempo'],
+            ['Concretera',        'DIA',   CategoriaItem::HerramientaEquipo, 1000.00, 0, null],
+            ['Vibrador',          'DIA',   CategoriaItem::HerramientaEquipo,  700.00, 0, null],
+            ['Soldadora',         'DIA',   CategoriaItem::HerramientaEquipo,  400.00, 0, null],
         ];
 
         $creados = 0;
         $existentes = 0;
 
-        foreach ($items as [$nombre, $unidadCodigo, $categoria, $precio, $observaciones]) {
-            if (! isset($unidades[$unidadCodigo])) {
-                $this->command->warn("Unidad {$unidadCodigo} no encontrada — saltando '{$nombre}'.");
-
-                continue;
-            }
-
+        foreach ($items as [$nombre, $unidadCodigo, $categoria, $precio, $desperdicio, $observaciones]) {
             $existe = Item::where('zona_id', $zona->id)
                 ->where('categoria', $categoria->value)
                 ->whereRaw('UPPER(nombre) = ?', [mb_strtoupper($nombre, 'UTF-8')])
@@ -108,14 +109,15 @@ class ItemDemoSeeder extends Seeder
 
             // Código se autogenera vía el creating event del modelo
             Item::create([
-                'material_id'          => $materialId,
-                'zona_id'              => $zona->id,
-                'unidad_medida_id'     => $unidades[$unidadCodigo],
-                'categoria'            => $categoria,
-                'nombre'               => $nombre,
-                'precio_unitario'      => $precio,
-                'observaciones_precio' => $observaciones,
-                'activo'               => true,
+                'material_id'            => $materialId,
+                'zona_id'                => $zona->id,
+                'unidad_medida_id'       => $unidades[$unidadCodigo],
+                'categoria'              => $categoria,
+                'nombre'                 => $nombre,
+                'precio_unitario'        => $precio,
+                'desperdicio_porcentaje' => $desperdicio,
+                'observaciones_precio'   => $observaciones,
+                'activo'                 => true,
             ]);
 
             $creados++;
@@ -125,30 +127,23 @@ class ItemDemoSeeder extends Seeder
     }
 
     /**
-     * Devuelve el id del Material físico canónico para un item, creándolo si
-     * no existe. Solo aplica a categorías inventariables; para el resto
-     * devuelve null (mano de obra e indirectos no son materiales).
-     *
-     * Global por (categoría, nombre): items de distintas zonas con el mismo
-     * nombre comparten el MISMO material físico.
+     * Material físico canónico del item. La regla vive en
+     * VincularMaterialAItemService (única fuente — ver §8 de instrucciones).
      */
     private function materialParaItem(CategoriaItem $categoria, string $nombre, int $unidadId): ?int
     {
-        if (! in_array($categoria, [CategoriaItem::Materiales, CategoriaItem::HerramientaEquipo], true)) {
-            return null;
-        }
+        return app(VincularMaterialAItemService::class)
+            ->materialCanonicoPara($categoria, $nombre, $unidadId);
+    }
 
-        $material = Material::query()
-            ->where('categoria', $categoria->value)
-            ->whereRaw('UPPER(nombre) = ?', [mb_strtoupper($nombre, 'UTF-8')])
-            ->first()
-            ?? Material::create([
-                'unidad_medida_id' => $unidadId,
-                'categoria'        => $categoria,
-                'nombre'           => $nombre,
-                'activo'           => true,
-            ]);
-
-        return $material->id;
+    /**
+     * Busca o crea una unidad de medida por código. Devuelve su id.
+     */
+    private function unidad(string $codigo, string $nombre, ?string $simbolo = null): int
+    {
+        return UnidadMedida::firstOrCreate(
+            ['codigo' => $codigo],
+            ['nombre' => $nombre, 'simbolo' => $simbolo, 'activo' => true],
+        )->id;
     }
 }

@@ -17,6 +17,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 /**
@@ -70,6 +71,7 @@ class ItemForm
                     ->options(CategoriaItem::options())
                     ->required()
                     ->native(false)
+                    ->live()
                     ->prefixIcon('heroicon-o-squares-2x2')
                     ->disabledOn('edit')
                     ->dehydrated()
@@ -150,14 +152,62 @@ class ItemForm
                     ])->id),
 
                 TextInput::make('precio_unitario')
-                    ->label('Precio unitario')
+                    ->label('Precio unitario (SIN ISV)')
                     ->required()
                     ->numeric()
                     ->minValue(0)
                     ->step(0.01)
                     ->default(0)
                     ->prefix('L.')
-                    ->helperText('Precio en lempiras por unidad. La fecha de actualización se registra automáticamente al cambiarlo.'),
+                    ->helperText('Precio NETO por unidad — el ISV pagado es crédito fiscal, no costo. Si te dieron el precio con ISV, usa el campo de al lado y se desglosa solo.'),
+
+                // Captura inteligente: en la ferretería te dicen "200 con ISV".
+                // Escribes 200 aquí y el sistema guarda el neto (200/1.15).
+                // No se persiste — es solo una calculadora de desglose. Solo
+                // aplica a lo que factura con ISV: materiales y herramienta
+                // (los jornales e indirectos no llevan ISV).
+                TextInput::make('precio_con_isv')
+                    ->label('¿Te dieron el precio CON ISV? Escríbelo aquí')
+                    ->numeric()
+                    ->minValue(0)
+                    ->step(0.01)
+                    ->prefix('L.')
+                    ->dehydrated(false)
+                    ->visible(function (callable $get): bool {
+                        $categoria = $get('categoria');
+
+                        if ($categoria instanceof CategoriaItem) {
+                            $categoria = $categoria->value;
+                        }
+
+                        return in_array($categoria, [
+                            CategoriaItem::Materiales->value,
+                            CategoriaItem::HerramientaEquipo->value,
+                        ], strict: true);
+                    })
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        if (! is_numeric($state)) {
+                            return;
+                        }
+
+                        $tasa = (string) config('honduras.impuestos.isv.tasa_general', 0.15);
+                        $neto = bcdiv((string) $state, bcadd('1', $tasa, 4), 6);
+
+                        $set('precio_unitario', bcadd($neto, '0.005', 2));
+                    })
+                    ->helperText('Se desglosa automáticamente: guarda el precio sin ISV en el campo anterior.'),
+
+                TextInput::make('desperdicio_porcentaje')
+                    ->label('Desperdicio %')
+                    ->numeric()
+                    ->minValue(0)
+                    ->maxValue(100)
+                    ->step(0.01)
+                    ->default(0)
+                    ->suffix('%')
+                    ->prefixIcon('heroicon-o-trash')
+                    ->helperText('Se pre-carga en las fichas al elegir este item. Informativo: documenta la pérdida ya considerada en el rendimiento.'),
 
                 Textarea::make('observaciones_precio')
                     ->label('Observaciones sobre el precio')

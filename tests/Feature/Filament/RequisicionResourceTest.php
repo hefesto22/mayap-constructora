@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Enums\CategoriaItem;
 use App\Enums\EstadoRequisicion;
 use App\Filament\Resources\Requisiciones\Pages\CreateRequisicion;
 use App\Filament\Resources\Requisiciones\Pages\ListRequisiciones;
+use App\Models\Ficha;
+use App\Models\FichaLinea;
+use App\Models\Item;
 use App\Models\Material;
 use App\Models\Proyecto;
+use App\Models\ProyectoRenglon;
 use App\Models\Requisicion;
 use App\Models\User;
+use App\Models\Zona;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
@@ -43,8 +49,24 @@ test('RequisicionResource: lista renderiza sin error', function (): void {
 });
 
 test('RequisicionResource: crea una requisición con líneas y solicitante', function (): void {
-    $proyecto = Proyecto::factory()->create();
+    // El select de materiales solo lista los PRESUPUESTADOS en las fichas
+    // de la obra, así que el material debe estar en la composición.
+    $zona = Zona::factory()->create();
+    $proyecto = Proyecto::factory()->create(['zona_id' => $zona->id]);
     $material = Material::factory()->create();
+
+    $item = Item::factory()
+        ->enZona($zona)
+        ->deCategoria(CategoriaItem::Materiales)
+        ->conMaterial($material)
+        ->create();
+    $ficha = Ficha::factory()->create(['zona_id' => $zona->id]);
+    FichaLinea::factory()->paraFicha($ficha)->conItem($item)->conRendimiento('2.000000')->create();
+    ProyectoRenglon::factory()
+        ->paraProyecto($proyecto)
+        ->conFicha($ficha)
+        ->conCantidad('100.0000', '500.00')
+        ->create();
 
     Livewire::test(CreateRequisicion::class)
         ->fillForm([

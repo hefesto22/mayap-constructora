@@ -8,7 +8,6 @@ use App\Models\Proyecto;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Reportes\CostoObraPdfService;
-use App\Services\Reportes\CostoProyectoService;
 
 /*
 |--------------------------------------------------------------------------
@@ -39,7 +38,9 @@ test('el HTML del reporte incluye la obra y su desglose de costo', function (): 
         cantidad: '40',
     );
 
-    $html = (new CostoObraPdfService(new CostoProyectoService))->construirHtml($obra);
+    // Resolver por el container (el constructor también inyecta PdfRenderer;
+    // instanciar con `new` se rompe cada vez que crecen las dependencias).
+    $html = app(CostoObraPdfService::class)->construirHtml($obra);
 
     expect($html)
         ->toContain('CONSTRUCTORA MAYAP')

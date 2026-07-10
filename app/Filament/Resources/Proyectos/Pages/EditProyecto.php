@@ -6,12 +6,15 @@ namespace App\Filament\Resources\Proyectos\Pages;
 
 use App\Enums\EstadoProyecto;
 use App\Exceptions\Proyectos\ProyectoNoEditableException;
+use App\Filament\Resources\Proyectos\Actions\AccionesEjecucion;
 use App\Filament\Resources\Proyectos\ProyectoResource;
 use App\Models\Proyecto;
 use App\Services\Proyectos\ActualizarPreciosProyectoService;
 use App\Services\Proyectos\CalcularPrecioProyectoService;
 use App\Services\Proyectos\DuplicarProyectoService;
+use App\Services\Proyectos\TransicionComercialProyectoService;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
@@ -26,31 +29,54 @@ class EditProyecto extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            ViewAction::make(),
-            $this->actionRecalcular(),
-            $this->actionActualizarPrecios(),
-            $this->actionCambiarEstado(),
-            $this->actionDuplicar(),
-            DeleteAction::make()
-                ->visible(fn (Proyecto $record): bool => $record->estado === EstadoProyecto::Borrador),
+            ViewAction::make()
+                ->label('Ver')
+                ->color('gray'),
+            ActionGroup::make([
+                // Estado comercial
+                $this->actionCambiarEstado(),
+                $this->actionVolverABorrador(),
+                // Ejecución de obra
+                AccionesEjecucion::iniciar(),
+                AccionesEjecucion::registrarAnticipo(),
+                AccionesEjecucion::ajustarPlazo(),
+                AccionesEjecucion::pausar(),
+                AccionesEjecucion::reactivar(),
+                AccionesEjecucion::finalizar(),
+                AccionesEjecucion::cancelar(),
+                // Herramientas
+                $this->actionRecalcular(),
+                $this->actionActualizarPrecios(),
+                $this->actionDuplicar(),
+                DeleteAction::make()
+                    ->visible(fn (Proyecto $record): bool => $record->estado === EstadoProyecto::Borrador),
+            ])
+                ->label('Acciones')
+                ->icon('heroicon-m-ellipsis-vertical')
+                ->button(),
         ];
     }
 
     /**
-     * Al guardar cambios en el proyecto o sus renglones, recalcular el
-     * cache de totales para mantener subtotal/ISV/total sincronizados.
+     * Recalcular totales SOLO si cambió algo que los afecte (configuración
+     * de ISV). Guardar campos de cabecera (encargado, fechas, notas) no
+     * toca números — los renglones ya recalculan por su propio flujo.
      */
     protected function afterSave(): void
     {
         /** @var Proyecto $proyecto */
         $proyecto = $this->record;
 
+        if (! $proyecto->wasChanged(['aplica_isv', 'isv_porcentaje'])) {
+            return; // Filament ya muestra su notificación "Guardado".
+        }
+
         $resultado = app(CalcularPrecioProyectoService::class)
             ->recalcular($proyecto);
 
         Notification::make()
             ->success()
-            ->title('Proyecto guardado y recalculado')
+            ->title('ISV actualizado — totales recalculados')
             ->body("Total: L {$resultado->total_cache}")
             ->send();
     }
@@ -75,7 +101,12 @@ class EditProyecto extends EditRecord
                     ->body("Subtotal: L {$resultado->subtotal_cache} · Total: L {$resultado->total_cache}")
                     ->send();
             })
-            ->visible(fn (Proyecto $record): bool => $record->renglones()->exists());
+            // Solo en Borrador: después de aprobar, el precio es contractual
+            // y queda congelado (los cambios van por orden de cambio).
+            ->visible(
+                fn (Proyecto $record): bool => $record->estado === EstadoProyecto::Borrador
+                && $record->renglones()->exists()
+            );
     }
 
     /**
@@ -144,7 +175,12 @@ class EditProyecto extends EditRecord
                     ->options(function (Proyecto $record): array {
                         $opciones = [];
 
-                        foreach ($record->estado->transicionesPermitidas() as $estado) {
+                        foreach ($record->estado->transicionesSimples() as $estado) {
+                            // "Volver a borrador" tiene su propia acción dedicada.
+                            if ($estado === EstadoProyecto::Borrador) {
+                                continue;
+                            }
+
                             $opciones[$estado->value] = $estado->getLabel();
                         }
 
@@ -159,19 +195,12 @@ class EditProyecto extends EditRecord
             ])
             ->action(function (Proyecto $record, array $data): void {
                 $nuevoEstado = EstadoProyecto::from($data['nuevo_estado']);
-                $estadoAnterior = $record->estado;
 
-                $record->update(['estado' => $nuevoEstado->value]);
-
-                activity('cambio_estado_proyecto')
-                    ->performedOn($record)
-                    ->withProperties([
-                        'estado_anterior' => $estadoAnterior->value,
-                        'estado_nuevo'    => $nuevoEstado->value,
-                        'razon'           => $data['razon'] ?? null,
-                    ])
-                    ->event('estado_cambiado')
-                    ->log("Proyecto {$record->codigo}: {$estadoAnterior->getLabel()} → {$nuevoEstado->getLabel()}");
+                app(TransicionComercialProyectoService::class)->cambiar(
+                    $record,
+                    $nuevoEstado,
+                    $data['razon'] ?? null,
+                );
 
                 Notification::make()
                     ->success()
@@ -179,7 +208,46 @@ class EditProyecto extends EditRecord
                     ->body("Nuevo estado: {$nuevoEstado->getLabel()}")
                     ->send();
             })
-            ->visible(fn (Proyecto $record): bool => count($record->estado->transicionesPermitidas()) > 0);
+            ->visible(fn (Proyecto $record): bool => count(array_filter(
+                $record->estado->transicionesSimples(),
+                fn (EstadoProyecto $estado): bool => $estado !== EstadoProyecto::Borrador,
+            )) > 0);
+    }
+
+    /**
+     * Acción "Volver a borrador" — desbloquea una cotización Enviada para
+     * corregir un error en los renglones. Después se vuelve a marcar como
+     * Enviada. El cambio queda registrado en el log de actividad.
+     */
+    private function actionVolverABorrador(): Action
+    {
+        return Action::make('volver_a_borrador')
+            ->label('Volver a borrador')
+            ->icon('heroicon-o-pencil-square')
+            ->color('warning')
+            ->visible(fn (Proyecto $record): bool => $record->estado === EstadoProyecto::Enviada)
+            ->requiresConfirmation()
+            ->modalHeading('Volver la cotización a borrador')
+            ->modalDescription('Se desbloqueará para corregir los renglones. Después podés volver a marcarla como Enviada. El cambio queda registrado.')
+            ->modalSubmitActionLabel('Sí, volver a borrador')
+            ->schema([
+                Textarea::make('razon')
+                    ->label('Motivo de la corrección (opcional)')
+                    ->rows(2)
+                    ->placeholder('EJ: SE EQUIVOCÓ LA CANTIDAD DE UNA FICHA'),
+            ])
+            ->action(function (Proyecto $record, array $data): void {
+                app(TransicionComercialProyectoService::class)->volverABorrador(
+                    $record,
+                    $data['razon'] ?? null,
+                );
+
+                Notification::make()
+                    ->success()
+                    ->title('Cotización en borrador')
+                    ->body('Ya podés corregir los renglones y luego volver a enviarla.')
+                    ->send();
+            });
     }
 
     /**

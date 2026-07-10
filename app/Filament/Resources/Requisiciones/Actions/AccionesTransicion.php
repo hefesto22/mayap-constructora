@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Requisiciones\Actions;
 
 use App\Enums\EstadoRequisicion;
+use App\Filament\Resources\Compras\CompraResource;
 use App\Models\Bodega;
+use App\Models\Existencia;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
 use App\Models\User;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Requisiciones\TransicionarRequisicionService;
+use App\Support\Roles;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -42,11 +45,12 @@ final class AccionesTransicion
             ->label('Autorizar')
             ->icon('heroicon-o-check-circle')
             ->color('info')
-            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Solicitada)
+            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Solicitada
+                && Roles::despachaBodega(auth()->user()))
             ->modalHeading('Autorizar requisición')
             ->modalSubmitActionLabel('Autorizar')
-            ->fillForm(self::prellenarLineas('cantidad_solicitada'))
-            ->schema([self::repeaterLineas('Autorizar')])
+            ->fillForm(self::prellenarLineas('cantidad_solicitada', conStock: true))
+            ->schema([self::repeaterLineas('Autorizar', conStock: true)])
             ->action(function (Requisicion $record, array $data): void {
                 app(TransicionarRequisicionService::class)->autorizar(
                     $record,
@@ -73,7 +77,7 @@ final class AccionesTransicion
                 $record->estado,
                 [EstadoRequisicion::Autorizada, EstadoRequisicion::RequisicionCompra],
                 strict: true,
-            ))
+            ) && Roles::despachaBodega(auth()->user()))
             ->modalHeading('Despachar a obra')
             ->modalSubmitActionLabel('Despachar')
             ->schema([
@@ -127,7 +131,8 @@ final class AccionesTransicion
             ->icon('heroicon-o-arrow-right-circle')
             ->color('info')
             ->requiresConfirmation()
-            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Despachada)
+            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Despachada
+                && Roles::despachaBodega(auth()->user()))
             ->action(function (Requisicion $record): void {
                 app(TransicionarRequisicionService::class)->marcarEnTransito($record, self::userId());
 
@@ -144,7 +149,8 @@ final class AccionesTransicion
             ->label('Recibir')
             ->icon('heroicon-o-inbox-arrow-down')
             ->color('primary')
-            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::EnTransito)
+            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::EnTransito
+                && self::puedeRecibir($record))
             ->modalHeading('Confirmar recepción en obra')
             ->modalSubmitActionLabel('Confirmar recepción')
             ->fillForm(self::prellenarLineas('cantidad_despachada'))
@@ -171,7 +177,8 @@ final class AccionesTransicion
             ->color('success')
             ->requiresConfirmation()
             ->modalDescription('Compara lo despachado con lo recibido. Si cuadra, cierra la requisición; si no, la marca en discrepancia.')
-            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Recibida)
+            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Recibida
+                && Roles::despachaBodega(auth()->user()))
             ->action(function (Requisicion $record): void {
                 $resultado = app(TransicionarRequisicionService::class)->conciliar($record, self::userId());
 
@@ -190,6 +197,25 @@ final class AccionesTransicion
     }
 
     /**
+     * Atajo desde "Requisición de compra": abre el formulario de Compra
+     * prellenado con los materiales y cantidades faltantes de esta
+     * requisición, ya enlazada. Evita capturar la compra desde cero.
+     */
+    public static function registrarEntrada(): Action
+    {
+        return Action::make('registrar_entrada')
+            ->label('Registrar compra')
+            ->icon('heroicon-o-shopping-cart')
+            ->color('success')
+            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::RequisicionCompra
+                && Roles::compra(auth()->user()))
+            ->url(fn (Requisicion $record): string => CompraResource::getUrl(
+                'create',
+                ['requisicion' => $record->id],
+            ));
+    }
+
+    /**
      * Rechaza la requisición desde un estado temprano.
      */
     public static function rechazar(): Action
@@ -202,7 +228,7 @@ final class AccionesTransicion
                 $record->estado,
                 [EstadoRequisicion::Solicitada, EstadoRequisicion::Autorizada, EstadoRequisicion::RequisicionCompra],
                 strict: true,
-            ))
+            ) && Roles::despachaBodega(auth()->user()))
             ->modalHeading('Rechazar requisición')
             ->modalSubmitActionLabel('Rechazar')
             ->schema([
@@ -222,30 +248,60 @@ final class AccionesTransicion
     /**
      * Pre-llena el repeater de líneas desde la requisición, usando el campo
      * dado como cantidad por defecto (solicitada para autorizar, despachada
-     * para recibir).
+     * para recibir). Con $conStock, agrega el stock total en bodegas de cada
+     * material para que quien autoriza decida con información real.
      *
      * @return Closure(Requisicion): array<string, mixed>
      */
-    private static function prellenarLineas(string $campoDefault): Closure
+    private static function prellenarLineas(string $campoDefault, bool $conStock = false): Closure
     {
-        return fn (Requisicion $record): array => [
-            'lineas' => $record->lineas()
-                ->with('material:id,codigo,nombre')
-                ->get()
-                ->map(fn (RequisicionLinea $linea): array => [
-                    'linea_id'            => $linea->id,
-                    'material'            => $linea->material->codigo.' — '.$linea->material->nombre,
-                    'cantidad_solicitada' => (string) $linea->cantidad_solicitada,
-                    'cantidad'            => (string) $linea->getAttribute($campoDefault),
-                ])
-                ->all(),
-        ];
+        return function (Requisicion $record) use ($campoDefault, $conStock): array {
+            $lineas = $record->lineas()->with('material:id,codigo,nombre,consumo_inmediato')->get();
+
+            $stock = $conStock
+                ? Existencia::query()
+                    ->whereNotNull('bodega_id')
+                    ->whereIn('material_id', $lineas->pluck('material_id'))
+                    ->groupBy('material_id')
+                    ->selectRaw('material_id, SUM(cantidad) AS total')
+                    ->pluck('total', 'material_id')
+                : collect();
+
+            return [
+                'lineas' => $lineas
+                    ->map(function (RequisicionLinea $linea) use ($campoDefault, $conStock, $stock): array {
+                        $fila = [
+                            'linea_id'            => $linea->id,
+                            'material'            => $linea->material->codigo.' — '.$linea->material->nombre,
+                            'cantidad_solicitada' => (string) $linea->cantidad_solicitada,
+                            'cantidad'            => (string) $linea->getAttribute($campoDefault),
+                        ];
+
+                        if ($conStock) {
+                            // Consumibles no almacenables (agua de pipa): nunca
+                            // hay stock — no es un faltante, es su flujo normal.
+                            if ($linea->material->consumo_inmediato) {
+                                $fila['stock'] = 'Compra directa (no almacenable)';
+                            } else {
+                                $disponible = (string) ($stock->get($linea->material_id) ?? '0');
+                                $alcanza = bccomp($disponible, (string) $linea->cantidad_solicitada, 4) >= 0;
+
+                                $fila['stock'] = rtrim(rtrim($disponible, '0'), '.')
+                                    .($alcanza ? ' ✓' : ' ✗ INSUFICIENTE');
+                            }
+                        }
+
+                        return $fila;
+                    })
+                    ->all(),
+            ];
+        };
     }
 
     /**
      * Repeater de líneas de solo-lectura salvo la columna de cantidad.
      */
-    private static function repeaterLineas(string $labelCantidad): Repeater
+    private static function repeaterLineas(string $labelCantidad, bool $conStock = false): Repeater
     {
         return Repeater::make('lineas')
             ->label('Líneas')
@@ -253,18 +309,24 @@ final class AccionesTransicion
             ->deletable(false)
             ->reorderable(false)
             ->columnSpanFull()
-            ->schema([
+            ->schema(array_filter([
                 Hidden::make('linea_id'),
                 TextInput::make('material')->label('Material')->disabled()->columnSpan(2),
                 TextInput::make('cantidad_solicitada')->label('Solicitado')->disabled(),
+                $conStock
+                    ? TextInput::make('stock')
+                        ->label('Stock en bodegas')
+                        ->disabled()
+                        ->helperText('✗ = habrá que comprar antes de despachar.')
+                    : null,
                 TextInput::make('cantidad')
                     ->label($labelCantidad)
                     ->numeric()
                     ->required()
                     ->minValue(0)
                     ->step('any'),
-            ])
-            ->columns(4);
+            ]))
+            ->columns($conStock ? 5 : 4);
     }
 
     /**
@@ -292,6 +354,26 @@ final class AccionesTransicion
      * Id del usuario autenticado normalizado a ?int (el contrato de Auth
      * devuelve int|string|null; nuestros usuarios usan id entero).
      */
+    /**
+     * Recibe en obra: el ENCARGADO de esa obra (es quien está físicamente
+     * ahí), o quien tenga visión de bodega/gerencia.
+     */
+    private static function puedeRecibir(Requisicion $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        if (Roles::despachaBodega($user)) {
+            return true;
+        }
+
+        return $user->hasRole(Roles::ENCARGADO_OBRA)
+            && $record->proyecto->esEncargado($user);
+    }
+
     private static function userId(): ?int
     {
         $id = auth()->id();

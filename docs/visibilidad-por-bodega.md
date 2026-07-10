@@ -5,7 +5,7 @@ Controla qué inventario ve cada usuario según las bodegas que tiene asignadas.
 ## Modelo
 
 - **Asignación:** pivot `bodega_user` (muchos-a-muchos). Un usuario puede cubrir varias bodegas. UI en *Administración → Usuarios → Bodegas asignadas*.
-- **Bypass:** permiso Spatie/Shield `ver_todas_las_bodegas`. `super_admin` lo cumple automáticamente (Gate::before de Shield); se le puede asignar a roles administrativos (gerencia) para que vean todo. Helper: `User::puedeVerTodasLasBodegas()`.
+- **Bypass:** permiso Spatie/Shield `VerTodasLasBodegas:Bodega`. `super_admin` lo cumple automáticamente (Gate::before de Shield); se le puede asignar a roles administrativos (gerencia) para que vean todo. Helper: `User::puedeVerTodasLasBodegas()`.
 - **Sin el permiso:** el usuario solo ve el inventario de sus bodegas asignadas (+ el stock en obra, ver abajo).
 
 ## Alcance
@@ -26,7 +26,7 @@ Defense in depth: además del selector limitado, la acción "Registrar entrada" 
 
 ## Usuario sin bodegas asignadas
 
-No ve stock de ninguna bodega (solo el de obra). Es el comportamiento seguro por defecto: para darle acceso, asignale bodegas o el permiso `ver_todas_las_bodegas`.
+No ve stock de ninguna bodega (solo el de obra). Es el comportamiento seguro por defecto: para darle acceso, asignale bodegas o el permiso `VerTodasLasBodegas:Bodega`.
 
 ## Pendiente (futuro)
 

@@ -13,6 +13,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
 class ZonaForm
@@ -59,6 +60,7 @@ class ZonaForm
                         ->schema([
                             Select::make('zona_origen_id')
                                 ->label('Heredar base de precios desde')
+                                ->live()
                                 ->options(fn (): array => Zona::activas()
                                     ->withCount(['items' => fn ($q) => $q->where('activo', true)])
                                     ->orderBy('nombre')
@@ -67,16 +69,30 @@ class ZonaForm
                                         $z->id => "{$z->nombre} ({$z->items_count} items)",
                                     ])
                                     ->all())
-                                ->placeholder('Empezar zona vacía (sin items)')
+                                ->placeholder('Empezar zona vacía (sin items ni fichas)')
                                 ->searchable()
                                 ->preload()
                                 ->prefixIcon('heroicon-o-document-duplicate')
                                 ->helperText(
-                                    'Opcional. Si seleccionas una zona, copiaremos todos sus items '
-                                    .'activos (precios, nombres, categorías, unidades) como punto de '
-                                    .'partida. Después puedes ajustar precios sin afectar la zona origen — '
-                                    .'son items independientes.'
+                                    'Opcional. Copia todos los items activos (precios, nombres, '
+                                    .'categorías, unidades) de la zona elegida como punto de partida. '
+                                    .'Después ajustás precios sin afectar la zona origen — todo es '
+                                    .'independiente.'
                                 ),
+
+                            Toggle::make('copiar_fichas')
+                                ->label('Copiar también las fichas APU')
+                                ->default(true)
+                                ->onColor('success')
+                                ->offColor('gray')
+                                ->visible(fn (Get $get): bool => filled($get('zona_origen_id')))
+                                ->helperText(
+                                    'Solo disponible al heredar una base de precios: las fichas se '
+                                    .'copian usando los items recién clonados y quedan recalculadas '
+                                    .'con los precios de ESTA nueva zona. Sin items heredados no hay '
+                                    .'de dónde calcularlas.'
+                                )
+                                ->columnSpanFull(),
                         ]),
 
                     Tab::make('Estado')

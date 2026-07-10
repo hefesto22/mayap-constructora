@@ -12,6 +12,7 @@ use App\Models\FichaLinea;
 use App\Models\Item;
 use App\Models\UnidadMedida;
 use App\Models\Zona;
+use App\Services\Catalogos\VincularMaterialAItemService;
 use App\Services\Fichas\CalcularPrecioFichaService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Collection;
@@ -182,6 +183,10 @@ class FichasConstructorasSeeder extends Seeder
                     'unidad_medida_id' => $unidades[$codigoUnidad],
                     'precio_unitario'  => $precio,
                     'activo'           => true,
+                    // Vínculo al material físico canónico — sin él, el item
+                    // no participa en inventario ni control presupuestario.
+                    'material_id' => app(VincularMaterialAItemService::class)
+                        ->materialCanonicoPara($categoria, $nombre, $unidades[$codigoUnidad]),
                 ]
             );
         }

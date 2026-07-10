@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Support\Permisos;
+use App\Support\Roles;
 use App\Traits\HasAuditFields;
 use BezhanSalleh\FilamentShield\Support\Utils as ShieldUtils;
 use BezhanSalleh\FilamentShield\Traits\HasPanelShield;
@@ -79,8 +81,13 @@ class User extends Authenticatable implements FilamentUser
             return false;
         }
 
-        return $this->hasRole(ShieldUtils::getSuperAdminName())
-            || $this->hasRole(ShieldUtils::getPanelUserRoleName());
+        // Roles operativos centralizados en App\Support\Roles::OPERATIVOS —
+        // un rol nuevo se agrega ALLÍ, no aquí (§8: sin listas duplicadas).
+        return $this->hasAnyRole([
+            ShieldUtils::getSuperAdminName(),
+            ShieldUtils::getPanelUserRoleName(),
+            ...Roles::OPERATIVOS,
+        ]);
     }
 
     /**
@@ -110,7 +117,7 @@ class User extends Authenticatable implements FilamentUser
 
     /**
      * Bodegas a las que el usuario está asignado. Si NO tiene el permiso
-     * `ver_todas_las_bodegas`, su vista de inventario se limita a estas.
+     * `VerTodasLasBodegas:Bodega`, su vista de inventario se limita a estas.
      *
      * @return BelongsToMany<Bodega, $this>
      */
@@ -133,11 +140,22 @@ class User extends Authenticatable implements FilamentUser
      * ¿El usuario ve el inventario de TODAS las bodegas?
      *
      * super_admin lo cumple vía el Gate::before de Shield; otros roles solo
-     * si se les asignó explícitamente el permiso `ver_todas_las_bodegas`.
+     * si se les asignó explícitamente el permiso (pantalla de Roles, pestaña
+     * Personalizados).
      */
     public function puedeVerTodasLasBodegas(): bool
     {
-        return $this->can('ver_todas_las_bodegas');
+        return $this->can(Permisos::VER_TODAS_LAS_BODEGAS);
+    }
+
+    /**
+     * Obras donde este usuario es encargado (pivote proyecto_encargados).
+     *
+     * @return BelongsToMany<Proyecto, $this>
+     */
+    public function obrasEncargadas(): BelongsToMany
+    {
+        return $this->belongsToMany(Proyecto::class, 'proyecto_encargados')->withTimestamps();
     }
 
     // ─── Relaciones jerárquicas ───────────────────────────────

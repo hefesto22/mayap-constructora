@@ -55,6 +55,53 @@ test('FichaResource: lista renderiza sin error sin fichas', function (): void {
         ->assertSuccessful();
 });
 
+test('FichaResource: la acción Duplicar clona la ficha con sus líneas en la misma zona', function (): void {
+    $cemento = Item::factory()->enZona($this->zona)->conUnidad($this->unidadM2)
+        ->deCategoria(CategoriaItem::Materiales)->create(['precio_unitario' => 220]);
+    $albanil = Item::factory()->enZona($this->zona)->conUnidad($this->unidadJDR)
+        ->deCategoria(CategoriaItem::ManoObra)->create(['precio_unitario' => 750]);
+
+    $ficha = Ficha::factory()->enZona($this->zona)->conUnidad($this->unidadM2)
+        ->create(['nombre' => 'LOSA E=10', 'utilidad_porcentaje' => 25]);
+    FichaLinea::factory()->paraFicha($ficha)->conItem($cemento)->conRendimiento('0.8925', '5')->create();
+    FichaLinea::factory()->paraFicha($ficha)->conItem($albanil)->conRendimiento('0.5', '0')->create();
+
+    Livewire::test(ListFichas::class)
+        ->callTableAction('duplicar', $ficha, ['zona_destino_id' => $this->zona->id])
+        ->assertHasNoTableActionErrors();
+
+    $copia = Ficha::query()->where('nombre', 'LOSA E=10 (COPIA)')->first();
+
+    expect($copia)->not->toBeNull()
+        ->and($copia->zona_id)->toBe($this->zona->id)
+        ->and($copia->lineas()->count())->toBe(2)
+        ->and((float) $copia->precio_venta_cache)->toBeGreaterThan(0.0);
+});
+
+test('FichaResource: Duplicar a OTRA zona usa los items y precios de esa zona', function (): void {
+    $tgu = Zona::factory()->create(['codigo' => 'TGU', 'nombre' => 'Tegucigalpa']);
+
+    // Mismo cemento en ambas zonas, distinto precio.
+    $cementoSrc = Item::factory()->enZona($this->zona)->conUnidad($this->unidadM2)
+        ->deCategoria(CategoriaItem::Materiales)->create(['nombre' => 'CEMENTO', 'precio_unitario' => 220]);
+    $cementoTgu = Item::factory()->enZona($tgu)->conUnidad($this->unidadM2)
+        ->deCategoria(CategoriaItem::Materiales)->create(['nombre' => 'CEMENTO', 'precio_unitario' => 300]);
+
+    $ficha = Ficha::factory()->enZona($this->zona)->conUnidad($this->unidadM2)
+        ->create(['nombre' => 'LOSA', 'utilidad_porcentaje' => 0]);
+    FichaLinea::factory()->paraFicha($ficha)->conItem($cementoSrc)->conRendimiento('1', '0')->create();
+
+    Livewire::test(ListFichas::class)
+        ->callTableAction('duplicar', $ficha, ['zona_destino_id' => $tgu->id])
+        ->assertHasNoTableActionErrors();
+
+    $copia = Ficha::query()->where('zona_id', $tgu->id)->where('nombre', 'LOSA')->first();
+
+    expect($copia)->not->toBeNull()
+        ->and($copia->lineas()->first()->item_id)->toBe($cementoTgu->id)
+        ->and((float) $copia->precio_venta_cache)->toBe(300.0);
+});
+
 test('FichaResource: lista renderiza sin error con fichas', function (): void {
     Ficha::factory()
         ->count(3)
@@ -198,6 +245,41 @@ test('FichaResource: edit header action recalcular dispara el service', function
 
     $ficha->refresh();
     expect((float) $ficha->precio_venta_cache)->toBe(1250.00); // 1000 + 25%
+});
+
+test('FichaResource: header action recalcular_zona recalcula todas las fichas del tab activo', function (): void {
+    $albanil = Item::factory()
+        ->enZona($this->zona)
+        ->conUnidad($this->unidadJDR)
+        ->deCategoria(CategoriaItem::ManoObra)
+        ->conPrecio(800.00)
+        ->create();
+
+    $fichas = Ficha::factory()
+        ->count(2)
+        ->enZona($this->zona)
+        ->conUnidad($this->unidadM2)
+        ->conUtilidad(25.00)
+        ->create();
+
+    foreach ($fichas as $f) {
+        FichaLinea::factory()
+            ->paraFicha($f)
+            ->conItem($albanil)
+            ->conRendimiento('1.000000', '0.00')
+            ->create();
+    }
+
+    // El tab activo por defecto es SRC (zona del beforeEach).
+    Livewire::test(ListFichas::class)
+        ->callAction('recalcular_zona')
+        ->assertHasNoActionErrors();
+
+    foreach ($fichas as $f) {
+        $f->refresh();
+        expect((float) $f->precio_venta_cache)->toBe(1000.00)
+            ->and($f->precio_calculado_at)->not->toBeNull();
+    }
 });
 
 // ─── Autorización ────────────────────────────────────────────────

@@ -23,11 +23,13 @@ class MaterialFactory extends Factory
     {
         return [
             // codigo se autogenera en el modelo (MAT-##### / HE-#####).
-            'unidad_medida_id' => UnidadMedida::factory(),
-            'categoria'        => CategoriaItem::Materiales,
-            'nombre'           => $this->faker->sentence(3),
-            'descripcion'      => null,
-            'activo'           => true,
+            'unidad_medida_id'  => UnidadMedida::factory(),
+            'categoria'         => CategoriaItem::Materiales,
+            'nombre'            => $this->faker->sentence(3),
+            'descripcion'       => null,
+            'activo'            => true,
+            'exento_isv'        => false,
+            'consumo_inmediato' => false,
         ];
     }
 

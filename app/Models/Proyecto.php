@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\EstadoProyecto;
+use App\Enums\ModoPlazo;
 use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\ProyectoFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -68,6 +70,17 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $subtotal_cache
  * @property string $isv_cache
  * @property string $total_cache
+ * @property string|null $anticipo_monto
+ * @property Carbon|null $anticipo_fecha
+ * @property bool $anticipo_recibido
+ * @property ModoPlazo|null $modo_plazo
+ * @property int|null $plazo_dias
+ * @property Carbon|null $fecha_inicio
+ * @property Carbon|null $fecha_fin_estimada
+ * @property Carbon|null $fecha_fin_real
+ * @property string|null $motivo_pausa
+ * @property string|null $motivo_cancelacion
+ * @property string $avance_fisico_cache
  * @property Carbon|null $precio_calculado_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -75,6 +88,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property-read Zona $zona
  * @property-read Cliente $cliente
  * @property-read Collection<int, ProyectoRenglon> $renglones
+ * @property-read Collection<int, ProyectoActividad> $actividades
  */
 class Proyecto extends Model
 {
@@ -103,6 +117,17 @@ class Proyecto extends Model
         'subtotal_cache',
         'isv_cache',
         'total_cache',
+        'anticipo_monto',
+        'anticipo_fecha',
+        'anticipo_recibido',
+        'modo_plazo',
+        'plazo_dias',
+        'fecha_inicio',
+        'fecha_fin_estimada',
+        'fecha_fin_real',
+        'motivo_pausa',
+        'motivo_cancelacion',
+        'avance_fisico_cache',
         'precio_calculado_at',
     ];
 
@@ -120,6 +145,15 @@ class Proyecto extends Model
             'subtotal_cache'      => 'decimal:2',
             'isv_cache'           => 'decimal:2',
             'total_cache'         => 'decimal:2',
+            'anticipo_monto'      => 'decimal:2',
+            'anticipo_fecha'      => 'date',
+            'anticipo_recibido'   => 'boolean',
+            'modo_plazo'          => ModoPlazo::class,
+            'plazo_dias'          => 'integer',
+            'fecha_inicio'        => 'date',
+            'fecha_fin_estimada'  => 'date',
+            'fecha_fin_real'      => 'date',
+            'avance_fisico_cache' => 'decimal:2',
             'precio_calculado_at' => 'datetime',
         ];
     }
@@ -138,6 +172,16 @@ class Proyecto extends Model
                 'isv_porcentaje',
                 'subtotal_cache',
                 'total_cache',
+                'anticipo_monto',
+                'anticipo_recibido',
+                'modo_plazo',
+                'plazo_dias',
+                'fecha_inicio',
+                'fecha_fin_estimada',
+                'fecha_fin_real',
+                'motivo_pausa',
+                'motivo_cancelacion',
+                'avance_fisico_cache',
             ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
@@ -227,6 +271,20 @@ class Proyecto extends Model
         );
     }
 
+    protected function motivoPausa(): Attribute
+    {
+        return Attribute::make(
+            set: static fn (?string $value): ?string => self::aMayusculas($value),
+        );
+    }
+
+    protected function motivoCancelacion(): Attribute
+    {
+        return Attribute::make(
+            set: static fn (?string $value): ?string => self::aMayusculas($value),
+        );
+    }
+
     // ─── Relaciones ────────────────────────────────────────────────
 
     /**
@@ -246,11 +304,39 @@ class Proyecto extends Model
     }
 
     /**
+     * Encargados responsables de la obra (rol encargado_obra) — VARIOS,
+     * para cubrir ausencias. Piden material y confirman recepciones; el
+     * scoping "solo mis obras" usa esta relación.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function encargados(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'proyecto_encargados')->withTimestamps();
+    }
+
+    /**
+     * ¿El usuario es encargado de ESTA obra?
+     */
+    public function esEncargado(User $user): bool
+    {
+        return $this->encargados()->whereKey($user->id)->exists();
+    }
+
+    /**
      * @return HasMany<ProyectoRenglon, $this>
      */
     public function renglones(): HasMany
     {
         return $this->hasMany(ProyectoRenglon::class)->orderBy('orden');
+    }
+
+    /**
+     * @return HasMany<ProyectoActividad, $this>
+     */
+    public function actividades(): HasMany
+    {
+        return $this->hasMany(ProyectoActividad::class)->orderBy('orden');
     }
 
     // ─── Scopes ────────────────────────────────────────────────────
@@ -335,5 +421,78 @@ class Proyecto extends Model
 
         return $this->estado === EstadoProyecto::Enviada
             && $this->fecha_validez->isPast();
+    }
+
+    // ─── Helpers de ejecución (plazo y avance) ─────────────────────
+
+    /**
+     * Días transcurridos de obra desde la fecha de inicio hasta hoy
+     * (o hasta la fecha de fin real si ya terminó). Null si no ha
+     * arrancado.
+     */
+    public function diasTranscurridos(): ?int
+    {
+        if ($this->fecha_inicio === null) {
+            return null;
+        }
+
+        $hasta = $this->fecha_fin_real ?? Carbon::today();
+
+        return (int) round($this->fecha_inicio->diffInDays($hasta));
+    }
+
+    /**
+     * Días que faltan para la fecha de fin estimada. Negativo si ya
+     * pasó (atrasado). Null si no hay fin estimada.
+     */
+    public function diasRestantes(): ?int
+    {
+        if ($this->fecha_fin_estimada === null) {
+            return null;
+        }
+
+        return (int) round(Carbon::today()->diffInDays($this->fecha_fin_estimada));
+    }
+
+    /**
+     * Porcentaje de TIEMPO consumido del plazo (0..100, recortado).
+     * Se mide sobre el lapso calendario inicio → fin estimada, por lo
+     * que funciona igual para plazo en días calendario o hábiles.
+     * Null si no hay inicio o fin estimada.
+     */
+    public function porcentajeTiempo(): ?float
+    {
+        if ($this->fecha_inicio === null || $this->fecha_fin_estimada === null) {
+            return null;
+        }
+
+        $total = (float) $this->fecha_inicio->diffInDays($this->fecha_fin_estimada);
+
+        if ($total <= 0.0) {
+            return null;
+        }
+
+        $hasta = $this->fecha_fin_real ?? Carbon::today();
+        $transcurridos = (float) $this->fecha_inicio->diffInDays($hasta);
+
+        return max(0.0, min(100.0, round(($transcurridos / $total) * 100, 2)));
+    }
+
+    /**
+     * ¿La obra está atrasada? En ejecución o pausada, ya pasó la fecha
+     * de fin estimada y el avance físico aún no llega al 100%.
+     */
+    public function estaAtrasado(): bool
+    {
+        if (! in_array($this->estado, [EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada], strict: true)) {
+            return false;
+        }
+
+        if ($this->fecha_fin_estimada === null) {
+            return false;
+        }
+
+        return Carbon::today()->greaterThan($this->fecha_fin_estimada)
+            && (float) $this->avance_fisico_cache < 100.0;
     }
 }

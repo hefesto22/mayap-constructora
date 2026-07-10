@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RoleSeeder::class,
             AdminUserSeeder::class,
+            RolesInventarioSeeder::class, // después de shield:generate (AdminUserSeeder)
             BrandingSettingSeeder::class,
             CatalogosSeeder::class,
         ]);

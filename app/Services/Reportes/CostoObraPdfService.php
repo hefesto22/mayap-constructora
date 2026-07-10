@@ -6,7 +6,6 @@ namespace App\Services\Reportes;
 
 use App\Models\Proyecto;
 use Illuminate\Support\Facades\View;
-use Spatie\Browsershot\Browsershot;
 
 /**
  * Genera el PDF del estado de costo de una obra con Browsershot (Chromium
@@ -19,6 +18,7 @@ final class CostoObraPdfService
 {
     public function __construct(
         private readonly CostoProyectoService $costos,
+        private readonly PdfRenderer $pdf,
     ) {}
 
     /**
@@ -41,39 +41,9 @@ final class CostoObraPdfService
      */
     public function generar(Proyecto $obra): string
     {
-        $html = $this->construirHtml($obra);
-
-        $directorio = storage_path('app/reportes/costo-obra');
-
-        if (! is_dir($directorio)) {
-            mkdir($directorio, 0755, true);
-        }
-
-        $ruta = "{$directorio}/costo-{$obra->codigo}.pdf";
-
-        $shot = Browsershot::html($html)
-            ->format('Letter')
-            ->margins(12, 12, 12, 12)
-            ->showBackground();
-
-        $chromePath = config('browsershot.chrome_path');
-
-        if (is_string($chromePath) && $chromePath !== '') {
-            $shot->setChromePath($chromePath);
-        }
-
-        $nodeBinary = config('browsershot.node_binary');
-
-        if (is_string($nodeBinary) && $nodeBinary !== '') {
-            $shot->setNodeBinary($nodeBinary);
-        }
-
-        if (config('browsershot.no_sandbox') === true) {
-            $shot->noSandbox();
-        }
-
-        $shot->savePdf($ruta);
-
-        return $ruta;
+        return $this->pdf->guardar(
+            $this->construirHtml($obra),
+            storage_path("app/reportes/costo-obra/costo-{$obra->codigo}.pdf"),
+        );
     }
 }

@@ -10,7 +10,6 @@ use App\Models\CuentaPorPagar;
 use App\Models\Material;
 use App\Models\Proveedor;
 use App\Services\Compras\ConfirmarCompraService;
-use App\Services\Inventario\RegistrarMovimientoService;
 
 /*
 |--------------------------------------------------------------------------
@@ -19,7 +18,7 @@ use App\Services\Inventario\RegistrarMovimientoService;
 */
 
 beforeEach(function (): void {
-    $this->confirmar = new ConfirmarCompraService(new RegistrarMovimientoService);
+    $this->confirmar = app(ConfirmarCompraService::class);
     $this->bodega = Bodega::factory()->create();
 });
 

@@ -25,16 +25,17 @@ class ItemFactory extends Factory
     public function definition(): array
     {
         return [
-            'material_id'          => null,
-            'zona_id'              => Zona::factory(),
-            'unidad_medida_id'     => UnidadMedida::factory(),
-            'categoria'            => $this->faker->randomElement(CategoriaItem::cases()),
-            'codigo'               => strtoupper(Str::random(8)),
-            'nombre'               => $this->faker->sentence(3),
-            'descripcion'          => null,
-            'precio_unitario'      => $this->faker->randomFloat(2, 1, 5000),
-            'observaciones_precio' => null,
-            'activo'               => true,
+            'material_id'            => null,
+            'zona_id'                => Zona::factory(),
+            'unidad_medida_id'       => UnidadMedida::factory(),
+            'categoria'              => $this->faker->randomElement(CategoriaItem::cases()),
+            'codigo'                 => strtoupper(Str::random(8)),
+            'nombre'                 => $this->faker->sentence(3),
+            'descripcion'            => null,
+            'precio_unitario'        => $this->faker->randomFloat(2, 1, 5000),
+            'desperdicio_porcentaje' => 0,
+            'observaciones_precio'   => null,
+            'activo'                 => true,
         ];
     }
 

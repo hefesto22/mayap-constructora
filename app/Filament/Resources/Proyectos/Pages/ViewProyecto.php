@@ -5,14 +5,10 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Pages;
 
 use App\Filament\Resources\Proyectos\ProyectoResource;
-use App\Models\Proyecto;
-use App\Services\Reportes\CostoObraPdfService;
+use App\Support\Permisos;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Throwable;
 
 class ViewProyecto extends ViewRecord
 {
@@ -21,33 +17,40 @@ class ViewProyecto extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('pdf_costos')
-                ->label('Descargar PDF')
-                ->icon('heroicon-o-document-arrow-down')
-                ->color('gray')
-                ->action(function (): ?BinaryFileResponse {
-                    $record = $this->getRecord();
+            // Presupuesto completo pactado (renglones, precios, ISV,
+            // condiciones, firmas) — respaldo contractual y expediente.
+            $this->accionVerPdf(
+                nombre: 'pdf_composicion',
+                etiqueta: 'PDF Composición',
+                permiso: Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO,
+                ruta: 'reportes.composicion-proyecto',
+            ),
 
-                    if (! $record instanceof Proyecto) {
-                        return null;
-                    }
-
-                    try {
-                        $ruta = app(CostoObraPdfService::class)->generar($record);
-                    } catch (Throwable $e) {
-                        Notification::make()
-                            ->title('No se pudo generar el PDF')
-                            ->body('Verifica que Chromium esté disponible en el servidor.')
-                            ->danger()
-                            ->send();
-
-                        return null;
-                    }
-
-                    return response()->download($ruta)->deleteFileAfterSend();
-                }),
+            // Reporte gerencial: costo real y MARGEN — dato sensible.
+            $this->accionVerPdf(
+                nombre: 'pdf_costos',
+                etiqueta: 'PDF Costos',
+                permiso: Permisos::DESCARGAR_PDF_COSTOS_PROYECTO,
+                ruta: 'reportes.costo-obra',
+            ),
 
             EditAction::make(),
         ];
+    }
+
+    /**
+     * Acción de vista previa de PDF: abre el documento INLINE en una
+     * pestaña nueva (visor del navegador — imprimir/descargar son opción
+     * del usuario, no obligación). Visible solo con su permiso
+     * personalizado; el controller lo re-valida en servidor.
+     */
+    private function accionVerPdf(string $nombre, string $etiqueta, string $permiso, string $ruta): Action
+    {
+        return Action::make($nombre)
+            ->label($etiqueta)
+            ->icon('heroicon-o-eye')
+            ->color('gray')
+            ->visible(fn (): bool => auth()->user()?->can($permiso) ?? false)
+            ->url(fn (): string => route($ruta, $this->getRecord()), shouldOpenInNewTab: true);
     }
 }

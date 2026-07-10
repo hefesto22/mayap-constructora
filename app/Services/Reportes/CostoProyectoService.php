@@ -66,21 +66,34 @@ final class CostoProyectoService
     }
 
     /**
-     * Materiales = despachado a la obra − devuelto a bodega.
+     * Materiales = despachado desde bodega + compras directas a obra
+     * − devuelto a bodega.
+     *
+     * Las compras con entrega directa (EntradaCompra cuyo destino es la
+     * obra) imputan costo al proyecto al precio real de factura — nunca
+     * pasaron por bodega, así que el despacho no las captura.
      */
     private function costoMateriales(int $proyectoId): string
     {
         $despachado = (string) MovimientoInventario::query()
             ->where('proyecto_destino_id', $proyectoId)
-            ->where('tipo', TipoMovimientoInventario::SalidaDespacho->value)
+            ->whereIn('tipo', [
+                TipoMovimientoInventario::SalidaDespacho->value,
+                TipoMovimientoInventario::EntradaCompra->value,
+            ])
             ->sum('valor_total');
 
-        $devuelto = (string) MovimientoInventario::query()
+        // Devoluciones a bodega Y anulaciones de compra restan: material
+        // (o compra) que finalmente NO es costo de la obra.
+        $revertido = (string) MovimientoInventario::query()
             ->where('proyecto_origen_id', $proyectoId)
-            ->where('tipo', TipoMovimientoInventario::Devolucion->value)
+            ->whereIn('tipo', [
+                TipoMovimientoInventario::Devolucion->value,
+                TipoMovimientoInventario::AnulacionCompra->value,
+            ])
             ->sum('valor_total');
 
-        return bcsub($despachado, $devuelto, self::SCALE);
+        return bcsub($despachado, $revertido, self::SCALE);
     }
 
     /**

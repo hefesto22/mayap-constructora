@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Fichas\Tables;
 
+use App\Filament\Resources\Fichas\FichaResource;
 use App\Models\Ficha;
 use App\Models\Zona;
 use App\Services\Fichas\CalcularPrecioFichaService;
+use App\Services\Fichas\DuplicarFichaAOtraZona;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Support\Enums\FontWeight;
 use Filament\Support\Enums\TextSize;
@@ -179,6 +182,45 @@ class FichasTable
                         ],
                     )),
                 EditAction::make(),
+                Action::make('duplicar')
+                    ->label('Duplicar')
+                    ->icon('heroicon-o-document-duplicate')
+                    ->color('info')
+                    ->modalHeading('Duplicar ficha')
+                    ->modalDescription(fn (Ficha $record): string => "Crea una copia de «{$record->nombre}» con todas sus líneas, rendimientos y desperdicios. Elegí la zona destino: los items toman el precio de ESA zona; los que no existan se crean con precio 0 para que los completes.")
+                    ->modalSubmitActionLabel('Duplicar')
+                    ->schema([
+                        Select::make('zona_destino_id')
+                            ->label('Zona destino')
+                            ->options(fn (): array => Zona::activas()->orderBy('nombre')->pluck('nombre', 'id')->all())
+                            ->default(fn (Ficha $record): int => $record->zona_id)
+                            ->required()
+                            ->native(false)
+                            ->helperText('Misma zona = copia para ajustar. Otra zona = la ficha con los precios de esa zona.'),
+                    ])
+                    ->action(function (Ficha $record, array $data): void {
+                        $zonaDestino = Zona::findOrFail((int) $data['zona_destino_id']);
+
+                        $copia = app(DuplicarFichaAOtraZona::class)
+                            ->ejecutar($record, $zonaDestino)['ficha_destino'];
+
+                        // Misma zona → distingue el nombre para no confundir.
+                        if ($zonaDestino->id === $record->zona_id) {
+                            $copia->update(['nombre' => $record->nombre.' (COPIA)']);
+                        }
+
+                        Notification::make()
+                            ->success()
+                            ->title('Ficha duplicada')
+                            ->body("Se creó {$copia->codigo} en zona {$zonaDestino->codigo}. Editala para ajustar.")
+                            ->actions([
+                                Action::make('editar')
+                                    ->label('Editar copia')
+                                    ->url(FichaResource::getUrl('edit', ['record' => $copia]))
+                                    ->button(),
+                            ])
+                            ->send();
+                    }),
                 Action::make('recalcular')
                     ->label('Recalcular')
                     ->icon('heroicon-o-arrow-path')

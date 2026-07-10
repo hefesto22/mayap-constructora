@@ -7,7 +7,10 @@ namespace App\Filament\Resources\Fichas\Pages;
 use App\Filament\Resources\Fichas\FichaResource;
 use App\Models\Ficha;
 use App\Models\Zona;
+use App\Services\Fichas\RecalcularFichasDeZona;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,15 +22,96 @@ class ListFichas extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
+            $this->accionRecalcularZona(),
             CreateAction::make(),
         ];
+    }
+
+    /**
+     * Botón "Recalcular zona": de un solo clic recalcula el cache de precio
+     * de TODAS las fichas activas de la zona del tab abierto. Pensado para
+     * usarse después de actualizar varios precios de items: el ingeniero
+     * propaga los nuevos precios a todas las fichas de la zona sin entrar
+     * una por una.
+     *
+     * - Resuelve la zona desde el tab activo (el listado siempre está
+     *   filtrado por zona, no hay vista "Todas").
+     * - Confirmación con el conteo exacto de fichas que se van a recalcular,
+     *   para que el usuario sepa el alcance antes de propagar.
+     * - Solo visible si la zona activa tiene al menos una ficha.
+     */
+    protected function accionRecalcularZona(): Action
+    {
+        return Action::make('recalcular_zona')
+            ->label(fn (): string => 'Recalcular '.($this->activeTab ?? ''))
+            ->icon('heroicon-o-arrow-path')
+            ->color('warning')
+            ->outlined()
+            ->visible(fn (): bool => $this->zonaDelTabActivo() instanceof Zona)
+            ->requiresConfirmation()
+            ->modalHeading('Recalcular todas las fichas de la zona')
+            ->modalDescription(function (): string {
+                $zona = $this->zonaDelTabActivo();
+
+                if (! $zona instanceof Zona) {
+                    return 'No hay una zona seleccionada.';
+                }
+
+                $total = Ficha::query()
+                    ->where('zona_id', $zona->id)
+                    ->where('activa', true)
+                    ->count();
+
+                return "Se recalculará el precio de {$total} ficha(s) activa(s) de la zona "
+                    ."{$zona->codigo} con los precios actuales de los items. Útil tras "
+                    .'actualizar precios. No modifica las fichas de otras zonas.';
+            })
+            ->modalSubmitActionLabel('Recalcular ahora')
+            ->action(function (): void {
+                $zona = $this->zonaDelTabActivo();
+
+                if (! $zona instanceof Zona) {
+                    Notification::make()
+                        ->warning()
+                        ->title('Sin zona seleccionada')
+                        ->body('Abre el tab de una zona para recalcular sus fichas.')
+                        ->send();
+
+                    return;
+                }
+
+                $count = app(RecalcularFichasDeZona::class)->ejecutar($zona);
+
+                Notification::make()
+                    ->success()
+                    ->title("{$count} ficha(s) recalculada(s)")
+                    ->body("Las fichas de la zona {$zona->codigo} quedaron al día con los precios actuales.")
+                    ->send();
+            });
+    }
+
+    /**
+     * Resuelve la zona correspondiente al tab activo (su código). Devuelve
+     * null si no hay tab o el código no mapea a una zona activa.
+     */
+    private function zonaDelTabActivo(): ?Zona
+    {
+        $codigo = $this->activeTab;
+
+        if ($codigo === null || $codigo === '') {
+            return null;
+        }
+
+        return Zona::activas()->where('codigo', $codigo)->first();
     }
 
     /**
      * Tabs por zona para filtrar el listado rápidamente.
      *
      * Patrón:
-     *  - Tab "Todas" siempre primero, badge = total global de fichas.
+     *  - SOLO tabs por zona (sin "Todas"): las fichas son por zona y verlas
+     *    todas juntas mezcla precios distintos. Por defecto abre en Santa
+     *    Rosa (SRC), ver getDefaultActiveTab.
      *  - Un tab por zona ACTIVA, ordenadas alfabéticamente por código.
      *    El badge muestra la cantidad de fichas en esa zona.
      *  - Si una zona tiene fichas con cache desactualizado, el badge
@@ -57,16 +141,7 @@ class ListFichas extends ListRecords
             ->groupBy('zona_id')
             ->pluck('total', 'zona_id');
 
-        $totalGlobal = (int) $conteosTotales->sum();
-        $totalStaleGlobal = (int) $conteosStale->sum();
-
-        $tabs = [
-            'todas' => Tab::make('Todas')
-                ->label('Todas las zonas')
-                ->icon('heroicon-o-rectangle-stack')
-                ->badge($totalGlobal)
-                ->badgeColor($totalStaleGlobal > 0 ? 'warning' : 'gray'),
-        ];
+        $tabs = [];
 
         $zonas = Zona::activas()->orderBy('codigo')->get();
 
@@ -85,5 +160,17 @@ class ListFichas extends ListRecords
         }
 
         return $tabs;
+    }
+
+    /**
+     * Zona por defecto al abrir las fichas: Santa Rosa de Copán (SRC). Si esa
+     * zona no existe, la primera zona activa. Evita arrancar en una vista
+     * global que mezclaría fichas de distintas zonas.
+     */
+    public function getDefaultActiveTab(): string|int|null
+    {
+        $codigos = Zona::activas()->orderBy('codigo')->pluck('codigo');
+
+        return $codigos->contains('SRC') ? 'SRC' : $codigos->first();
     }
 }

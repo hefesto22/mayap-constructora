@@ -74,6 +74,7 @@ class RequisicionesTable
                 EditAction::make()
                     ->visible(fn (Requisicion $record): bool => $record->estado->permiteEditarLineas()),
                 AccionesTransicion::autorizar(),
+                AccionesTransicion::registrarEntrada(),
                 AccionesTransicion::despachar(),
                 AccionesTransicion::marcarEnTransito(),
                 AccionesTransicion::recibir(),

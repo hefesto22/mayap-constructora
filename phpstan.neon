@@ -124,6 +124,7 @@ parameters:
               - app/Models/Cliente.php
               - app/Models/Proyecto.php
               - app/Models/ProyectoRenglon.php
+              - app/Models/ProyectoActividad.php
               - app/Models/Bodega.php
               - app/Models/Existencia.php
               - app/Models/Requisicion.php
@@ -146,7 +147,10 @@ parameters:
               - app/Services/Proyectos/AgregarRenglonAProyectoService.php
               - app/Services/Proyectos/ActualizarPreciosProyectoService.php
               - app/Services/Proyectos/DuplicarProyectoService.php
+              - app/Services/Proyectos/CalcularAvanceProyectoService.php
+              - app/Services/Proyectos/RegistrarAnticipoService.php
               - database/factories/ProyectoRenglonFactory.php
+              - app/Models/ProyectoRenglon.php
               - app/Models/Existencia.php
               - app/Services/Inventario/RegistrarMovimientoService.php
               - app/Services/Requisiciones/TransicionarRequisicionService.php
@@ -160,6 +164,23 @@ parameters:
               - app/Services/Cobranza/CobrarService.php
               - app/Filament/Resources/Proyectos/Tables/ProyectosTable.php
               - app/Filament/Resources/Proyectos/Schemas/ProyectoCostoInfolist.php
+              - app/Services/Requisiciones/PresupuestoMaterial.php
+              - app/Services/Requisiciones/PresupuestoMaterialesProyectoService.php
+              - app/Filament/Resources/Requisiciones/Schemas/RequisicionForm.php
+              - app/Filament/Resources/Requisiciones/Actions/AccionesTransicion.php
+              - app/Filament/Resources/Items/Schemas/ItemForm.php
+              - app/Filament/Resources/Compras/Schemas/CompraForm.php
+              - tests/Feature/Compras/CompraMixtaYFleteTest.php
+              - tests/Feature/Compras/ConsumoInmediatoTest.php
+              - tests/Feature/Compras/AnularCompraTest.php
+              - app/Services/Compras/AnularCompraService.php
+              - app/Services/Compras/VerificarRecepcionService.php
+              - app/Services/Compras/ValidarDestinoObraCompraService.php
+              - app/Models/CompraLinea.php
+              - tests/Feature/Compras/VerificarRecepcionTest.php
+              - tests/Feature/Compras/DestinoObraCompraTest.php
+              - app/Services/Compras/CorregirRecepcionService.php
+              - tests/Feature/Compras/CorregirRecepcionTest.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no
@@ -180,6 +201,7 @@ parameters:
               - app/Filament/Resources/PartesTrabajo/Tables/*
               - app/Filament/Resources/Mantenimientos/Tables/*
               - app/Filament/Resources/Planillas/Tables/*
+              - app/Filament/Resources/Proyectos/RelationManagers/*
         - identifier: method.notFound
           paths:
               - app/Filament/Resources/Items/Tables/*
@@ -193,6 +215,7 @@ parameters:
               - app/Filament/Resources/PartesTrabajo/Tables/*
               - app/Filament/Resources/Mantenimientos/Tables/*
               - app/Filament/Resources/Planillas/Tables/*
+              - app/Filament/Resources/Proyectos/RelationManagers/*
 
         # config/filesystems.php es archivo de Laravel — no nuestro
         - identifier: argument.type

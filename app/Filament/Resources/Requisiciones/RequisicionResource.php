@@ -12,6 +12,8 @@ use App\Filament\Resources\Requisiciones\RelationManagers\TransicionesRelationMa
 use App\Filament\Resources\Requisiciones\Schemas\RequisicionForm;
 use App\Filament\Resources\Requisiciones\Tables\RequisicionesTable;
 use App\Models\Requisicion;
+use App\Models\User;
+use App\Support\Roles;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -50,8 +52,17 @@ class RequisicionResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with(['proyecto:id,codigo,nombre', 'solicitante:id,name']);
+
+        // El encargado de obra solo ve requisiciones de SUS obras.
+        $user = auth()->user();
+
+        if ($user instanceof User && Roles::soloEncargado($user)) {
+            $query->whereHas('proyecto.encargados', fn (Builder $q): Builder => $q->whereKey($user->id));
+        }
+
+        return $query;
     }
 
     /**

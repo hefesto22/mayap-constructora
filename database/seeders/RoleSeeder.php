@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Support\Permisos;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
@@ -59,12 +60,10 @@ class RoleSeeder extends Seeder
             );
         }
 
-        // Permisos personalizados de dominio (no atados a un Resource).
-        // Fase 2: quien tenga este permiso ve el inventario de TODAS las
-        // bodegas; quien no, solo el de sus bodegas asignadas (bodega_user).
-        $customPermissions = [
-            'ver_todas_las_bodegas',
-        ];
+        // Permisos personalizados de dominio (no atados a un Resource) —
+        // nombres desde la ÚNICA fuente App\Support\Permisos, que también
+        // alimenta la pestaña Personalizados de la pantalla de Roles.
+        $customPermissions = array_keys(Permisos::PERSONALIZADOS);
 
         foreach ($customPermissions as $permission) {
             Permission::firstOrCreate(

@@ -16,6 +16,7 @@ use App\Services\Fichas\CalcularPrecioFichaService;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -26,6 +27,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 
@@ -161,18 +163,17 @@ class FichaForm
                     ->reorderableWithDragAndDrop()
                     ->orderColumn('orden')
                     ->addActionLabel('+ Agregar línea')
-                    ->collapsible()
-                    ->collapsed()                       // ← ARRANCAN COLAPSADAS
-                    ->collapseAllAction(
-                        fn ($action) => $action->label('Contraer todo')
-                    )
-                    ->expandAllAction(
-                        fn ($action) => $action->label('Expandir todo')
-                    )
                     ->cloneable()
-                    ->itemLabel(fn (array $state): HtmlString => self::etiquetaLineaCompacta($state))
+                    ->table([
+                        TableColumn::make('Tipo')->width('120px'),
+                        TableColumn::make('Item / concepto'),
+                        TableColumn::make('Rend. / %')->width('120px'),
+                        TableColumn::make('Desp. / base')->width('130px'),
+                        TableColumn::make('Subtotal / sección')->width('170px'),
+                        TableColumn::make('Notas'),
+                    ])
                     ->schema(self::lineaSchema())
-                    ->defaultItems(0)
+                    ->defaultItems(1)                   // arranca con una línea lista para llenar
                     ->minItems(0)
                     ->live(debounce: 500),
 
@@ -181,151 +182,155 @@ class FichaForm
     }
 
     /**
-     * Schema compacto de cada línea: layout horizontal en grid de 12 columnas.
-     * Cuando la línea está colapsada solo se muestra `etiquetaLineaCompacta`.
-     * Al expandir, los campos van en filas densas (no apiladas verticalmente).
+     * Schema de cada línea en modo TABLA: cada entrada de primer nivel ocupa
+     * una columna. Las columnas que cambian según el tipo envuelven los dos
+     * campos (item / porcentaje) en un Grid de 1 columna con visibilidad
+     * mutuamente excluyente. Al elegir un item se PRE-CARGA su desperdicio.
      *
      * @return array<int, Component>
      */
     private static function lineaSchema(): array
     {
         return [
-            // ─── Fila 1: Tipo + Item / Descripción ─────────────────
-            Grid::make(12)
-                ->schema([
-                    Select::make('tipo')
-                        ->hiddenLabel()
-                        ->placeholder('Tipo')
-                        ->options(TipoLineaFicha::options())
-                        ->default(TipoLineaFicha::Item->value)
-                        ->required()
-                        ->live()
-                        ->native(false)
-                        ->prefixIcon('heroicon-o-bars-3-bottom-left')
-                        ->columnSpan(['default' => 12, 'md' => 3]),
+            // 1 · Tipo
+            Select::make('tipo')
+                ->hiddenLabel()
+                ->options(TipoLineaFicha::options())
+                ->default(TipoLineaFicha::Item->value)
+                ->selectablePlaceholder(false)
+                ->required()
+                ->live()
+                ->native(false),
 
-                    // tipo='item': Item del catálogo
-                    Select::make('item_id')
-                        ->hiddenLabel()
-                        ->placeholder('Selecciona item del catálogo…')
-                        ->options(function (Get $get): array {
-                            $zonaId = $get('../../zona_id');
+            // 2 · Item (item) / Descripción (porcentaje)
+            Grid::make(1)->schema([
+                Select::make('item_id')
+                    ->hiddenLabel()
+                    ->placeholder('Item del catálogo…')
+                    ->options(function (Get $get): array {
+                        $zonaId = $get('../../zona_id');
 
-                            if ($zonaId === null) {
-                                return [];
-                            }
+                        if ($zonaId === null) {
+                            return [];
+                        }
 
-                            return Item::query()
-                                ->where('zona_id', $zonaId)
-                                ->where('activo', true)
-                                ->with('unidadMedida:id,codigo')
-                                ->orderBy('categoria')
-                                ->orderBy('nombre')
-                                ->get()
-                                ->mapWithKeys(fn (Item $item): array => [
-                                    $item->id => sprintf(
-                                        '%s · %s [%s] · L %s',
-                                        $item->codigo,
-                                        $item->nombre,
-                                        $item->unidadMedida->codigo,
-                                        number_format((float) $item->precio_unitario, 2)
-                                    ),
-                                ])
-                                ->all();
-                        })
-                        ->searchable()
-                        ->live(debounce: 500)
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
-                        ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
-                        ->columnSpan(['default' => 12, 'md' => 9]),
+                        return Item::query()
+                            ->where('zona_id', $zonaId)
+                            ->where('activo', true)
+                            ->with('unidadMedida:id,codigo')
+                            ->orderBy('categoria')
+                            ->orderBy('nombre')
+                            ->get()
+                            ->mapWithKeys(fn (Item $item): array => [
+                                $item->id => sprintf(
+                                    '%s · %s [%s] · L %s',
+                                    $item->codigo,
+                                    $item->nombre,
+                                    $item->unidadMedida->codigo,
+                                    number_format((float) $item->precio_unitario, 2)
+                                ),
+                            ])
+                            ->all();
+                    })
+                    ->searchable()
+                    ->live(debounce: 500)
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        if ($state === null) {
+                            return;
+                        }
 
-                    // tipo='porcentaje': Descripción
-                    TextInput::make('descripcion')
-                        ->hiddenLabel()
-                        ->placeholder('HERRAMIENTA MENOR / IMPREVISTOS / SUPERVISIÓN…')
-                        ->maxLength(200)
-                        ->live(debounce: 500)
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
-                        ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
-                        ->mayusculas()
-                        ->columnSpan(['default' => 12, 'md' => 9]),
-                ]),
+                        $item = Item::find($state);
 
-            // ─── Fila 2 (tipo=item): Rendimiento + Desperdicio + Subtotal en vivo ──
-            Grid::make(12)
-                ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
-                ->schema([
-                    TextInput::make('rendimiento')
-                        ->label('Rendimiento efectivo')
-                        ->numeric()
-                        ->step(0.000001)
-                        ->minValue(0)
-                        ->live(debounce: 500)
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
-                        ->placeholder('0.892500')
-                        ->columnSpan(['default' => 12, 'md' => 5])
-                        ->helperText('Valor con la pérdida ya considerada (igual que Excel calcula internamente). Hasta 6 decimales.'),
+                        if ($item !== null) {
+                            // Pre-carga el desperdicio del item en la línea.
+                            $set('desperdicio_porcentaje', (string) $item->desperdicio_porcentaje);
+                        }
+                    })
+                    ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value),
 
-                    TextInput::make('desperdicio_porcentaje')
-                        ->label('Desperdicio')
-                        ->numeric()
-                        ->step(0.01)
-                        ->minValue(0)
-                        ->maxValue(100)
-                        ->default(0)
-                        ->live(debounce: 500)
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
-                        ->suffix('%')
-                        ->placeholder('5')
-                        ->columnSpan(['default' => 6, 'md' => 3])
-                        ->helperText('Solo informativo: documenta el % de pérdida que ya está dentro del rendimiento.'),
+                TextInput::make('descripcion')
+                    ->hiddenLabel()
+                    ->placeholder('Concepto (herramienta menor, imprevistos…)')
+                    ->maxLength(200)
+                    ->live(debounce: 500)
+                    ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->mayusculas(),
+            ]),
 
-                    Placeholder::make('subtotal_linea')
-                        ->label('Subtotal')
-                        ->columnSpan(['default' => 6, 'md' => 4])
-                        ->content(fn (Get $get): HtmlString => self::renderSubtotalCompacto($get)),
-                ]),
+            // 3 · Rendimiento (item) / % (porcentaje)
+            Grid::make(1)->schema([
+                TextInput::make('rendimiento')
+                    ->hiddenLabel()
+                    ->placeholder('Rend.')
+                    ->numeric()
+                    ->step(0.000001)
+                    ->minValue(0)
+                    ->live(debounce: 500)
+                    ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value),
 
-            // ─── Fila 2 (tipo=porcentaje): % + base + destino ──────
-            Grid::make(12)
-                ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
-                ->schema([
-                    TextInput::make('porcentaje')
-                        ->label('% a aplicar')
-                        ->numeric()
-                        ->step(0.01)
-                        ->minValue(0)
-                        ->maxValue(100)
-                        ->live(debounce: 500)
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
-                        ->suffix('%')
-                        ->placeholder('5')
-                        ->columnSpan(['default' => 4, 'md' => 2]),
+                TextInput::make('porcentaje')
+                    ->hiddenLabel()
+                    ->placeholder('%')
+                    ->numeric()
+                    ->step(0.01)
+                    ->minValue(0)
+                    ->maxValue(100)
+                    ->suffix('%')
+                    ->live(debounce: 500)
+                    ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value),
+            ]),
 
-                    Select::make('categoria_base')
-                        ->label('Calcular sobre')
-                        ->options(CategoriaBaseLinea::options())
-                        ->live()
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
-                        ->native(false)
-                        ->columnSpan(['default' => 8, 'md' => 5]),
+            // 4 · Desperdicio (item) / Base de cálculo (porcentaje)
+            Grid::make(1)->schema([
+                TextInput::make('desperdicio_porcentaje')
+                    ->hiddenLabel()
+                    ->placeholder('Desp.')
+                    ->numeric()
+                    ->step(0.01)
+                    ->minValue(0)
+                    ->maxValue(100)
+                    ->default(0)
+                    ->suffix('%')
+                    ->live(debounce: 500)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value),
 
-                    Select::make('categoria_destino')
-                        ->label('Sección reporte')
-                        ->options(CategoriaItem::options())
-                        ->live()
-                        ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
-                        ->native(false)
-                        ->columnSpan(['default' => 12, 'md' => 5]),
-                ]),
+                Select::make('categoria_base')
+                    ->hiddenLabel()
+                    ->placeholder('Base')
+                    ->options(CategoriaBaseLinea::options())
+                    ->live()
+                    ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->native(false),
+            ]),
 
-            // ─── Notas (opcional, una sola línea) ──────────────────
+            // 5 · Subtotal en vivo (item) / Sección del reporte (porcentaje)
+            Grid::make(1)->schema([
+                Placeholder::make('subtotal_linea')
+                    ->hiddenLabel()
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Item->value)
+                    ->content(fn (Get $get): HtmlString => self::renderSubtotalCompacto($get)),
+
+                Select::make('categoria_destino')
+                    ->hiddenLabel()
+                    ->placeholder('Sección')
+                    ->options(CategoriaItem::options())
+                    ->live()
+                    ->required(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->visible(fn (Get $get): bool => $get('tipo') === TipoLineaFicha::Porcentaje->value)
+                    ->native(false),
+            ]),
+
+            // 6 · Notas (opcional)
             TextInput::make('notas')
                 ->hiddenLabel()
-                ->placeholder('Notas opcionales de esta línea')
+                ->placeholder('Notas')
                 ->maxLength(500)
-                ->mayusculas()
-                ->columnSpanFull(),
+                ->mayusculas(),
         ];
     }
 
@@ -370,85 +375,6 @@ class FichaForm
     }
 
     /**
-     * Etiqueta enriquecida de cada línea cuando está COLAPSADA.
-     * Muestra todo lo importante en UNA sola fila para que con 17+ líneas
-     * no haya scroll infinito. Incluye el subtotal calculado al vuelo.
-     *
-     * @param array<string, mixed> $state
-     */
-    private static function etiquetaLineaCompacta(array $state): HtmlString
-    {
-        $tipo = $state['tipo'] ?? null;
-
-        // Línea tipo PORCENTAJE
-        if ($tipo === TipoLineaFicha::Porcentaje->value) {
-            $desc = is_string($state['descripcion'] ?? null) ? $state['descripcion'] : 'Línea %';
-            $pct = $state['porcentaje'] ?? '?';
-            $base = $state['categoria_base'] ?? '?';
-            $baseLabels = [
-                'materiales'         => 'Materiales',
-                'mano_obra'          => 'MO',
-                'herramienta_equipo' => 'HE',
-                'costo_directo'      => 'Costo Directo',
-            ];
-            $baseLabel = $baseLabels[$base] ?? $base;
-
-            return new HtmlString(
-                '<div class="flex items-center gap-2 text-sm">'
-                .'<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">%</span>'
-                .'<span class="font-medium">'.htmlspecialchars((string) $desc).'</span>'
-                .'<span class="text-gray-500">·</span>'
-                .'<span class="text-gray-600 dark:text-gray-300">'.$pct.'% sobre '.$baseLabel.'</span>'
-                .'</div>'
-            );
-        }
-
-        // Línea tipo ITEM
-        $itemId = $state['item_id'] ?? null;
-        $rendimiento = $state['rendimiento'] ?? null;
-        $desperdicio = $state['desperdicio_porcentaje'] ?? '0';
-
-        if ($itemId === null) {
-            return new HtmlString('<span class="text-gray-400 italic text-sm">Línea nueva sin item — click para configurar</span>');
-        }
-
-        $item = Item::find($itemId);
-
-        if ($item === null) {
-            return new HtmlString('<span class="text-gray-400 italic text-sm">Item no encontrado</span>');
-        }
-
-        $subtotalFmt = '—';
-
-        if ($rendimiento !== null && $rendimiento !== '') {
-            $service = app(CalcularPrecioFichaService::class);
-            $subtotal = $service->calcularLineaItem(
-                (string) $rendimiento,
-                (string) $desperdicio,
-                (string) $item->precio_unitario,
-            );
-            $subtotalFmt = 'L '.number_format((float) $subtotal, 2);
-        }
-
-        $unidadCodigo = $item->unidadMedida->codigo;
-        $rendFmt = $rendimiento !== null && $rendimiento !== ''
-            ? rtrim(rtrim(number_format((float) $rendimiento, 6), '0'), '.')
-            : '?';
-
-        return new HtmlString(
-            '<div class="flex items-center gap-2 text-sm">'
-            .'<span class="font-mono text-xs text-gray-500">'.htmlspecialchars((string) $item->codigo).'</span>'
-            .'<span class="font-medium truncate max-w-md">'.htmlspecialchars((string) $item->nombre).'</span>'
-            .'<span class="text-gray-400">['.htmlspecialchars($unidadCodigo).']</span>'
-            .'<span class="text-gray-500">·</span>'
-            .'<span class="text-gray-600 dark:text-gray-300">rend '.$rendFmt.' / desp '.$desperdicio.'%</span>'
-            .'<span class="text-gray-500">·</span>'
-            .'<span class="font-bold text-emerald-600 dark:text-emerald-400 ml-auto">'.$subtotalFmt.'</span>'
-            .'</div>'
-        );
-    }
-
-    /**
      * Section "Resumen de la ficha" — cards con totales en vivo + BIG NUMBER.
      */
     private static function seccionResumen(): Section
@@ -480,8 +406,8 @@ class FichaForm
 
         if (! is_array($lineas) || $lineas === []) {
             return new HtmlString(
-                '<div class="text-center text-gray-500 py-6">'
-                .'Agrega líneas a la ficha para ver el resumen en vivo.'
+                '<div style="text-align:center;opacity:0.6;padding:24px 0;">'
+                .'Agregá líneas a la ficha para ver el resumen en vivo.'
                 .'</div>'
             );
         }
@@ -499,61 +425,58 @@ class FichaForm
             }
         }
 
-        $cards = [
-            ['label' => 'Materiales',         'valor' => $resultado['subtotalesPorCategoria'][CategoriaItem::Materiales->value],        'color' => 'blue'],
-            ['label' => 'Mano de obra',       'valor' => $resultado['subtotalesPorCategoria'][CategoriaItem::ManoObra->value],          'color' => 'green'],
-            ['label' => 'Herram. y equipo',   'valor' => $resultado['subtotalesPorCategoria'][CategoriaItem::HerramientaEquipo->value], 'color' => 'amber'],
-            ['label' => 'Indirectos',         'valor' => $resultado['subtotalesPorCategoria'][CategoriaItem::Indirectos->value],        'color' => 'gray'],
+        // Estilos INLINE (no clases Tailwind): Filament no compila utilidades
+        // arbitrarias en el panel, por eso el resumen anterior salía sin
+        // estilo. Inline funciona igual en tema claro y oscuro.
+        $borde = '1px solid rgba(120,120,120,0.30)';
+        $celdaIzq = "padding:7px 12px;border:{$borde};text-align:left;";
+        $celdaDer = "padding:7px 12px;border:{$borde};text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;";
+
+        $filas = [
+            ['Materiales',            $resultado['subtotalesPorCategoria'][CategoriaItem::Materiales->value]],
+            ['Mano de obra',          $resultado['subtotalesPorCategoria'][CategoriaItem::ManoObra->value]],
+            ['Herramienta y equipo',  $resultado['subtotalesPorCategoria'][CategoriaItem::HerramientaEquipo->value]],
+            ['Indirectos',            $resultado['subtotalesPorCategoria'][CategoriaItem::Indirectos->value]],
         ];
 
-        $cardsHtml = '<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">';
+        $filasHtml = '';
 
-        foreach ($cards as $card) {
-            $cardsHtml .= sprintf(
-                '<div class="rounded-lg border border-%s-200 dark:border-%s-800 bg-%s-50 dark:bg-%s-900/20 p-3">'
-                .'<div class="text-xs uppercase tracking-wide text-%s-600 dark:text-%s-400">%s</div>'
-                .'<div class="text-lg font-bold text-%s-700 dark:text-%s-300">L %s</div>'
-                .'</div>',
-                $card['color'],
-                $card['color'],
-                $card['color'],
-                $card['color'],
-                $card['color'],
-                $card['color'],
-                $card['label'],
-                $card['color'],
-                $card['color'],
-                number_format((float) $card['valor'], 2)
-            );
+        foreach ($filas as [$label, $valor]) {
+            $filasHtml .= '<tr>'
+                ."<td style=\"{$celdaIzq}\">".htmlspecialchars($label).'</td>'
+                ."<td style=\"{$celdaDer}\">L ".number_format((float) $valor, 2).'</td>'
+                .'</tr>';
         }
-        $cardsHtml .= '</div>';
 
+        $costoDirecto = number_format((float) $resultado['costoDirecto'], 2);
         $subtotal = number_format((float) $resultado['subtotal'], 2);
         $utilFmt = number_format((float) $utilidad, 2);
         $utilMonto = number_format((float) $resultado['utilidadMonto'], 2);
         $precioVenta = number_format((float) $resultado['precioVenta'], 2);
 
-        $totalesHtml = '<div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">'
-            .'<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">'
-            .'<div class="text-xs uppercase tracking-wide text-gray-500">Subtotal</div>'
-            .'<div class="text-xl font-bold">L '.$subtotal.'</div>'
-            .'</div>'
-            .'<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">'
-            .'<div class="text-xs uppercase tracking-wide text-gray-500">Utilidad '.$utilFmt.'%</div>'
-            .'<div class="text-xl font-bold">L '.$utilMonto.'</div>'
-            .'</div>'
-            .'<div class="rounded-lg border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 p-3">'
-            .'<div class="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300 font-semibold">Costo directo (Mat+MO+HE)</div>'
-            .'<div class="text-xl font-bold text-emerald-700 dark:text-emerald-300">L '.number_format((float) $resultado['costoDirecto'], 2).'</div>'
-            .'</div>'
+        $tabla = '<div style="overflow-x:auto;">'
+            .'<table style="width:100%;border-collapse:collapse;font-size:0.875rem;color:inherit;">'
+            .'<thead><tr style="background:rgba(120,120,120,0.14);">'
+            ."<th style=\"{$celdaIzq}font-weight:700;\">Concepto</th>"
+            ."<th style=\"{$celdaDer}font-weight:700;\">Monto</th>"
+            .'</tr></thead><tbody>'
+            .$filasHtml
+            .'<tr style="background:rgba(120,120,120,0.07);font-weight:700;">'
+            ."<td style=\"{$celdaIzq}\">Costo directo (Mat + MO + HE)</td>"
+            ."<td style=\"{$celdaDer}\">L {$costoDirecto}</td></tr>"
+            .'<tr style="font-weight:700;">'
+            ."<td style=\"{$celdaIzq}\">Subtotal (incluye indirectos)</td>"
+            ."<td style=\"{$celdaDer}\">L {$subtotal}</td></tr>"
+            ."<tr><td style=\"{$celdaIzq}\">Utilidad {$utilFmt}%</td>"
+            ."<td style=\"{$celdaDer}\">L {$utilMonto}</td></tr>"
+            .'</tbody></table></div>';
+
+        $precioBox = '<div style="margin-top:14px;border:2px solid #059669;border-radius:12px;background:rgba(5,150,105,0.10);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+            .'<span style="text-transform:uppercase;letter-spacing:0.08em;font-size:0.75rem;font-weight:700;color:#059669;">Precio de venta por '.htmlspecialchars($unidadCodigo).'</span>'
+            .'<span style="font-size:2rem;font-weight:800;color:#059669;font-variant-numeric:tabular-nums;">L '.$precioVenta.'</span>'
             .'</div>';
 
-        $bigNumberHtml = '<div class="rounded-xl border-4 border-emerald-600 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/40 dark:to-emerald-800/40 p-6 text-center">'
-            .'<div class="text-sm uppercase tracking-widest text-emerald-700 dark:text-emerald-300 font-semibold">Precio venta por '.htmlspecialchars($unidadCodigo).'</div>'
-            .'<div class="text-5xl font-black text-emerald-700 dark:text-emerald-300 mt-2">L '.$precioVenta.'</div>'
-            .'</div>';
-
-        return new HtmlString($cardsHtml.$totalesHtml.$bigNumberHtml);
+        return new HtmlString($tabla.$precioBox);
     }
 
     private static function tabEstado(): Tab

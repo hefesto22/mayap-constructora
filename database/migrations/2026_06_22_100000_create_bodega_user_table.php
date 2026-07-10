@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
  * bodega).
  *
  * Un usuario puede estar asignado a VARIAS bodegas (un gerente regional cubre
- * más de una). Los usuarios SIN el permiso `ver_todas_las_bodegas` solo ven
+ * más de una). Los usuarios SIN el permiso `VerTodasLasBodegas:Bodega` solo ven
  * el stock, movimientos y compras de sus bodegas asignadas; los que tienen el
  * permiso (super_admin, gerencia) ven todo.
  *

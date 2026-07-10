@@ -6,8 +6,10 @@ namespace App\Filament\Resources\Zonas\Pages;
 
 use App\Filament\Concerns\NotificaResultadoClonado;
 use App\Filament\Resources\Zonas\ZonaResource;
+use App\Models\Ficha;
 use App\Models\Zona;
 use App\Services\Catalogos\ClonarItemsEntreZonas;
+use App\Services\Fichas\DuplicarFichaAOtraZona;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateZona extends CreateRecord
@@ -24,9 +26,16 @@ class CreateZona extends CreateRecord
     public ?int $zonaOrigenId = null;
 
     /**
+     * Si el usuario pidió copiar también las fichas APU de la zona origen.
+     * Solo aplica cuando se hereda una base de precios (zonaOrigenId != null).
+     */
+    public bool $copiarFichas = true;
+
+    /**
      * Intercepta el form data antes de la persistencia para extraer
-     * `zona_origen_id` (campo virtual del Tab "Inicialización") sin
-     * que llegue al modelo Zona — esa columna no existe en la tabla.
+     * `zona_origen_id` y `copiar_fichas` (campos virtuales del Tab
+     * "Inicialización") sin que lleguen al modelo Zona — esas columnas
+     * no existen en la tabla.
      *
      * @param array<string, mixed> $data
      *
@@ -38,7 +47,9 @@ class CreateZona extends CreateRecord
             $this->zonaOrigenId = (int) $data['zona_origen_id'];
         }
 
-        unset($data['zona_origen_id']);
+        $this->copiarFichas = (bool) ($data['copiar_fichas'] ?? true);
+
+        unset($data['zona_origen_id'], $data['copiar_fichas']);
 
         return $data;
     }
@@ -67,6 +78,20 @@ class CreateZona extends CreateRecord
             destino: $destino,
             saltarDuplicados: true,
         );
+
+        // Copiar las fichas APU de la zona origen solo si el usuario lo pidió
+        // (toggle "Copiar también las fichas APU"). Usan los items recién
+        // clonados (con sus precios), así arrancan con el mismo cálculo
+        // recalculado para esta zona. Cada ficha destino es independiente.
+        if ($this->copiarFichas) {
+            $duplicador = app(DuplicarFichaAOtraZona::class);
+
+            Ficha::query()
+                ->where('zona_id', $origen->id)
+                ->where('activa', true)
+                ->get()
+                ->each(fn (Ficha $ficha) => $duplicador->ejecutar($ficha, $destino));
+        }
 
         $this->notificarResultadoClonado($origen, $destino, $resultado);
     }

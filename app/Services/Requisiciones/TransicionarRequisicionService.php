@@ -37,6 +37,7 @@ final readonly class TransicionarRequisicionService
 
     public function __construct(
         private RegistrarMovimientoService $inventario,
+        private NotificadorRequisiciones $notificador,
     ) {}
 
     /**
@@ -123,6 +124,106 @@ final readonly class TransicionarRequisicionService
                 $this->aplicarTransicion($requisicion, EstadoRequisicion::RequisicionCompra, $userId, $motivo);
             });
         }
+    }
+
+    /**
+     * Autorizada / RequisicionCompra → Despachada por COMPRA DIRECTA A OBRA.
+     *
+     * La compra ya metió el material a la existencia de la obra (entrada de
+     * inventario al costo real de factura) — aquí NO se mueve stock. Solo se
+     * marcan las líneas como despachadas con lo que la compra cubrió y se
+     * avanza el estado. La obra confirma después con `recibir` como siempre.
+     *
+     * Por material: despachada += min(pendiente, comprado). Si la compra no
+     * cubre todo, la línea queda parcial y visible en la conciliación.
+     *
+     * Asume que el caller (ConfirmarCompraService) envuelve en transacción.
+     *
+     * @param array<int, string> $compradoPorMaterial material_id => cantidad
+     */
+    public function despacharPorCompraDirecta(
+        Requisicion $requisicion,
+        array $compradoPorMaterial,
+        string $codigoCompra,
+        ?int $userId = null,
+    ): void {
+        $requisicion->loadMissing('lineas');
+        $this->assertTieneLineas($requisicion);
+
+        foreach ($requisicion->lineas as $linea) {
+            $comprado = $compradoPorMaterial[$linea->material_id] ?? '0';
+            $autorizada = (string) ($linea->cantidad_autorizada ?? $linea->cantidad_solicitada);
+            $pendiente = bcsub($autorizada, (string) $linea->cantidad_despachada, self::SCALE_CANTIDAD);
+
+            if (bccomp($pendiente, '0', self::SCALE_CANTIDAD) <= 0 || bccomp($comprado, '0', self::SCALE_CANTIDAD) <= 0) {
+                continue;
+            }
+
+            $aDespachar = bccomp($comprado, $pendiente, self::SCALE_CANTIDAD) < 0 ? $comprado : $pendiente;
+
+            $linea->cantidad_despachada = bcadd(
+                (string) $linea->cantidad_despachada,
+                $aDespachar,
+                self::SCALE_CANTIDAD,
+            );
+            $linea->save();
+        }
+
+        $this->aplicarTransicion(
+            $requisicion,
+            EstadoRequisicion::Despachada,
+            $userId,
+            "Despacho directo a obra por compra {$codigoCompra}.",
+        );
+    }
+
+    /**
+     * REVERSA del despacho por compra directa (compra ANULADA): resta lo
+     * que la compra había marcado como despachado y regresa la requisición
+     * a RequisicionCompra — hay que volver a comprar ese material.
+     *
+     * Es la única transición "hacia atrás" del sistema y NO pasa por
+     * puedeTransicionarA (la máquina de estados solo avanza): la habilita
+     * exclusivamente la anulación de la compra, y queda en la bitácora con
+     * su nota. Asume que el caller (AnularCompraService) envuelve en
+     * transacción.
+     *
+     * @param array<int, string> $compradoPorMaterial material_id => cantidad
+     */
+    public function revertirDespachoDirecto(
+        Requisicion $requisicion,
+        array $compradoPorMaterial,
+        string $codigoCompra,
+        ?int $userId = null,
+    ): void {
+        $requisicion->loadMissing('lineas');
+
+        foreach ($requisicion->lineas as $linea) {
+            $comprado = $compradoPorMaterial[$linea->material_id] ?? '0';
+
+            if (bccomp($comprado, '0', self::SCALE_CANTIDAD) <= 0) {
+                continue;
+            }
+
+            $nueva = bcsub((string) $linea->cantidad_despachada, $comprado, self::SCALE_CANTIDAD);
+
+            $linea->cantidad_despachada = bccomp($nueva, '0', self::SCALE_CANTIDAD) > 0 ? $nueva : '0';
+            $linea->save();
+        }
+
+        $origen = $requisicion->estado;
+        $requisicion->estado = EstadoRequisicion::RequisicionCompra;
+        $requisicion->save();
+
+        RequisicionTransicion::create([
+            'requisicion_id' => $requisicion->id,
+            'estado_origen'  => $origen,
+            'estado_destino' => EstadoRequisicion::RequisicionCompra,
+            'user_id'        => $userId,
+            'nota'           => "Reversa: la compra {$codigoCompra} fue anulada — el material debe comprarse de nuevo.",
+        ]);
+
+        $this->notificador->transicion($requisicion, EstadoRequisicion::RequisicionCompra, $userId);
     }
 
     /**
@@ -231,6 +332,11 @@ final readonly class TransicionarRequisicionService
             'user_id'        => $userId,
             'nota'           => $nota,
         ]);
+
+        // Campanita al rol que tiene el siguiente paso. Corre DENTRO de la
+        // transacción del caller: si la transición se revierte, las
+        // notificaciones también (nunca avisa algo que no pasó).
+        $this->notificador->transicion($requisicion, $destino, $userId);
     }
 
     private function validarCantidadAutorizada(string $autorizada, string $solicitada): void

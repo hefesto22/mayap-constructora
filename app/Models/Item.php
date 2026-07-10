@@ -52,6 +52,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $nombre
  * @property string|null $descripcion
  * @property string $precio_unitario
+ * @property string $desperdicio_porcentaje
  * @property string|null $observaciones_precio
  * @property Carbon|null $precio_actualizado_at
  * @property bool $activo
@@ -80,6 +81,7 @@ class Item extends Model
         'nombre',
         'descripcion',
         'precio_unitario',
+        'desperdicio_porcentaje',
         'observaciones_precio',
         'precio_actualizado_at',
         'activo',
@@ -91,10 +93,11 @@ class Item extends Model
     protected function casts(): array
     {
         return [
-            'categoria'             => CategoriaItem::class,
-            'precio_unitario'       => 'decimal:2',
-            'precio_actualizado_at' => 'datetime',
-            'activo'                => 'boolean',
+            'categoria'              => CategoriaItem::class,
+            'precio_unitario'        => 'decimal:2',
+            'desperdicio_porcentaje' => 'decimal:2',
+            'precio_actualizado_at'  => 'datetime',
+            'activo'                 => 'boolean',
         ];
     }
 
@@ -110,6 +113,7 @@ class Item extends Model
                 'nombre',
                 'descripcion',
                 'precio_unitario',
+                'desperdicio_porcentaje',
                 'observaciones_precio',
                 'activo',
             ])

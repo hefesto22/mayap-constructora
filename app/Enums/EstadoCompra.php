@@ -9,11 +9,14 @@ use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 
 /**
- * Estados de una compra a proveedor.
+ * Estados de una compra a proveedor (flujo G2 — verificación de recepción):
  *
  * - Borrador:   editable, NO ha movido stock.
- * - Confirmada: registró las entradas de inventario (vía WAC) y, si es a
- *   crédito, generó la cuenta por pagar. Documento inmutable.
+ * - PorRecibir: registrada por recepción; el material viene en camino. El
+ *   bodeguero (porción bodega) y el encargado (porción obra) verifican lo
+ *   que llegó CONTRA lo facturado. Aún NO hay stock ni CxP.
+ * - Confirmada: recepción verificada — el stock entró (por lo RECIBIDO) y,
+ *   si es a crédito, existe la cuenta por pagar (por lo FACTURADO).
  * - Anulada:    revertida (movimientos inversos de inventario). Terminal.
  *
  * Los CHECK constraints de la tabla `compras` validan el conjunto.
@@ -21,6 +24,7 @@ use Filament\Support\Contracts\HasLabel;
 enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
 {
     case Borrador = 'borrador';
+    case PorRecibir = 'por_recibir';
     case Confirmada = 'confirmada';
     case Anulada = 'anulada';
 
@@ -28,6 +32,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
     {
         return match ($this) {
             self::Borrador   => 'Borrador',
+            self::PorRecibir => 'Por recibir',
             self::Confirmada => 'Confirmada',
             self::Anulada    => 'Anulada',
         };
@@ -37,6 +42,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
     {
         return match ($this) {
             self::Borrador   => 'gray',
+            self::PorRecibir => 'warning',
             self::Confirmada => 'success',
             self::Anulada    => 'danger',
         };
@@ -46,6 +52,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
     {
         return match ($this) {
             self::Borrador   => 'heroicon-o-pencil-square',
+            self::PorRecibir => 'heroicon-o-truck',
             self::Confirmada => 'heroicon-o-check-badge',
             self::Anulada    => 'heroicon-o-x-circle',
         };

@@ -174,7 +174,7 @@ class Bodega extends Model
 
     /**
      * Limita las bodegas a las asignadas al usuario (Fase 2). Quien tiene
-     * `ver_todas_las_bodegas` ve todas. Útil para selectores (entrada,
+     * `VerTodasLasBodegas:Bodega` ve todas. Útil para selectores (entrada,
      * compra, despacho) donde el usuario solo debe elegir SU bodega.
      *
      * @param Builder<self> $query

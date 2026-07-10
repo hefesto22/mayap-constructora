@@ -75,7 +75,7 @@ test('al elegir un proveedor a crédito, la compra hereda su condición de pago'
         ->assertFormSet(['condicion_pago' => CondicionPago::Credito->value]);
 });
 
-test('la acción Confirmar registra el stock y marca la compra confirmada', function (): void {
+test('la acción Registrar manda la compra a Por recibir SIN mover stock (G2)', function (): void {
     $material = Material::factory()->create();
     $compra = Compra::factory()->paraBodega($this->bodega)->create(['aplica_isv' => true, 'isv_porcentaje' => 15]);
     CompraLinea::factory()->create([
@@ -83,16 +83,11 @@ test('la acción Confirmar registra el stock y marca la compra confirmada', func
     ]);
 
     Livewire::test(ListCompras::class)
-        ->callTableAction('confirmar', $compra)
+        ->callTableAction('registrar', $compra)
         ->assertHasNoTableActionErrors();
 
-    expect($compra->fresh()->estado)->toBe(EstadoCompra::Confirmada);
-
-    $existencia = Existencia::query()
-        ->where('material_id', $material->id)
-        ->where('bodega_id', $this->bodega->id)
-        ->firstOrFail();
-
-    expect($existencia->cantidad)->toBe('50.0000')
-        ->and($existencia->costo_promedio)->toBe('20.00');
+    // El stock NO entra al registrar: entra cuando el punto de llegada
+    // VERIFICA lo recibido (flujo G2).
+    expect($compra->fresh()->estado)->toBe(EstadoCompra::PorRecibir)
+        ->and(Existencia::query()->where('material_id', $material->id)->exists())->toBeFalse();
 });

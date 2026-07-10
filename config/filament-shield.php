@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use App\Support\Permisos;
 use BezhanSalleh\FilamentShield\Resources\Roles\RoleResource;
 use Filament\Pages\Dashboard;
 use Filament\Widgets\AccountWidget;
@@ -27,7 +28,7 @@ return [
             'pages'              => true,
             'widgets'            => true,
             'resources'          => true,
-            'custom_permissions' => false,
+            'custom_permissions' => true,
         ],
     ],
 
@@ -232,7 +233,10 @@ return [
     |
     */
 
-    'custom_permissions' => [],
+    // ÚNICA fuente: App\Support\Permisos::PERSONALIZADOS. Todo permiso
+    // custom DEBE estar ahí para ser administrable desde la pantalla de
+    // Roles — si no aparece en el panel, guardarlo un rol lo perdería.
+    'custom_permissions' => Permisos::PERSONALIZADOS,
 
     /*
     |--------------------------------------------------------------------------

@@ -83,6 +83,33 @@ class ProyectoFactory extends Factory
         return $this->conEstado(EstadoProyecto::Vencida);
     }
 
+    /**
+     * Proyecto en ejecución: con fecha de inicio, plazo y fin estimada
+     * (los CHECK constraints exigen fecha_inicio en este estado).
+     */
+    public function enEjecucion(int $plazoDias = 30): self
+    {
+        return $this->state(function () use ($plazoDias): array {
+            $inicio = now()->startOfDay();
+
+            return [
+                'estado'             => EstadoProyecto::EnEjecucion->value,
+                'modo_plazo'         => 'calendario',
+                'plazo_dias'         => $plazoDias,
+                'fecha_inicio'       => $inicio,
+                'fecha_fin_estimada' => $inicio->copy()->addDays($plazoDias),
+            ];
+        });
+    }
+
+    public function pausada(string $motivo = 'FALTA DE MATERIAL'): self
+    {
+        return $this->enEjecucion()->state(fn (): array => [
+            'estado'       => EstadoProyecto::Pausada->value,
+            'motivo_pausa' => $motivo,
+        ]);
+    }
+
     public function exento(): self
     {
         return $this->state(fn (): array => [

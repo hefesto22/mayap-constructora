@@ -49,6 +49,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $nombre
  * @property string|null $descripcion
  * @property bool $activo
+ * @property bool $exento_isv
+ * @property bool $consumo_inmediato
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read UnidadMedida $unidadMedida
@@ -71,6 +73,8 @@ class Material extends Model
         'nombre',
         'descripcion',
         'activo',
+        'exento_isv',
+        'consumo_inmediato',
     ];
 
     /**
@@ -79,8 +83,10 @@ class Material extends Model
     protected function casts(): array
     {
         return [
-            'categoria' => CategoriaItem::class,
-            'activo'    => 'boolean',
+            'categoria'         => CategoriaItem::class,
+            'activo'            => 'boolean',
+            'exento_isv'        => 'boolean',
+            'consumo_inmediato' => 'boolean',
         ];
     }
 
