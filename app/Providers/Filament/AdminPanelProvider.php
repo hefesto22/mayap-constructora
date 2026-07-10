@@ -10,6 +10,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -46,6 +47,20 @@ class AdminPanelProvider extends PanelProvider
             ->favicon(fn (): ?string => self::brandingValue('faviconUrl'))
             ->colors([
                 'primary' => self::primaryColorPalette(),
+            ])
+            // Orden del menú = flujo del negocio: lo diario arriba, la
+            // configuración al final y COLAPSADA (menos ruido para el
+            // usuario operativo — cada rol solo ve sus grupos de todas
+            // formas, esto ordena lo que sí ve).
+            ->navigationGroups([
+                NavigationGroup::make('Comercial'),
+                NavigationGroup::make('Inventario'),
+                NavigationGroup::make('Compras'),
+                NavigationGroup::make('Maquinaria'),
+                NavigationGroup::make('Planilla'),
+                NavigationGroup::make('Fichas APU')->collapsed(),
+                NavigationGroup::make('Catálogos')->collapsed(),
+                NavigationGroup::make('Administración')->collapsed(),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')

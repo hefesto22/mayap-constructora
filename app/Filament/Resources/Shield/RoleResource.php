@@ -26,6 +26,21 @@ use Illuminate\Support\Str;
  */
 class RoleResource extends ShieldRoleResource
 {
+    /**
+     * Roles vive bajo "Administración" (junto a Usuarios y Registros de
+     * actividad), no en un grupo "Filament Shield" propio — el menú se
+     * ordena por negocio, no por paquete.
+     */
+    public static function getNavigationGroup(): ?string
+    {
+        return 'Administración';
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 30;
+    }
+
     public static function getTabFormComponentForCustomPermissions(): Component
     {
         $total = count(Permisos::PERSONALIZADOS);

@@ -26,6 +26,7 @@ use App\Support\Roles;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
 
 /**
  * DEMO SANTA ROSA — puebla el sistema con datos REALES de Santa Rosa de
@@ -50,7 +51,7 @@ class DemoSantaRosaSeeder extends Seeder
 
     public function run(): void
     {
-        if (\Spatie\Permission\Models\Role::where('name', Roles::BODEGUERO)->doesntExist()) {
+        if (Role::where('name', Roles::BODEGUERO)->doesntExist()) {
             $this->command?->error('Faltan los roles base. Corre primero: php artisan db:seed');
 
             return;
@@ -90,7 +91,7 @@ class DemoSantaRosaSeeder extends Seeder
         $this->command?->info('══════════════════════════════════════════════════════');
         $this->command?->info('  DEMO SANTA ROSA LISTA');
         $this->command?->info('  Zona SRC · BODEGA SANTA ROSA · 6 usuarios (pass 12345678)');
-        $this->command?->info("  CASA en ejecución · ALCANTARILLADO en ejecución · EDIFICIO aprobado");
+        $this->command?->info('  CASA en ejecución · ALCANTARILLADO en ejecución · EDIFICIO aprobado');
         $this->command?->info('══════════════════════════════════════════════════════');
     }
 
