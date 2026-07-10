@@ -15,6 +15,7 @@
         "laravel/tinker": "^2.10.1",
         "maatwebsite/excel": "^3.1",
         "predis/predis": "^2.4",
+        "saade/filament-fullcalendar": "^4.0@beta",
         "sentry/sentry-laravel": "^4.13",
         "spatie/browsershot": "^5.0",
         "spatie/laravel-activitylog": "^4.11",

@@ -184,6 +184,13 @@ class RolesInventarioSeeder extends Seeder
             Permisos::REALIZAR_COMPRA_REQUISICION,
         ]);
 
+        // ── Calendario de maquinaria (G3) ────────────────────────────────
+        // Página custom: su permiso se crea aquí y lo llevan maquinaria y
+        // gerencia (administrable desde Roles como cualquier otro).
+        Permission::findOrCreate('View:CalendarioMaquinaria', 'web');
+        $maquinaria->givePermissionTo('View:CalendarioMaquinaria');
+        $gerencia->givePermissionTo('View:CalendarioMaquinaria');
+
         // El super_admin sincronizó sus permisos ANTES de que estos custom
         // existieran (shield:super-admin en AdminUserSeeder) — asignarle
         // TODOS los personalizados para que el orden de seeders no importe.
