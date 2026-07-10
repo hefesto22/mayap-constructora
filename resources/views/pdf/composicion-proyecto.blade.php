@@ -2,6 +2,12 @@
     /** @var \App\Models\Proyecto $proyecto */
     /** @var \Illuminate\Support\Collection<string, \Illuminate\Support\Collection<int, \App\Models\ProyectoRenglon>> $capitulos */
     $fmt = static fn ($v): string => 'L. '.number_format((float) $v, 2);
+    // Cantidades de insumos: hasta 4 decimales, sin ceros de relleno.
+    $cant = static function ($v): string {
+        $texto = number_format((float) $v, 4);
+
+        return str_contains($texto, '.') ? rtrim(rtrim($texto, '0'), '.') : $texto;
+    };
     $numero = 0;
 @endphp
 <!DOCTYPE html>
@@ -34,6 +40,14 @@
         tr.capitulo td { background: #f3f4f6; font-weight: 800; font-size: 10px; letter-spacing: 1px; color: #111827; padding: 6px 8px; }
         .ficha-codigo { color: #6b7280; font-size: 9px; }
 
+        /* Desglose de insumos por renglón (sin precios internos) */
+        tr.insumos-row > td { padding: 0 8px 10px 8px; border-bottom: 1px solid #f3f4f6; }
+        table.insumos { width: 100%; border-collapse: collapse; background: #fafafa; border: 1px solid #f3f4f6; border-radius: 4px; }
+        table.insumos th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 0.5px; color: #9ca3af; padding: 4px 8px; border-bottom: 1px solid #f3f4f6; }
+        table.insumos td { padding: 3px 8px; font-size: 9.5px; color: #4b5563; border-bottom: none; }
+        table.insumos td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        table.insumos td.centrado { text-align: center; }
+
         table.totales { border-collapse: collapse; margin-top: 16px; margin-left: auto; min-width: 300px; }
         table.totales td { padding: 5px 10px; font-size: 12px; }
         table.totales td.monto { text-align: right; font-variant-numeric: tabular-nums; }
@@ -55,7 +69,6 @@
     <div class="head">
         <div class="empresa">
             CONSTRUCTORA MAYAP
-            <small>GRUPO OLYMPO</small>
         </div>
         <div class="doc">
             <h1>Composición del proyecto</h1>
@@ -108,17 +121,59 @@
                     </tr>
                 @endif
                 @foreach ($renglones as $renglon)
+                    @php
+                        $unidadFicha = $renglon->ficha->unidadMedida?->codigo ?? 'UND';
+                        $lineas = $renglon->ficha->lineas;
+                    @endphp
                     <tr>
                         <td class="num">{{ ++$numero }}</td>
                         <td>
                             {{ $renglon->ficha->nombre }}
                             <div class="ficha-codigo">{{ $renglon->ficha->codigo }}@if (filled($renglon->notas)) · {{ $renglon->notas }}@endif</div>
                         </td>
-                        <td class="centrado">{{ $renglon->ficha->unidadMedida?->codigo ?? '—' }}</td>
+                        <td class="centrado">{{ $unidadFicha }}</td>
                         <td class="num">{{ number_format((float) $renglon->cantidad, 2) }}</td>
                         <td class="num">{{ $fmt($renglon->precio_unitario_snapshot) }}</td>
                         <td class="num">{{ $fmt($renglon->subtotal_cache) }}</td>
                     </tr>
+                    @if ($lineas->isNotEmpty())
+                        <tr class="insumos-row">
+                            <td></td>
+                            <td colspan="5">
+                                <table class="insumos">
+                                    <thead>
+                                        <tr>
+                                            <th>Insumo</th>
+                                            <th style="width:110px;">Categoría</th>
+                                            <th style="width:50px;text-align:center;">Unidad</th>
+                                            <th style="width:90px;text-align:right;">Cant. / {{ $unidadFicha }}</th>
+                                            <th style="width:100px;text-align:right;">Cant. total est.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach ($lineas as $linea)
+                                            @if ($linea->tipo === \App\Enums\TipoLineaFicha::Item && $linea->item !== null)
+                                                <tr>
+                                                    <td>{{ $linea->item->nombre }}</td>
+                                                    <td>{{ $linea->item->categoria?->getLabel() ?? '—' }}</td>
+                                                    <td class="centrado">{{ $linea->item->unidadMedida?->codigo ?? '—' }}</td>
+                                                    <td class="num">{{ $cant($linea->rendimiento) }}</td>
+                                                    <td class="num">{{ $cant(bcmul((string) $linea->rendimiento, (string) $renglon->cantidad, 6)) }}</td>
+                                                </tr>
+                                            @else
+                                                <tr>
+                                                    <td colspan="5">
+                                                        {{ $linea->descripcion ?? 'CARGO DERIVADO' }}
+                                                        — {{ number_format((float) $linea->porcentaje, 2) }}% sobre {{ $linea->categoria_base?->getLabel() ?? 'costo directo' }}
+                                                    </td>
+                                                </tr>
+                                            @endif
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    @endif
                 @endforeach
             @endforeach
         </tbody>
@@ -159,7 +214,7 @@
     </div>
 
     <div class="foot">
-        <span>Constructora MAYAP — Sistema de gestión Grupo Olympo</span>
+        <span>Constructora MAYAP</span>
         <span>Precios pactados (snapshot) · Documento generado automáticamente</span>
     </div>
 </div>

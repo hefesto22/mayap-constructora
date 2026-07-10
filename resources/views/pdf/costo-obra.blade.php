@@ -50,7 +50,6 @@
     <div class="head">
         <div class="empresa">
             CONSTRUCTORA MAYAP
-            <small>GRUPO OLYMPO</small>
         </div>
         <div class="doc">
             <h1>Estado de costo de obra</h1>
@@ -101,7 +100,7 @@
     </div>
 
     <div class="foot">
-        <span>Constructora MAYAP — Sistema de gestión Grupo Olympo</span>
+        <span>Constructora MAYAP</span>
         <span>Documento generado automáticamente</span>
     </div>
 </div>

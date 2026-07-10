@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Enums\CategoriaItem;
+use App\Enums\TipoLineaFicha;
 use App\Filament\Resources\Proyectos\Pages\ViewProyecto;
 use App\Models\Cliente;
 use App\Models\Ficha;
+use App\Models\FichaLinea;
+use App\Models\Item;
 use App\Models\Proyecto;
 use App\Models\ProyectoRenglon;
 use App\Models\User;
@@ -40,6 +44,23 @@ test('el HTML de la composición incluye identificación, renglones agrupados y 
 
     $ficha = Ficha::factory()->create(['zona_id' => $proyecto->zona_id, 'nombre' => 'LOSA DE CONCRETO E=10CM']);
 
+    // Insumo de la ficha: aparece en el desglose SIN su precio interno.
+    $item = Item::factory()->create([
+        'zona_id'         => $proyecto->zona_id,
+        'categoria'       => CategoriaItem::Materiales,
+        'nombre'          => 'CEMENTO GRIS TIPO GU',
+        'precio_unitario' => '777.77',
+    ]);
+
+    FichaLinea::create([
+        'ficha_id'               => $ficha->id,
+        'tipo'                   => TipoLineaFicha::Item,
+        'orden'                  => 0,
+        'item_id'                => $item->id,
+        'rendimiento'            => '9.500000',
+        'desperdicio_porcentaje' => '0.00',
+    ]);
+
     ProyectoRenglon::factory()->create([
         'proyecto_id'              => $proyecto->id,
         'ficha_id'                 => $ficha->id,
@@ -59,7 +80,14 @@ test('el HTML de la composición incluye identificación, renglones agrupados y 
         ->toContain('LOSA DE CONCRETO E=10CM')
         // 120.5 × 2,604.37 = 313,826.59 (subtotal del renglón).
         ->toContain('313,826.59')
-        ->toContain('ISV (15%)');
+        ->toContain('ISV (15%)')
+        // Desglose de insumos: nombre y cantidad total (9.5 × 120.5).
+        ->toContain('CEMENTO GRIS TIPO GU')
+        ->toContain('1,144.75')
+        // Los precios internos de los insumos NUNCA se exponen al cliente.
+        ->not->toContain('777.77')
+        // El documento ya no menciona a Grupo Olympo.
+        ->not->toContain('GRUPO OLYMPO');
 });
 
 test('los botones de PDF aparecen SOLO con su permiso personalizado', function (): void {

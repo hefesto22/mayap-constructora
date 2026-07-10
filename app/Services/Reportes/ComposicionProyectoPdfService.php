@@ -37,6 +37,12 @@ final class ComposicionProyectoPdfService
             'renglones' => fn ($q) => $q->orderBy('orden'),
             'renglones.ficha:id,codigo,nombre,unidad_medida_id',
             'renglones.ficha.unidadMedida:id,codigo,nombre',
+            // Desglose de insumos por ficha (SIN precios — decisión Mauricio
+            // 2026-07-10: el cliente ve qué lleva cada partida, nunca los
+            // costos internos ni la utilidad).
+            'renglones.ficha.lineas' => fn ($q) => $q->orderBy('orden'),
+            'renglones.ficha.lineas.item:id,nombre,categoria,unidad_medida_id',
+            'renglones.ficha.lineas.item.unidadMedida:id,codigo',
         ]);
 
         // Agrupar por capítulo CONSERVANDO el orden de los renglones.
