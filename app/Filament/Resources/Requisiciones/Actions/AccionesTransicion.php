@@ -13,6 +13,7 @@ use App\Models\RequisicionLinea;
 use App\Models\User;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Requisiciones\TransicionarRequisicionService;
+use App\Support\Cantidad;
 use App\Support\Permisos;
 use App\Support\Roles;
 use BezhanSalleh\FilamentShield\Support\Utils;
@@ -273,10 +274,12 @@ final class AccionesTransicion
                 'lineas' => $lineas
                     ->map(function (RequisicionLinea $linea) use ($campoDefault, $conStock, $stock): array {
                         $fila = [
-                            'linea_id'            => $linea->id,
-                            'material'            => $linea->material->codigo.' — '.$linea->material->nombre,
-                            'cantidad_solicitada' => (string) $linea->cantidad_solicitada,
-                            'cantidad'            => (string) $linea->getAttribute($campoDefault),
+                            'linea_id' => $linea->id,
+                            'material' => $linea->material->codigo.' — '.$linea->material->nombre,
+                            // Solo lectura → 2 decimales; editable → sin
+                            // ceros de cola (la BD guarda escala 4 intacta).
+                            'cantidad_solicitada' => Cantidad::corta($linea->cantidad_solicitada),
+                            'cantidad'            => Cantidad::sinCeros((string) $linea->getAttribute($campoDefault)),
                         ];
 
                         if ($conStock) {
@@ -288,7 +291,7 @@ final class AccionesTransicion
                                 $disponible = (string) ($stock->get($linea->material_id) ?? '0');
                                 $alcanza = bccomp($disponible, (string) $linea->cantidad_solicitada, 4) >= 0;
 
-                                $fila['stock'] = rtrim(rtrim($disponible, '0'), '.')
+                                $fila['stock'] = Cantidad::sinCeros($disponible)
                                     .($alcanza ? ' ✓' : ' ✗ INSUFICIENTE');
                             }
                         }

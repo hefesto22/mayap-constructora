@@ -16,6 +16,7 @@ use App\Services\Compras\CorregirRecepcionService;
 use App\Services\Compras\MarcarPorRecibirService;
 use App\Services\Compras\VerificarRecepcionService;
 use App\Services\Reportes\ActaRecepcionPdfService;
+use App\Support\Cantidad;
 use App\Support\Permisos;
 use App\Support\Roles;
 use Filament\Actions\Action;
@@ -145,8 +146,8 @@ class ComprasTable
                                 ->map(fn (CompraLinea $l): array => [
                                     'linea_id' => $l->id,
                                     'material' => $l->material->nombre,
-                                    'esperado' => (string) $l->cantidad,
-                                    'recibido' => (string) $l->cantidad,
+                                    'esperado' => Cantidad::corta($l->cantidad),
+                                    'recibido' => Cantidad::sinCeros((string) $l->cantidad),
                                 ])
                                 ->all(),
                         ];
@@ -239,9 +240,9 @@ class ComprasTable
                                 ->map(fn (CompraLinea $l): array => [
                                     'linea_id' => $l->id,
                                     'material' => $l->material->nombre,
-                                    'esperado' => (string) $l->cantidad,
-                                    'actual'   => (string) $l->cantidad_recibida,
-                                    'recibido' => (string) $l->cantidad_recibida,
+                                    'esperado' => Cantidad::corta($l->cantidad),
+                                    'actual'   => Cantidad::corta($l->cantidad_recibida),
+                                    'recibido' => Cantidad::sinCeros((string) $l->cantidad_recibida),
                                 ])
                                 ->all(),
                         ];

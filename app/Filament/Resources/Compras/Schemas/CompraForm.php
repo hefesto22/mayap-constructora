@@ -16,6 +16,7 @@ use App\Models\Proyecto;
 use App\Models\Requisicion;
 use App\Models\User;
 use App\Services\Requisiciones\PresupuestoMaterialesProyectoService;
+use App\Support\Cantidad;
 use App\Support\Permisos;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
@@ -48,6 +49,59 @@ class CompraForm
                     self::tabEstado(),
                 ]),
         ]);
+    }
+
+    /**
+     * Atajo "Registrar compra" desde una requisición (?requisicion={id}):
+     * las líneas nacen con los materiales y cantidades FALTANTES
+     * (autorizado − ya despachado) — recepción solo captura el precio de
+     * factura. Sin parámetro (o sin faltantes): una fila vacía normal.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function lineasDesdeRequisicion(): array
+    {
+        $filaVacia = [[]];
+
+        $requisicionId = request()->integer('requisicion');
+
+        if ($requisicionId <= 0) {
+            return $filaVacia;
+        }
+
+        $requisicion = Requisicion::query()
+            ->with('lineas.material:id,exento_isv')
+            ->find($requisicionId);
+
+        if ($requisicion === null) {
+            return $filaVacia;
+        }
+
+        $lineas = $requisicion->lineas
+            ->map(function ($linea): ?array {
+                $autorizada = (string) ($linea->cantidad_autorizada ?? $linea->cantidad_solicitada);
+                $faltante = bcsub($autorizada, (string) $linea->cantidad_despachada, 4);
+
+                if (bccomp($faltante, '0', 4) <= 0) {
+                    return null;
+                }
+
+                return [
+                    'material_id' => $linea->material_id,
+                    // Editable: sin ceros de cola ("12.0000" → "12"), sin
+                    // redondear — la BD conserva la precisión completa.
+                    'cantidad'       => Cantidad::sinCeros($faltante),
+                    'costo_unitario' => null,
+                    // La herencia del exento vive en afterStateUpdated del
+                    // select — el prellenado no lo dispara, se setea aquí.
+                    'exento' => (bool) $linea->material->exento_isv,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        return $lineas === [] ? $filaVacia : $lineas;
     }
 
     private static function tabDatos(): Tab
@@ -210,6 +264,11 @@ class CompraForm
                     ->reorderable(false)
                     ->defaultItems(1)
                     ->minItems(1)
+                    // Atajo "Registrar compra" desde una requisición
+                    // (?requisicion=ID): las líneas nacen prellenadas con
+                    // los materiales y cantidades FALTANTES — recepción
+                    // solo captura el precio de factura.
+                    ->default(fn (): array => self::lineasDesdeRequisicion())
                     ->columnSpanFull()
                     // Dividir una línea de factura entre destinos (150 en el
                     // papel → 50 a obra + 100 a bodega): duplicar y ajustar
