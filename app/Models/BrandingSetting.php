@@ -57,12 +57,35 @@ class BrandingSetting extends Model
     }
 
     /**
-     * Limpia el cache cuando se modifica el registro.
+     * Limpia el cache cuando se modifica el registro y elimina del disco
+     * los archivos huérfanos: al reemplazar o quitar el logo/favicon, el
+     * archivo anterior se borra definitivamente (no se acumulan en
+     * storage/branding).
      */
     protected static function booted(): void
     {
+        static::updating(static function (self $setting): void {
+            foreach (['logo_path', 'favicon_path'] as $campo) {
+                /** @var string|null $anterior */
+                $anterior = $setting->getOriginal($campo);
+
+                if ($anterior !== null && $anterior !== '' && $setting->{$campo} !== $anterior) {
+                    Storage::disk('public')->delete($anterior);
+                }
+            }
+        });
+
         static::saved(static fn () => Cache::forget(self::CACHE_KEY));
-        static::deleted(static fn () => Cache::forget(self::CACHE_KEY));
+
+        static::deleted(static function (self $setting): void {
+            foreach ([$setting->logo_path, $setting->favicon_path] as $ruta) {
+                if ($ruta !== null && $ruta !== '') {
+                    Storage::disk('public')->delete($ruta);
+                }
+            }
+
+            Cache::forget(self::CACHE_KEY);
+        });
     }
 
     /**
