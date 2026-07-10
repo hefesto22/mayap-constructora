@@ -56,6 +56,12 @@ final class PdfRenderer
                 mkdir($home, 0755, true);
             }
 
+            // OJO: browser.cjs de Browsershot mergea {...options.env,
+            // ...process.env} — process.env GANA. Por eso el HOME se define
+            // en el entorno del propio proceso PHP (putenv): node lo hereda
+            // y llega a Chromium sin que nada lo pise.
+            putenv('HOME='.$home);
+
             $shot->noSandbox()
                 ->addChromiumArguments(['disable-crashpad'])
                 ->setEnvironmentOptions(['HOME' => $home]);
