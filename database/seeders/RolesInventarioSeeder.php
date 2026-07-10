@@ -151,9 +151,38 @@ class RolesInventarioSeeder extends Seeder
         // solo gerencia por defecto (recepción se apega al presupuesto).
         $gerencia->givePermissionTo(Permisos::COMPRAR_FUERA_DE_PRESUPUESTO);
 
-        // Corregir un conteo YA CONFIRMADO mueve inventario (ajuste ±):
-        // solo gerencia por defecto (ajustable desde Roles → Personalizados).
+        // Corregir un conteo ("dije 40 y eran 60"): quien CUENTA corrige —
+        // bodeguero (su bodega) y encargado (su obra), que son quienes se
+        // equivocan contando en el día a día. El riesgo del ajuste de stock
+        // queda acotado por el alcance por destino, el motivo obligatorio y
+        // la ventana de 24 h. Gerencia como respaldo universal.
+        $bodeguero->givePermissionTo(Permisos::CORREGIR_RECEPCION_COMPRA);
+        $encargado->givePermissionTo(Permisos::CORREGIR_RECEPCION_COMPRA);
         $gerencia->givePermissionTo(Permisos::CORREGIR_RECEPCION_COMPRA);
+
+        // Completar (sellar) la compra cuadrada: el CREADOR concilia —
+        // recepción y gerencia por defecto.
+        $recepcion->givePermissionTo(Permisos::COMPLETAR_COMPRA);
+        $gerencia->givePermissionTo(Permisos::COMPLETAR_COMPRA);
+
+        // ── Flujo de requisiciones (administrable desde Roles) ──────────
+        // Bodeguero opera su lado (autorizar/despachar/rechazar); el
+        // encargado recibe en SUS obras; recepción realiza la compra de
+        // las que quedan sin stock; gerencia todo (respaldo).
+        $bodeguero->givePermissionTo([
+            Permisos::AUTORIZAR_REQUISICION,
+            Permisos::DESPACHAR_REQUISICION,
+            Permisos::RECHAZAR_REQUISICION,
+        ]);
+        $encargado->givePermissionTo(Permisos::RECIBIR_REQUISICION);
+        $recepcion->givePermissionTo(Permisos::REALIZAR_COMPRA_REQUISICION);
+        $gerencia->givePermissionTo([
+            Permisos::AUTORIZAR_REQUISICION,
+            Permisos::DESPACHAR_REQUISICION,
+            Permisos::RECIBIR_REQUISICION,
+            Permisos::RECHAZAR_REQUISICION,
+            Permisos::REALIZAR_COMPRA_REQUISICION,
+        ]);
 
         // El super_admin sincronizó sus permisos ANTES de que estos custom
         // existieran (shield:super-admin en AdminUserSeeder) — asignarle

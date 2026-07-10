@@ -81,6 +81,28 @@ final class Permisos
      */
     public const string CORREGIR_RECEPCION_COMPRA = 'CorregirRecepcion:Compra';
 
+    /**
+     * Completar (sellar) una compra cuadrada: cierre definitivo tras la
+     * ventana de corrección — ya no se corrige, ni anula, ni edita.
+     */
+    public const string COMPLETAR_COMPRA = 'Completar:Compra';
+
+    // ── Requisiciones — flujo operativo ─────────────────────────────────
+    /** Autorizar (o ajustar cantidades de) una requisición solicitada. */
+    public const string AUTORIZAR_REQUISICION = 'Autorizar:Requisicion';
+
+    /** Lado bodega: despachar, marcar en tránsito y conciliar el cierre. */
+    public const string DESPACHAR_REQUISICION = 'Despachar:Requisicion';
+
+    /** Confirmar en OBRA lo que llegó (con alcance: solo SUS obras). */
+    public const string RECIBIR_REQUISICION = 'RecibirEnObra:Requisicion';
+
+    /** Rechazar una requisición en estado temprano. */
+    public const string RECHAZAR_REQUISICION = 'Rechazar:Requisicion';
+
+    /** Realizar la compra de una requisición SIN stock (atajo prellenado). */
+    public const string REALIZAR_COMPRA_REQUISICION = 'RealizarCompra:Requisicion';
+
     // ── Inventario ──────────────────────────────────────────────────────
     /** Ver inventario de TODAS las bodegas (bypass de bodegas asignadas). */
     public const string VER_TODAS_LAS_BODEGAS = 'VerTodasLasBodegas:Bodega';
@@ -152,7 +174,15 @@ final class Permisos
             self::ANULAR_COMPRA                => 'Anular compra confirmada',
             self::VERIFICAR_RECEPCION_COMPRA   => 'Verificar recepción de compras',
             self::CORREGIR_RECEPCION_COMPRA    => 'Corregir recepción ya confirmada (ajusta stock)',
+            self::COMPLETAR_COMPRA             => 'Completar compra cuadrada (cierre definitivo)',
             self::COMPRAR_FUERA_DE_PRESUPUESTO => 'Comprar fuera de presupuesto (imprevistos)',
+        ],
+        'Requisiciones — Flujo' => [
+            self::AUTORIZAR_REQUISICION       => 'Autorizar requisiciones',
+            self::DESPACHAR_REQUISICION       => 'Despachar, marcar en tránsito y conciliar (lado bodega)',
+            self::RECIBIR_REQUISICION         => 'Recibir material en obra (solo sus obras)',
+            self::RECHAZAR_REQUISICION        => 'Rechazar requisiciones',
+            self::REALIZAR_COMPRA_REQUISICION => 'Realizar la compra de una requisición sin stock',
         ],
         'Inventario — Bodegas' => [
             self::VER_TODAS_LAS_BODEGAS => 'Ver todas las bodegas',
@@ -169,5 +199,6 @@ final class Permisos
         + self::PERSONALIZADOS_POR_MODULO['Proyectos — Visibilidad por estado']
         + self::PERSONALIZADOS_POR_MODULO['Proyectos — Reportes']
         + self::PERSONALIZADOS_POR_MODULO['Compras — Operaciones sensibles']
+        + self::PERSONALIZADOS_POR_MODULO['Requisiciones — Flujo']
         + self::PERSONALIZADOS_POR_MODULO['Inventario — Bodegas'];
 }

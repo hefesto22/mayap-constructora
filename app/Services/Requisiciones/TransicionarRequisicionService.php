@@ -118,6 +118,14 @@ final readonly class TransicionarRequisicionService
             // transacción; recargamos el estado real antes de transicionar.
             $requisicion->refresh();
 
+            // Reintento de despacho SIN stock nuevo: ya estaba en
+            // Requisición de compra — no hay transición que aplicar (sería
+            // RequisicionCompra → RequisicionCompra: inválida). La acción
+            // de Filament le muestra el aviso de "sin stock" al usuario.
+            if ($requisicion->estado === EstadoRequisicion::RequisicionCompra) {
+                return;
+            }
+
             $motivo = $nota ?? "Sin stock en bodega para despachar: {$e->getMessage()}";
 
             DB::transaction(function () use ($requisicion, $userId, $motivo): void {

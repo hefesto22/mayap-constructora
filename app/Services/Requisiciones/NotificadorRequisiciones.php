@@ -34,6 +34,10 @@ use Illuminate\Support\Collection;
  */
 final class NotificadorRequisiciones
 {
+    public function __construct(
+        private readonly PresupuestoMaterialesProyectoService $presupuesto,
+    ) {}
+
     public function nuevaSolicitud(Requisicion $requisicion, ?int $actorId = null): void
     {
         $this->enviar(
@@ -41,6 +45,45 @@ final class NotificadorRequisiciones
             requisicion: $requisicion,
             titulo: 'Nueva requisición por autorizar',
             actorId: $actorId,
+        );
+
+        $this->alertarSiExcedePresupuesto($requisicion, $actorId);
+    }
+
+    /**
+     * Control presupuestario: si la requisición pide MÁS de lo que el
+     * presupuesto de la obra permite (lo asignado menos lo ya solicitado),
+     * gerencia y bodegueros reciben la alerta CON el detalle por material
+     * — así el autorizador decide con los números enfrente, no a ciegas.
+     */
+    private function alertarSiExcedePresupuesto(Requisicion $requisicion, ?int $actorId): void
+    {
+        $requisicion->loadMissing('lineas');
+
+        $excesos = $requisicion->lineas
+            ->map(fn ($linea): ?PresupuestoMaterial => $this->presupuesto->paraMaterial(
+                $requisicion->proyecto_id,
+                $linea->material_id,
+            ))
+            ->filter(fn (?PresupuestoMaterial $pm): bool => $pm !== null && $pm->excedido())
+            ->map(fn (PresupuestoMaterial $pm): string => sprintf(
+                '%s: excede en %s %s',
+                $pm->materialNombre,
+                number_format((float) $pm->exceso(), 2),
+                $pm->unidad,
+            ))
+            ->values();
+
+        if ($excesos->isEmpty()) {
+            return;
+        }
+
+        $this->enviar(
+            destinatarios: $this->usuariosConRol(Roles::GERENCIA, Roles::BODEGUERO),
+            requisicion: $requisicion,
+            titulo: '⚠ Requisición EXCEDE el presupuesto de la obra',
+            actorId: $actorId,
+            detalle: $excesos->join(' · '),
         );
     }
 
@@ -66,13 +109,19 @@ final class NotificadorRequisiciones
     /**
      * @param Collection<int, User> $destinatarios
      */
-    private function enviar(Collection $destinatarios, Requisicion $requisicion, string $titulo, ?int $actorId): void
+    private function enviar(Collection $destinatarios, Requisicion $requisicion, string $titulo, ?int $actorId, ?string $detalle = null): void
     {
         $requisicion->loadMissing('proyecto:id,codigo,nombre');
 
+        $cuerpo = "{$requisicion->codigo} · {$requisicion->proyecto->nombre}";
+
+        if ($detalle !== null) {
+            $cuerpo .= " — {$detalle}";
+        }
+
         $notificacion = Notification::make()
             ->title($titulo)
-            ->body("{$requisicion->codigo} · {$requisicion->proyecto->nombre}")
+            ->body($cuerpo)
             ->icon('heroicon-o-clipboard-document-list')
             ->actions([
                 Action::make('ver')

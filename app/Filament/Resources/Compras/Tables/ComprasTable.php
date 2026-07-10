@@ -11,6 +11,7 @@ use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\User;
 use App\Services\Compras\AnularCompraService;
+use App\Services\Compras\CompletarCompraService;
 use App\Services\Compras\CorregirRecepcionService;
 use App\Services\Compras\MarcarPorRecibirService;
 use App\Services\Compras\VerificarRecepcionService;
@@ -57,17 +58,21 @@ class ComprasTable
                     ->icon(fn (EstadoCompra $state): string => $state->getIcon())
                     ->formatStateUsing(fn (EstadoCompra $state): string => $state->getLabel())
                     ->sortable(),
+                // Pago y Total son datos de la NEGOCIACIÓN — el encargado de
+                // obra solo cuenta bultos: a él no le conciernen.
                 TextColumn::make('condicion_pago')
                     ->label('Pago')
                     ->badge()
                     ->color(fn (CondicionPago $state): string => $state->getColor())
-                    ->formatStateUsing(fn (CondicionPago $state): string => $state->getLabel()),
+                    ->formatStateUsing(fn (CondicionPago $state): string => $state->getLabel())
+                    ->visible(fn (): bool => ! Roles::soloEncargado(auth()->user())),
                 TextColumn::make('total_cache')
                     ->label('Total')
                     ->money('HNL')
                     ->weight('bold')
                     ->alignEnd()
-                    ->sortable(),
+                    ->sortable()
+                    ->visible(fn (): bool => ! Roles::soloEncargado(auth()->user())),
                 TextColumn::make('fecha')
                     ->label('Fecha')
                     ->date('d/M/Y')
@@ -235,6 +240,7 @@ class ComprasTable
                                     'linea_id' => $l->id,
                                     'material' => $l->material->nombre,
                                     'esperado' => (string) $l->cantidad,
+                                    'actual'   => (string) $l->cantidad_recibida,
                                     'recibido' => (string) $l->cantidad_recibida,
                                 ])
                                 ->all(),
@@ -248,7 +254,8 @@ class ComprasTable
                             ->reorderable(false)
                             ->table([
                                 TableColumn::make('Material'),
-                                TableColumn::make('Facturado')->width('120px'),
+                                TableColumn::make('Facturado')->width('110px'),
+                                TableColumn::make('Conteo actual')->width('110px'),
                                 TableColumn::make('Recibido real')->width('140px'),
                             ])
                             ->compact()
@@ -258,6 +265,10 @@ class ComprasTable
                                     ->disabled()
                                     ->dehydrated(false),
                                 TextInput::make('esperado')
+                                    ->hiddenLabel()
+                                    ->disabled()
+                                    ->dehydrated(false),
+                                TextInput::make('actual')
                                     ->hiddenLabel()
                                     ->disabled()
                                     ->dehydrated(false),
@@ -306,18 +317,53 @@ class ComprasTable
                             ->success()
                             ->send();
                     }),
+                Action::make('completar')
+                    ->label('Completar')
+                    ->icon('heroicon-o-lock-closed')
+                    ->color('info')
+                    // Cierre definitivo: cuadró (facturado = recibido) y la
+                    // ventana de corrección venció sin reclamos. Sella la
+                    // compra: sin corregir, sin anular, sin editar.
+                    ->visible(function (Compra $record): bool {
+                        $user = auth()->user();
+
+                        return $user instanceof User
+                            && app(CompletarCompraService::class)->puedeCompletar($user, $record);
+                    })
+                    ->requiresConfirmation()
+                    ->modalHeading('Completar la compra')
+                    ->modalDescription('Todo cuadró y nadie corrigió el conteo en la ventana de corrección. Al completar, la compra queda SELLADA: ya no se corrige, ni se anula, ni se edita. El acta queda como respaldo.')
+                    ->modalSubmitActionLabel('Sí, completar')
+                    ->action(function (Compra $record): void {
+                        /** @var User $user */
+                        $user = auth()->user();
+
+                        try {
+                            app(CompletarCompraService::class)->completar($record, $user);
+                        } catch (CompraException $e) {
+                            Notification::make()->title('No se pudo completar')->body($e->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Compra completada')
+                            ->body("Conciliación cerrada: {$record->codigo} queda sellada.")
+                            ->success()
+                            ->send();
+                    }),
                 Action::make('acta_recepcion')
                     ->label('Acta de recepción')
                     ->icon('heroicon-o-eye')
                     ->color('gray')
-                    // Disponible cuando ya hay verificación (confirmada, o
-                    // parcial en curso) Y el usuario tiene alguna porción a
-                    // su alcance (recepción/gerencia: completa). Vista
-                    // previa INLINE; el controller re-valida en servidor.
+                    // Disponible cuando ya hay verificación (confirmada,
+                    // completada, o parcial en curso) Y el usuario tiene
+                    // alguna porción a su alcance. Vista previa INLINE; el
+                    // controller re-valida en servidor.
                     ->visible(function (Compra $record): bool {
                         $user = auth()->user();
 
-                        $hayVerificacion = $record->estado === EstadoCompra::Confirmada
+                        $hayVerificacion = in_array($record->estado, [EstadoCompra::Confirmada, EstadoCompra::Completada], strict: true)
                             || ($record->estado === EstadoCompra::PorRecibir
                                 && $record->lineas()->whereNotNull('verificada_at')->exists());
 

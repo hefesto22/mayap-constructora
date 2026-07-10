@@ -27,7 +27,7 @@ final class ActaRecepcionPdfController
 
         abort_unless($user?->can('View:Compra') ?? false, 403);
 
-        $hayVerificacion = $compra->estado === EstadoCompra::Confirmada
+        $hayVerificacion = in_array($compra->estado, [EstadoCompra::Confirmada, EstadoCompra::Completada], strict: true)
             || ($compra->estado === EstadoCompra::PorRecibir
                 && $compra->lineas()->whereNotNull('verificada_at')->exists());
 

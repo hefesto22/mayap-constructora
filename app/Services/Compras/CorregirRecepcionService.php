@@ -77,6 +77,15 @@ final readonly class CorregirRecepcionService
             throw CompraNoCorregibleException::estadoInvalido($compra->codigo, $compra->estado);
         }
 
+        // Cuadrada y con la ventana vencida: el conteo quedó firme — la
+        // compra está lista para COMPLETAR, ya no se corrige.
+        if (! $compra->enVentanaDeCorreccion()) {
+            throw CompraNoCorregibleException::ventanaVencida(
+                $compra->codigo,
+                (int) config('compras.ventana_correccion_horas', 24),
+            );
+        }
+
         DB::transaction(function () use ($compra, $corregidoPorLinea, $motivo, $corrector): void {
             $bloqueada = Compra::query()
                 ->whereKey($compra->id)
@@ -159,7 +168,8 @@ final readonly class CorregirRecepcionService
      */
     public function lineasCorregiblesPara(User $user, Compra $compra): Collection
     {
-        if (! in_array($compra->estado, self::ESTADOS_CORREGIBLES, strict: true)) {
+        if (! in_array($compra->estado, self::ESTADOS_CORREGIBLES, strict: true)
+            || ! $compra->enVentanaDeCorreccion()) {
             return new Collection;
         }
 

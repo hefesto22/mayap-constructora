@@ -88,6 +88,8 @@ class Compra extends Model
         'motivo_anulacion',
         'anulada_at',
         'anulada_por',
+        'completada_at',
+        'completada_por',
     ];
 
     /**
@@ -101,6 +103,7 @@ class Compra extends Model
             'fecha'           => 'date',
             'fecha_recepcion' => 'date',
             'anulada_at'      => 'datetime',
+            'completada_at'   => 'datetime',
             'aplica_isv'      => 'boolean',
             'isv_porcentaje'  => 'decimal:2',
             'costo_envio'     => 'decimal:2',
@@ -240,6 +243,74 @@ class Compra extends Model
         return $this->esDirectaAObra()
             ? Ubicacion::obra((int) $this->proyecto_id)
             : Ubicacion::bodega($this->bodega_id);
+    }
+
+    // ─── Cierre (conciliación final) ────────────────────────────────
+
+    /**
+     * ¿Todo cuadró? Cada línea verificada y SIN diferencia (facturado =
+     * recibido). Solo entonces la compra puede COMPLETARSE.
+     */
+    public function cuadrada(): bool
+    {
+        $this->loadMissing('lineas');
+
+        return $this->lineas->isNotEmpty()
+            && $this->lineas->every(
+                fn (CompraLinea $l): bool => $l->verificada() && ! $l->tieneDiferencia(),
+            );
+    }
+
+    /**
+     * Momento en que quedó cuadrada = el ÚLTIMO conteo (verificación o
+     * corrección — corregir reinicia el reloj). De aquí corre la ventana
+     * de corrección.
+     */
+    public function cuadradaEn(): ?Carbon
+    {
+        if (! $this->cuadrada()) {
+            return null;
+        }
+
+        $ultima = $this->lineas->max('verificada_at');
+
+        return $ultima instanceof Carbon ? $ultima : null;
+    }
+
+    /**
+     * ¿Sigue abierta la ventana para corregir conteos?
+     *
+     *  - Con diferencias (no cuadra): la ventana NUNCA cierra — el reclamo
+     *    se resuelve recontando o anulando.
+     *  - Cuadrada: cierra a las N horas del último conteo (config
+     *    compras.ventana_correccion_horas) o al COMPLETAR, lo que ocurra
+     *    primero.
+     */
+    public function enVentanaDeCorreccion(): bool
+    {
+        if ($this->estado === EstadoCompra::Completada) {
+            return false;
+        }
+
+        $cuadradaEn = $this->cuadradaEn();
+
+        if ($cuadradaEn === null) {
+            return true;
+        }
+
+        return now()->lessThan(
+            $cuadradaEn->copy()->addHours((int) config('compras.ventana_correccion_horas', 24)),
+        );
+    }
+
+    /**
+     * ¿Ya venció la ventana y quedó lista para el cierre definitivo?
+     */
+    public function listaParaCompletar(): bool
+    {
+        return $this->estado === EstadoCompra::Confirmada
+            && $this->cuadrada()
+            && ! $this->enVentanaDeCorreccion();
     }
 
     /**

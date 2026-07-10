@@ -17,6 +17,8 @@ use Filament\Support\Contracts\HasLabel;
  *   que llegó CONTRA lo facturado. Aún NO hay stock ni CxP.
  * - Confirmada: recepción verificada — el stock entró (por lo RECIBIDO) y,
  *   si es a crédito, existe la cuenta por pagar (por lo FACTURADO).
+ * - Completada: conciliada y SELLADA — todo cuadró (facturado = recibido) y
+ *   pasó la ventana de corrección. No se corrige, ni anula, ni edita.
  * - Anulada:    revertida (movimientos inversos de inventario). Terminal.
  *
  * Los CHECK constraints de la tabla `compras` validan el conjunto.
@@ -26,6 +28,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
     case Borrador = 'borrador';
     case PorRecibir = 'por_recibir';
     case Confirmada = 'confirmada';
+    case Completada = 'completada';
     case Anulada = 'anulada';
 
     public function getLabel(): string
@@ -34,6 +37,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
             self::Borrador   => 'Borrador',
             self::PorRecibir => 'Por recibir',
             self::Confirmada => 'Confirmada',
+            self::Completada => 'Completada',
             self::Anulada    => 'Anulada',
         };
     }
@@ -44,6 +48,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
             self::Borrador   => 'gray',
             self::PorRecibir => 'warning',
             self::Confirmada => 'success',
+            self::Completada => 'info',
             self::Anulada    => 'danger',
         };
     }
@@ -54,6 +59,7 @@ enum EstadoCompra: string implements HasColor, HasIcon, HasLabel
             self::Borrador   => 'heroicon-o-pencil-square',
             self::PorRecibir => 'heroicon-o-truck',
             self::Confirmada => 'heroicon-o-check-badge',
+            self::Completada => 'heroicon-o-lock-closed',
             self::Anulada    => 'heroicon-o-x-circle',
         };
     }

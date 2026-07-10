@@ -13,7 +13,9 @@ use App\Models\RequisicionLinea;
 use App\Models\User;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Requisiciones\TransicionarRequisicionService;
+use App\Support\Permisos;
 use App\Support\Roles;
+use BezhanSalleh\FilamentShield\Support\Utils;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -46,7 +48,7 @@ final class AccionesTransicion
             ->icon('heroicon-o-check-circle')
             ->color('info')
             ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Solicitada
-                && Roles::despachaBodega(auth()->user()))
+                && self::puede(Permisos::AUTORIZAR_REQUISICION))
             ->modalHeading('Autorizar requisición')
             ->modalSubmitActionLabel('Autorizar')
             ->fillForm(self::prellenarLineas('cantidad_solicitada', conStock: true))
@@ -77,7 +79,7 @@ final class AccionesTransicion
                 $record->estado,
                 [EstadoRequisicion::Autorizada, EstadoRequisicion::RequisicionCompra],
                 strict: true,
-            ) && Roles::despachaBodega(auth()->user()))
+            ) && self::puede(Permisos::DESPACHAR_REQUISICION))
             ->modalHeading('Despachar a obra')
             ->modalSubmitActionLabel('Despachar')
             ->schema([
@@ -132,7 +134,7 @@ final class AccionesTransicion
             ->color('info')
             ->requiresConfirmation()
             ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Despachada
-                && Roles::despachaBodega(auth()->user()))
+                && self::puede(Permisos::DESPACHAR_REQUISICION))
             ->action(function (Requisicion $record): void {
                 app(TransicionarRequisicionService::class)->marcarEnTransito($record, self::userId());
 
@@ -178,7 +180,7 @@ final class AccionesTransicion
             ->requiresConfirmation()
             ->modalDescription('Compara lo despachado con lo recibido. Si cuadra, cierra la requisición; si no, la marca en discrepancia.')
             ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Recibida
-                && Roles::despachaBodega(auth()->user()))
+                && self::puede(Permisos::DESPACHAR_REQUISICION))
             ->action(function (Requisicion $record): void {
                 $resultado = app(TransicionarRequisicionService::class)->conciliar($record, self::userId());
 
@@ -208,7 +210,7 @@ final class AccionesTransicion
             ->icon('heroicon-o-shopping-cart')
             ->color('success')
             ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::RequisicionCompra
-                && Roles::compra(auth()->user()))
+                && self::puede(Permisos::REALIZAR_COMPRA_REQUISICION))
             ->url(fn (Requisicion $record): string => CompraResource::getUrl(
                 'create',
                 ['requisicion' => $record->id],
@@ -228,7 +230,7 @@ final class AccionesTransicion
                 $record->estado,
                 [EstadoRequisicion::Solicitada, EstadoRequisicion::Autorizada, EstadoRequisicion::RequisicionCompra],
                 strict: true,
-            ) && Roles::despachaBodega(auth()->user()))
+            ) && self::puede(Permisos::RECHAZAR_REQUISICION))
             ->modalHeading('Rechazar requisición')
             ->modalSubmitActionLabel('Rechazar')
             ->schema([
@@ -355,23 +357,34 @@ final class AccionesTransicion
      * devuelve int|string|null; nuestros usuarios usan id entero).
      */
     /**
-     * Recibe en obra: el ENCARGADO de esa obra (es quien está físicamente
-     * ahí), o quien tenga visión de bodega/gerencia.
+     * ¿El usuario tiene este permiso del flujo? (pestaña Personalizados
+     * de Roles — todo administrable desde el panel, nunca por rol fijo).
+     */
+    private static function puede(string $permiso): bool
+    {
+        $user = auth()->user();
+
+        return $user instanceof User && $user->can($permiso);
+    }
+
+    /**
+     * Recibe en obra: permiso "Recibir material en obra" + ALCANCE — solo
+     * el encargado de ESA obra (quien está físicamente ahí). Gerencia y
+     * admin son el respaldo universal.
      */
     private static function puedeRecibir(Requisicion $record): bool
     {
         $user = auth()->user();
 
-        if (! $user instanceof User) {
+        if (! $user instanceof User || ! $user->can(Permisos::RECIBIR_REQUISICION)) {
             return false;
         }
 
-        if (Roles::despachaBodega($user)) {
+        if ($user->hasAnyRole([Roles::GERENCIA, Utils::getSuperAdminName()])) {
             return true;
         }
 
-        return $user->hasRole(Roles::ENCARGADO_OBRA)
-            && $record->proyecto->esEncargado($user);
+        return $record->proyecto->esEncargado($user);
     }
 
     private static function userId(): ?int

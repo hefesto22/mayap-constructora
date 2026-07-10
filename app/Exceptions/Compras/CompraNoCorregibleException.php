@@ -55,6 +55,14 @@ final class CompraNoCorregibleException extends CompraException
         return new self("Cantidad corregida inválida: {$cantidad}. Debe ser un número mayor o igual a cero.");
     }
 
+    public static function ventanaVencida(string $codigo, int $horas): self
+    {
+        return new self(
+            "El conteo de la compra {$codigo} quedó firme: cuadró y pasaron las {$horas} horas "
+            .'de la ventana de corrección. La compra está lista para completarse.'
+        );
+    }
+
     public static function stockYaUsado(string $codigo, string $detalle): self
     {
         return new self(
