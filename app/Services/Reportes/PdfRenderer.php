@@ -45,7 +45,11 @@ final class PdfRenderer
         }
 
         if (config('browsershot.no_sandbox') === true) {
-            $shot->noSandbox();
+            // Modo VPS: www-data no puede crear el sandbox de Chromium ni
+            // el "crashpad" (reporteador de crashes exige un HOME escribible
+            // que el usuario del pool no tiene). Ambos flags van juntos.
+            $shot->noSandbox()
+                ->addChromiumArguments(['disable-crashpad']);
         }
 
         $shot->savePdf($rutaDestino);
