@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Enums\EstadoProyecto;
+use App\Filament\Actions\AgendarMaquinasAction;
 use App\Models\Maquina;
 use App\Models\Proyecto;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Pages\Page;
 use UnitEnum;
 
@@ -41,6 +43,22 @@ class CalendarioMaquinaria extends Page
     public static function canAccess(): bool
     {
         return auth()->user()?->can('View:CalendarioMaquinaria') ?? false;
+    }
+
+    /**
+     * "Agendar" directo desde el calendario — acción compartida (misma
+     * forma y mismo service que la Resource de Agenda y el drag de días).
+     *
+     * @return array<int, Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            AgendarMaquinasAction::make()
+                // El widget del plugin escucha este evento y re-pide los
+                // eventos del rango visible.
+                ->after(fn () => $this->dispatch('filament-fullcalendar--refresh')),
+        ];
     }
 
     /** Cambió un filtro → avisar al widget FullCalendar para que re-pida. */

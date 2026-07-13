@@ -54,6 +54,8 @@ class RolesInventarioSeeder extends Seeder
             $this->permisosDe('Bodega'),
             $this->permisosDe('Proveedor'),
             $this->permisosDe('CuentaPorPagar'),
+            // Gerencia también compromete maquinaria (agenda del calendario).
+            $this->permisosDe('AgendaMaquina'),
             $this->existentes([Permisos::VER_TODAS_LAS_BODEGAS, 'View:MyProfilePage', 'page_MyProfilePage']),
             // Gerencia SÍ audita el registro de actividad.
             $this->existentes(['ViewAny:Activity', 'View:Activity']),
@@ -83,6 +85,7 @@ class RolesInventarioSeeder extends Seeder
             $this->permisosDe('ParteTrabajo'),
             $this->permisosDe('ConsumoCombustible'),
             $this->permisosDe('MantenimientoMaquina'),
+            $this->permisosDe('AgendaMaquina'),
             $this->soloLectura('Proyecto'),
             $this->existentes(['View:MyProfilePage', 'page_MyProfilePage']),
         ));
@@ -190,6 +193,11 @@ class RolesInventarioSeeder extends Seeder
         Permission::findOrCreate('View:CalendarioMaquinaria', 'web');
         $maquinaria->givePermissionTo('View:CalendarioMaquinaria');
         $gerencia->givePermissionTo('View:CalendarioMaquinaria');
+
+        // Captura del día (planilla rápida de partes + combustible).
+        Permission::findOrCreate('View:CapturaDelDia', 'web');
+        $maquinaria->givePermissionTo('View:CapturaDelDia');
+        $gerencia->givePermissionTo('View:CapturaDelDia');
 
         // El super_admin sincronizó sus permisos ANTES de que estos custom
         // existieran (shield:super-admin en AdminUserSeeder) — asignarle

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Actions\AgendarMaquinasAction;
 use App\Services\Maquinaria\CalendarioMaquinariaService;
+use Filament\Actions\Action;
 use Livewire\Attributes\On;
 use Saade\FilamentFullCalendar\Widgets\FullCalendarWidget;
 
@@ -38,6 +40,52 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
     protected function headerActions(): array
     {
         return [];
+    }
+
+    /**
+     * Click en un evento: NADA. El calendario es para VER — el título ya
+     * trae máquina, obra y horas. Navegar a listados con 20-30 eventos
+     * diarios confunde (decisión Mauricio 2026-07-13). Sin este override,
+     * el plugin intenta montar una acción 'view' que no existe.
+     *
+     * @param array<string, mixed> $event
+     */
+    public function onEventClick(array $event): void
+    {
+        // Intencionalmente vacío.
+    }
+
+    /**
+     * Acción "agendar" del widget — la monta onDateSelect al arrastrar
+     * sobre los días. Misma definición compartida que el botón de la
+     * página y la Resource de Agenda.
+     */
+    public function agendarAction(): Action
+    {
+        return AgendarMaquinasAction::make()
+            ->after(fn () => $this->refreshRecords());
+    }
+
+    /**
+     * Drag (o click) sobre días del calendario → modal Agendar con el
+     * rango YA prellenado. El atajo principal para agendar rápido.
+     *
+     * @param array<string, mixed>|null $view
+     * @param array<string, mixed>|null $resource
+     */
+    public function onDateSelect(string $start, ?string $end, bool $allDay, ?array $view, ?array $resource): void
+    {
+        if (! (auth()->user()?->can('Create:AgendaMaquina') ?? false)) {
+            return;
+        }
+
+        [$inicio, $fin] = $this->calculateTimezoneOffset($start, $end, $allDay);
+
+        $this->mountAction('agendar', [
+            'desde' => $inicio->toDateString(),
+            // FullCalendar manda el fin EXCLUSIVO en selecciones all-day.
+            'hasta' => $fin?->subDay()->toDateString() ?? $inicio->toDateString(),
+        ]);
     }
 
     /**

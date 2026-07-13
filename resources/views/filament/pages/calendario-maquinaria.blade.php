@@ -31,9 +31,11 @@
                 </x-filament::input.wrapper>
             </div>
 
-            {{-- Leyenda: el hueco sin barras = máquina LIBRE para alquilar. --}}
+            {{-- Leyenda: el hueco sin eventos = máquina LIBRE para alquilar. --}}
             <div class="cal-leyenda">
-                <span><i style="background:#16a34a"></i> En obra</span>
+                <span><i style="background:#16a34a"></i> Trabajado</span>
+                <span><i style="background:#2563eb"></i> Programada</span>
+                <span><i style="background:#0d9488"></i> Asignación</span>
                 <span><i style="background:#d97706"></i> Mantenimiento</span>
                 <span><i style="background:#9ca3af"></i> Finalizada</span>
             </div>
@@ -153,7 +155,7 @@
         .cal-lienzo .fc .fc-event {
             border-radius: .375rem; padding: .1rem .45rem;
             font-size: .78rem; font-weight: 600; border: none;
-            cursor: pointer;
+            cursor: default; /* los eventos no navegan: el calendario es para VER */
         }
 
         .cal-lienzo .fc .fc-event:hover { filter: brightness(1.08); }

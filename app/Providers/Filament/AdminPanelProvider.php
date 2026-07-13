@@ -87,7 +87,9 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->plugins([
                 FilamentShieldPlugin::make(),
-                FilamentFullCalendarPlugin::make(),
+                // selectable: arrastrar sobre días del calendario abre
+                // "Agendar" con el rango prellenado (agenda rápida).
+                FilamentFullCalendarPlugin::make()->selectable(),
             ])
             ->databaseNotifications()
             ->databaseNotificationsPolling('30s')
