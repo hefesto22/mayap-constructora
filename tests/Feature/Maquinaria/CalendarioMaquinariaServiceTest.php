@@ -77,7 +77,7 @@ test('asignación ABIERTA = marcador de un día en su inicio, nunca barra hasta 
     $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31');
 
     expect($eventos)->toHaveCount(1)
-        ->and($eventos[0]['title'])->toContain('📌')->toContain('desde 05/07')
+        ->and($eventos[0]['title'])->toContain('desde 05/07')
         ->and($eventos[0]['start'])->toBe('2026-07-05')
         ->and($eventos[0])->not->toHaveKey('end')
         ->and($eventos[0]['color'])->toBe('#0d9488');
@@ -140,7 +140,7 @@ test('mantenimiento con rango = barra ámbar; SIN fecha fin = marcador de un dí
     )[0];
 
     $conRango = $porInicio('2026-07-12');
-    expect($conRango['title'])->toContain('🔧')->toContain('RETROEXCAVADORA JD')
+    expect($conRango['title'])->toContain('RETROEXCAVADORA JD')
         ->and($conRango['color'])->toBe('#d97706')
         ->and($conRango['end'])->toBe('2026-07-15');
 
@@ -149,28 +149,136 @@ test('mantenimiento con rango = barra ámbar; SIN fecha fin = marcador de un dí
         ->and($abierto)->not->toHaveKey('end'); // marcador, no barra
 });
 
-test('la agenda programada sale en azul con sus horas previstas y respeta filtros', function (): void {
+test('el azul agendado DESAPARECE cuando ya existe el parte real de ese día (plan cumplido)', function (): void {
+    $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
+    $obra = Proyecto::factory()->enEjecucion()->create();
+
+    $asignacion = AsignacionMaquina::factory()->create([
+        'maquina_id'          => $maquina->id, 'proyecto_id' => $obra->id,
+        'tarifa_hora_pactada' => '350.00',
+        'fecha_inicio'        => '2026-07-01', 'fecha_fin' => '2026-07-31',
+        'estado'              => EstadoAsignacion::Activa,
+    ]);
+
+    AgendaMaquina::factory()->create([
+        'maquina_id' => $maquina->id, 'proyecto_id' => $obra->id,
+        'fecha'      => '2026-07-15',
+    ]);
+
+    // Sin parte: el azul aparece.
+    $azules = array_filter(
+        $this->servicio->eventos('2026-07-01', '2026-07-31'),
+        fn (array $e): bool => str_starts_with((string) $e['id'], 'agenda-'),
+    );
+    expect($azules)->toHaveCount(1);
+
+    // Llega la realidad (parte verde del mismo día) → el azul se retira.
+    ParteTrabajo::factory()->create([
+        'asignacion_maquina_id' => $asignacion->id,
+        'fecha'                 => '2026-07-15',
+        'horas'                 => '7.50', 'horas_extra' => '0.00',
+        'tarifa_hora_aplicada'  => '350.00', 'costo_cache' => '2625.00',
+    ]);
+
+    $azules = array_filter(
+        $this->servicio->eventos('2026-07-01', '2026-07-31'),
+        fn (array $e): bool => str_starts_with((string) $e['id'], 'agenda-'),
+    );
+    expect($azules)->toHaveCount(0);
+});
+
+test('la agenda programada sale en azul con su hora de llegada y respeta filtros', function (): void {
     $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
     $obraA = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA ALFA']);
     $obraB = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA BETA']);
 
     AgendaMaquina::factory()->create([
-        'maquina_id' => $maquina->id, 'proyecto_id' => $obraA->id,
-        'fecha'      => '2026-07-15', 'horas_previstas' => '4.00',
+        'maquina_id'   => $maquina->id, 'proyecto_id' => $obraA->id,
+        'fecha'        => '2026-07-15',
+        'hora_entrada' => '07:30:00',
     ]);
     AgendaMaquina::factory()->create([
-        'maquina_id' => $maquina->id, 'proyecto_id' => $obraB->id,
-        'fecha'      => '2026-07-16', 'horas_previstas' => '6.50',
+        'maquina_id'   => $maquina->id, 'proyecto_id' => $obraB->id,
+        'fecha'        => '2026-07-16',
+        'hora_entrada' => null,
     ]);
 
     $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31');
     expect($eventos)->toHaveCount(2)
-        ->and($eventos[0]['title'])->toContain('🗓')->toContain('OBRA ALFA')->toContain('4h prog.')
+        ->and($eventos[0]['title'])->toContain('OBRA ALFA')
+        ->toContain('llega 7:30 AM') // a qué hora llega, en AM/PM
         ->and($eventos[0]['color'])->toBe('#2563eb')
-        ->and($eventos[1]['title'])->toContain('6.5h prog.');
+        ->and($eventos[1]['title'])->toContain('OBRA BETA')->not->toContain('llega');
 
     // Filtro por obra:
     $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31', proyectoId: $obraB->id);
     expect($eventos)->toHaveCount(1)
         ->and($eventos[0]['title'])->toContain('OBRA BETA');
+});
+
+test('ALCANCE ENCARGADO: soloProyectos acota agenda/asignaciones a SUS obras y oculta los mantenimientos', function (): void {
+    $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
+    $mia = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA MIA']);
+    $ajena = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA AJENA']);
+
+    AgendaMaquina::factory()->create([
+        'maquina_id'   => $maquina->id, 'proyecto_id' => $mia->id,
+        'fecha'        => '2026-07-15',
+        'hora_entrada' => '08:00:00',
+    ]);
+    AgendaMaquina::factory()->create([
+        'maquina_id'   => $maquina->id, 'proyecto_id' => $ajena->id,
+        'fecha'        => '2026-07-16',
+        'hora_entrada' => '08:00:00',
+    ]);
+
+    // El taller no pertenece a una obra: en la vista acotada no aparece.
+    MantenimientoMaquina::factory()->create([
+        'maquina_id'   => $maquina->id,
+        'fecha_inicio' => '2026-07-20',
+        'fecha_fin'    => '2026-07-22',
+        'estado'       => EstadoMantenimiento::EnProceso,
+    ]);
+
+    $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31', soloProyectos: [$mia->id]);
+
+    expect($eventos)->toHaveCount(1)
+        ->and($eventos[0]['title'])->toContain('OBRA MIA');
+
+    // Sin límite (maquinaria/gerencia) se ve TODO: 2 agendas + taller.
+    expect($this->servicio->eventos('2026-07-01', '2026-07-31'))->toHaveCount(3);
+});
+
+test('la asignación FINALIZADA de un solo día con parte ya registrado se OCULTA (el verde cuenta la historia)', function (): void {
+    $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
+    $obra = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA UNICA']);
+
+    // La administrativa: un solo día, finalizada (p. ej. la automática
+    // que crea "Registrar jornada" desde el calendario).
+    $deUnDia = AsignacionMaquina::factory()->create([
+        'maquina_id'          => $maquina->id,
+        'proyecto_id'         => $obra->id,
+        'tarifa_hora_pactada' => '350.00',
+        'fecha_inicio'        => '2026-07-10',
+        'fecha_fin'           => '2026-07-10',
+        'estado'              => EstadoAsignacion::Finalizada,
+    ]);
+
+    ParteTrabajo::factory()->create([
+        'asignacion_maquina_id' => $deUnDia->id,
+        'fecha'                 => '2026-07-10',
+        'horas'                 => '6.00',
+        'horas_extra'           => '0.00',
+        'tarifa_hora_aplicada'  => '350.00',
+        'costo_cache'           => '2100.00',
+    ]);
+
+    $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31');
+    $asignaciones = array_values(array_filter($eventos, fn (array $e): bool => str_starts_with((string) $e['id'], 'asignacion-')));
+    $partes = array_values(array_filter($eventos, fn (array $e): bool => str_starts_with((string) $e['id'], 'parte-')));
+
+    // La barra gris de un día desaparece; el parte verde queda.
+    expect($asignaciones)->toHaveCount(0)
+        ->and($partes)->toHaveCount(1)
+        ->and($partes[0]['title'])->toContain('6h');
 });

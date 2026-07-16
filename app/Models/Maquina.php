@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
+ * @property-read AgendaMaquina|null $agendaHoyConfirmada
  */
 class Maquina extends Model
 {
@@ -180,6 +182,46 @@ class Maquina extends Model
         return Attribute::make(
             set: static fn (?string $value): ?string => self::aMayusculas($value),
         );
+    }
+
+    // ─── Trabajando hoy (estado VISUAL, no del ciclo de vida) ──────
+
+    /**
+     * El agendado de HOY con llegada confirmada y SIN salida — la
+     * evidencia de que la máquina está trabajando en una obra AHORA
+     * (cuando el encargado confirma que terminó, deja de contar).
+     *
+     * @return HasOne<AgendaMaquina, $this>
+     */
+    public function agendaHoyConfirmada(): HasOne
+    {
+        return $this->hasOne(AgendaMaquina::class)
+            ->whereDate('fecha', today())
+            ->whereNotNull('llegada_confirmada_at')
+            ->whereNull('salida_confirmada_at')
+            ->latest('llegada_confirmada_at');
+    }
+
+    /**
+     * ¿Está trabajando en una obra AHORA? (decisión Mauricio 2026-07-15):
+     * llegada confirmada HOY → se muestra "Trabajando" todo el día y
+     * mañana vuelve sola a su estado normal. Es un estado VISUAL derivado,
+     * no toca el ciclo de vida real — taller y baja siempre ganan.
+     */
+    public function trabajandoHoy(): bool
+    {
+        return in_array($this->estado, [EstadoMaquina::Disponible, EstadoMaquina::Asignada], strict: true)
+            && $this->agendaHoyConfirmada !== null;
+    }
+
+    /**
+     * Nombre de la obra donde trabaja hoy (null si no está trabajando).
+     */
+    public function obraDondeTrabajaHoy(): ?string
+    {
+        return $this->trabajandoHoy()
+            ? $this->agendaHoyConfirmada?->proyecto->nombre
+            : null;
     }
 
     // ─── Scopes ────────────────────────────────────────────────────

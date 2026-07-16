@@ -8,11 +8,6 @@ use App\Models\Material;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
-/**
- * Faltaba esta Policy (único modelo operativo sin ella) — el Resource de
- * Materiales se mostraba a TODOS los roles autenticados. Sigue el patrón
- * estándar Shield {Accion}:{Modelo}.
- */
 class MaterialPolicy
 {
     use HandlesAuthorization;

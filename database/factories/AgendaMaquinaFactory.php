@@ -22,12 +22,12 @@ class AgendaMaquinaFactory extends Factory
     public function definition(): array
     {
         return [
-            'maquina_id'      => Maquina::factory(),
-            'proyecto_id'     => Proyecto::factory(),
-            'fecha'           => $this->faker->dateTimeBetween('now', '+30 days')->format('Y-m-d'),
-            'horas_previstas' => '8.00',
-            'notas'           => null,
-            'user_id'         => null,
+            'maquina_id'   => Maquina::factory(),
+            'proyecto_id'  => Proyecto::factory(),
+            'fecha'        => $this->faker->dateTimeBetween('now', '+30 days')->format('Y-m-d'),
+            'hora_entrada' => '08:00:00',
+            'notas'        => null,
+            'user_id'      => null,
         ];
     }
 

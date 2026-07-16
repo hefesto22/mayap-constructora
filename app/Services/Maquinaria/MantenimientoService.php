@@ -11,6 +11,9 @@ use App\Exceptions\Maquinaria\MantenimientoInvalidoException;
 use App\Models\AsignacionMaquina;
 use App\Models\MantenimientoMaquina;
 use App\Models\Maquina;
+use App\Models\User;
+use App\Support\Roles;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -26,6 +29,7 @@ final readonly class MantenimientoService
 {
     public function __construct(
         private AsignarMaquinaService $asignador,
+        private ReagendarPorMantenimientoService $reagendador,
     ) {}
 
     /**
@@ -94,7 +98,7 @@ final readonly class MantenimientoService
                 );
             }
 
-            return MantenimientoMaquina::create([
+            $mantenimiento = MantenimientoMaquina::create([
                 'maquina_id'               => $maquinaBloqueada->id,
                 'fecha_inicio'             => $fechaInicio,
                 'motivo'                   => $motivo,
@@ -103,7 +107,51 @@ final readonly class MantenimientoService
                 'estado'                   => EstadoMantenimiento::EnProceso,
                 'notas'                    => $notas,
             ]);
+
+            // Los agendados FUTUROS quedan imposibles: transferirlos a la
+            // sustituta o cancelarlos, y avisar a quien gestiona el parque.
+            $agenda = $this->reagendador->resolver($maquinaBloqueada, $fechaInicio, $sustituta);
+
+            if ($agenda['transferidos'] > 0 || $agenda['cancelados'] > 0) {
+                $this->notificarAgendaResuelta($maquinaBloqueada, $agenda);
+            }
+
+            return $mantenimiento;
         });
+    }
+
+    /**
+     * Campanita a maquinaria + gerencia con el destino de cada agendado
+     * (transferido a la sustituta o cancelado para reagendar/alquilar).
+     *
+     * notifyNow (síncrono): respeta la transacción del caller — rollback
+     * = sin avisos fantasma.
+     *
+     * @param array{transferidos: int, cancelados: int, detalle: list<string>} $agenda
+     */
+    private function notificarAgendaResuelta(Maquina $maquina, array $agenda): void
+    {
+        $titulo = "{$maquina->nombre} a mantenimiento: "
+            .implode(' · ', array_filter([
+                $agenda['transferidos'] > 0 ? "{$agenda['transferidos']} agendado(s) transferido(s)" : null,
+                $agenda['cancelados'] > 0 ? "{$agenda['cancelados']} cancelado(s)" : null,
+            ]));
+
+        $notificacion = Notification::make()
+            ->title($titulo)
+            ->body(implode("\n", array_slice($agenda['detalle'], 0, 6))
+                .($agenda['cancelados'] > 0 ? "\nReagenda al salir del taller o gestiona un alquiler." : ''))
+            ->warning()
+            ->persistent();
+
+        // whereHas en vez del scope role(): este NO explota si el rol aún
+        // no existe (DB fresca de tests o seeds parciales).
+        User::query()
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::MAQUINARIA, Roles::GERENCIA]))
+            ->where('is_active', true)
+            ->get()
+            ->unique('id')
+            ->each(fn (User $user) => $user->notifyNow($notificacion->toDatabase()));
     }
 
     /**

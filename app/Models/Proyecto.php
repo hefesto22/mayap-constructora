@@ -339,6 +339,25 @@ class Proyecto extends Model
         return $this->hasMany(ProyectoActividad::class)->orderBy('orden');
     }
 
+    /**
+     * Historial de maquinaria del proyecto: solicitudes (quién pidió y en
+     * qué quedaron) y agenda (qué día llegó cada máquina).
+     *
+     * @return HasMany<SolicitudMaquina, $this>
+     */
+    public function solicitudesMaquina(): HasMany
+    {
+        return $this->hasMany(SolicitudMaquina::class);
+    }
+
+    /**
+     * @return HasMany<AgendaMaquina, $this>
+     */
+    public function agendaMaquina(): HasMany
+    {
+        return $this->hasMany(AgendaMaquina::class);
+    }
+
     // ─── Scopes ────────────────────────────────────────────────────
 
     /**

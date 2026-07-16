@@ -9,7 +9,9 @@ use App\Filament\Resources\Proyectos\Pages\CreateProyecto;
 use App\Filament\Resources\Proyectos\Pages\EditProyecto;
 use App\Filament\Resources\Proyectos\Pages\ListProyectos;
 use App\Filament\Resources\Proyectos\Pages\ViewProyecto;
+use App\Filament\Resources\Proyectos\RelationManagers\MaquinariaRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\RenglonesRelationManager;
+use App\Filament\Resources\Proyectos\RelationManagers\SolicitudesMaquinaRelationManager;
 use App\Filament\Resources\Proyectos\Schemas\ProyectoCostoInfolist;
 use App\Filament\Resources\Proyectos\Schemas\ProyectoForm;
 use App\Filament\Resources\Proyectos\Tables\ProyectosTable;
@@ -158,6 +160,10 @@ class ProyectoResource extends Resource
     {
         return [
             RenglonesRelationManager::class,
+            // Historial de maquinaria: qué se agendó, si trabajó (partes
+            // reales) y qué solicitudes hubo — todo queda en el proyecto.
+            MaquinariaRelationManager::class,
+            SolicitudesMaquinaRelationManager::class,
         ];
     }
 

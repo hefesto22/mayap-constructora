@@ -36,4 +36,34 @@ class AgendaMaquinaPolicy
     {
         return $authUser->can('Delete:AgendaMaquina');
     }
+
+    public function restore(AuthUser $authUser, AgendaMaquina $agendaMaquina): bool
+    {
+        return $authUser->can('Restore:AgendaMaquina');
+    }
+
+    public function forceDelete(AuthUser $authUser, AgendaMaquina $agendaMaquina): bool
+    {
+        return $authUser->can('ForceDelete:AgendaMaquina');
+    }
+
+    public function forceDeleteAny(AuthUser $authUser): bool
+    {
+        return $authUser->can('ForceDeleteAny:AgendaMaquina');
+    }
+
+    public function restoreAny(AuthUser $authUser): bool
+    {
+        return $authUser->can('RestoreAny:AgendaMaquina');
+    }
+
+    public function replicate(AuthUser $authUser, AgendaMaquina $agendaMaquina): bool
+    {
+        return $authUser->can('Replicate:AgendaMaquina');
+    }
+
+    public function reorder(AuthUser $authUser): bool
+    {
+        return $authUser->can('Reorder:AgendaMaquina');
+    }
 }

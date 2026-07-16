@@ -72,6 +72,15 @@ Schedule::command('horizon:snapshot')
     ->onOneServer()
     ->name('horizon-snapshot');
 
+// ─── Maquinaria: aviso de llegada ──────────────────────────────────────
+// Campanita a los encargados cuando su máquina agendada llega dentro de
+// la PRÓXIMA hora ("prepara el acceso"). Idempotente: cada agendado avisa
+// UNA vez (marca aviso_llegada_at). En Herd corre solo; en prod, el cron.
+Schedule::command('maquinaria:avisar-llegadas')
+    ->everyTenMinutes()
+    ->onOneServer()
+    ->name('maquinaria-aviso-llegadas');
+
 // ─── Mantenimiento de modelos ──────────────────────────────────────────
 // Borra registros soft-deleted que cumplan la política de retención
 // (cada modelo define su prunable() — opcional).

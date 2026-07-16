@@ -4,23 +4,25 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\AgendaMaquina\Tables;
 
+use App\Filament\Resources\AgendaMaquina\AgendaMaquinaResource;
 use App\Models\AgendaMaquina;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
 /**
- * Tabla de la agenda: qué máquina va a dónde, cuándo y por cuántas horas.
+ * Tabla de la agenda: qué máquina va a dónde, cuándo y a qué hora llega.
  *
- * Editar solo permite ajustar horas/notas — cambiar máquina, obra o fecha
- * es OTRO compromiso: se borra este y se agenda de nuevo (así las
- * validaciones de choque del service siempre aplican).
+ * Editar solo permite ajustar la hora de llegada y las notas — cambiar
+ * máquina, obra o fecha es OTRO compromiso: se borra este y se agenda de
+ * nuevo (así las validaciones del service siempre aplican).
  */
 final class AgendaMaquinaTable
 {
@@ -37,6 +39,14 @@ final class AgendaMaquinaTable
                         ? 'warning'
                         : ($record->fecha->isPast() ? 'gray' : 'info')),
 
+                TextColumn::make('hora_entrada')
+                    ->label('Llegada')
+                    // AM/PM: el formato que se maneja en la constructora.
+                    ->formatStateUsing(fn (?string $state): string => $state !== null
+                        ? Carbon::parse($state)->format('g:i A')
+                        : '—')
+                    ->placeholder('—'),
+
                 TextColumn::make('maquina.nombre')
                     ->label('Máquina')
                     ->searchable()
@@ -46,12 +56,6 @@ final class AgendaMaquinaTable
                     ->label('Obra')
                     ->searchable()
                     ->limit(35),
-
-                TextColumn::make('horas_previstas')
-                    ->label('Horas')
-                    ->numeric(2)
-                    ->suffix(' h')
-                    ->alignRight(),
 
                 TextColumn::make('notas')
                     ->label('Notas')
@@ -79,14 +83,18 @@ final class AgendaMaquinaTable
             ->recordActions([
                 EditAction::make()
                     ->schema([
-                        TextInput::make('horas_previstas')
-                            ->label('Horas previstas')
-                            ->numeric()
-                            ->minValue(0.5)
-                            ->maxValue(24)
-                            ->step(0.5)
-                            ->suffix('h')
-                            ->required(),
+                        Select::make('hora_entrada')
+                            ->label('Hora de llegada')
+                            ->options(AgendaMaquinaResource::opcionesHoraLlegada())
+                            ->searchable()
+                            ->required()
+                            // La DB guarda TIME con segundos ('08:00:00');
+                            // las opciones van 'H:i' — normalizar al hidratar.
+                            ->afterStateHydrated(function (Select $component, ?string $state): void {
+                                if ($state !== null) {
+                                    $component->state(substr($state, 0, 5));
+                                }
+                            }),
                         Textarea::make('notas')
                             ->label('Notas')
                             ->rows(2)

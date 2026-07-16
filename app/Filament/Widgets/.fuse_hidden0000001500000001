@@ -929,12 +929,10 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             return null;
         }
 
-        // array_values + cast: PHPStan exige list<int>, no array<mixed>.
-        return array_values(Proyecto::query()
+        return Proyecto::query()
             ->whereHas('encargados', fn ($q) => $q->whereKey($user->id))
             ->pluck('id')
-            ->map(fn ($id): int => (int) $id)
-            ->all());
+            ->all();
     }
 
     /** La página manda los filtros; el calendario re-pide sus eventos. */

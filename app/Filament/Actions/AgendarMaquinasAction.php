@@ -9,6 +9,7 @@ use App\Filament\Resources\AgendaMaquina\AgendaMaquinaResource;
 use App\Services\Maquinaria\AgendarMaquinaService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Carbon;
 
 /**
  * "Agendar máquinas" en lote — ÚNICA definición de la acción, montada en
@@ -27,35 +28,45 @@ final class AgendarMaquinasAction
             ->label('Agendar máquinas')
             ->icon('heroicon-o-calendar-days')
             ->modalHeading('Agendar maquinaria')
+            ->modalDescription('Compromete una o varias máquinas a una obra por un rango de días. Las máquinas en taller durante esas fechas aparecen deshabilitadas en el listado.')
+            ->modalWidth('3xl')
             ->modalSubmitActionLabel('Agendar')
             ->visible(fn (): bool => auth()->user()?->can('Create:AgendaMaquina') ?? false)
             ->schema(AgendaMaquinaResource::camposAgendar())
             // El drag del calendario manda desde/hasta como arguments; el
-            // botón normal cae en los defaults (mañana, un día).
+            // botón normal cae en los defaults (mañana a las 8:00, un día).
             ->fillForm(function (array $arguments): array {
                 $desde = $arguments['desde'] ?? today()->addDay()->toDateString();
+                $hasta = $arguments['hasta'] ?? $desde;
 
                 return [
-                    'maquina_ids'      => [],
-                    'proyecto_id'      => null,
-                    'desde'            => $desde,
-                    'hasta'            => $arguments['hasta'] ?? $desde,
-                    'horas_previstas'  => 8,
+                    'maquina_ids' => [],
+                    'proyecto_id' => null,
+                    // El drag manda el rango; un click = un solo día.
+                    'fechas' => $hasta > $desde ? [$desde, $hasta] : [$desde],
+                    // 8:00 AM: hora estándar de llegada (y del aviso
+                    // "confirma la llegada").
+                    'hora_entrada'     => '08:00',
                     'excluir_domingos' => true,
                     'notas'            => null,
                 ];
             })
             ->action(function (array $data): void {
+                /** @var list<string> $fechas */
+                $fechas = array_values((array) ($data['fechas'] ?? []));
+                $desde = $fechas[0] ?? today()->addDay()->toDateString();
+                $hasta = $fechas[1] ?? $desde;
+
                 try {
                     $resultado = app(AgendarMaquinaService::class)->agendarLote(
                         maquinaIds: array_values(array_map(intval(...), (array) $data['maquina_ids'])),
                         proyectoId: (int) $data['proyecto_id'],
-                        desde: (string) $data['desde'],
-                        hasta: (string) $data['hasta'],
-                        horasPrevistas: (string) $data['horas_previstas'],
+                        desde: $desde,
+                        hasta: $hasta,
                         excluirDomingos: (bool) ($data['excluir_domingos'] ?? true),
                         notas: $data['notas'] ?? null,
                         userId: is_numeric(auth()->id()) ? (int) auth()->id() : null,
+                        horaEntrada: Carbon::parse((string) ($data['hora_entrada'] ?? '08:00'))->format('H:i:s'),
                     );
                 } catch (AgendaInvalidaException $e) {
                     Notification::make()

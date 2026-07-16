@@ -12,12 +12,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Agenda de máquina — compromiso FUTURO por día y horas.
+ * Agenda de máquina — compromiso FUTURO simple: "la máquina llega a las X
+ * a la obra Y el día Z".
  *
- * "El 15 la excavadora va 4 horas a Las Palmas": la agenda dice a dónde
- * VA a ir la máquina; el parte de trabajo dice cuánto TRABAJÓ de verdad.
- * El calendario los pinta azul (agenda) y verde (parte); el hueco entre
- * ambos = máquina libre para alquilar.
+ * Sin horas estimadas (decisión Mauricio 2026-07-14): nunca se sabe
+ * cuánto trabajará — las horas REALES las dice el parte de trabajo. La
+ * hora de entrada es la del aviso "confirma la llegada". El calendario
+ * pinta azul (agenda) y verde (parte real).
  *
  * Las validaciones de negocio (choque con mantenimiento, duplicados,
  * fechas pasadas) viven en AgendarMaquinaService — única puerta de
@@ -27,14 +28,20 @@ use Illuminate\Support\Carbon;
  * @property int $maquina_id
  * @property int $proyecto_id
  * @property Carbon $fecha
- * @property string $horas_previstas
+ * @property string|null $hora_entrada
  * @property string|null $notas
  * @property int|null $user_id
+ * @property Carbon|null $aviso_llegada_at
+ * @property Carbon|null $llegada_confirmada_at
+ * @property int|null $llegada_confirmada_por
+ * @property Carbon|null $salida_confirmada_at
+ * @property int|null $salida_confirmada_por
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Maquina $maquina
  * @property-read Proyecto $proyecto
  * @property-read User|null $user
+ * @property-read User|null $confirmadaPor
  */
 class AgendaMaquina extends Model
 {
@@ -48,10 +55,36 @@ class AgendaMaquina extends Model
         'maquina_id',
         'proyecto_id',
         'fecha',
-        'horas_previstas',
+        'hora_entrada',
         'notas',
         'user_id',
+        'aviso_llegada_at',
+        'llegada_confirmada_at',
+        'llegada_confirmada_por',
+        'salida_confirmada_at',
+        'salida_confirmada_por',
     ];
+
+    /**
+     * Hora de entrada corta para la UI ('07:00') — la DB guarda TIME.
+     */
+    public function horaEntradaCorta(): ?string
+    {
+        return $this->hora_entrada !== null
+            ? substr((string) $this->hora_entrada, 0, 5)
+            : null;
+    }
+
+    /**
+     * Hora de llegada en 12 horas ('7:00 AM') — en la constructora se
+     * maneja AM/PM, no el formato de 24 horas.
+     */
+    public function horaEntrada12(): ?string
+    {
+        return $this->hora_entrada !== null
+            ? Carbon::parse((string) $this->hora_entrada)->format('g:i A')
+            : null;
+    }
 
     /**
      * @return array<string, string>
@@ -59,8 +92,10 @@ class AgendaMaquina extends Model
     protected function casts(): array
     {
         return [
-            'fecha'           => 'date',
-            'horas_previstas' => 'decimal:2',
+            'fecha'                 => 'date',
+            'aviso_llegada_at'      => 'datetime',
+            'llegada_confirmada_at' => 'datetime',
+            'salida_confirmada_at'  => 'datetime',
         ];
     }
 
@@ -88,6 +123,16 @@ class AgendaMaquina extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Quién confirmó que la máquina llegó a la obra.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function confirmadaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'llegada_confirmada_por');
     }
 
     // ─── Scopes ────────────────────────────────────────────────────

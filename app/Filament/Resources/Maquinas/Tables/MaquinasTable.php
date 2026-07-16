@@ -19,12 +19,16 @@ use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Str;
 
 class MaquinasTable
 {
     public static function configure(Table $table): Table
     {
         return $table
+            // Para pintar "Trabajando · OBRA" sin N+1: el agendado de HOY
+            // ya confirmado viaja con cada fila.
+            ->modifyQueryUsing(fn ($query) => $query->with('agendaHoyConfirmada.proyecto:id,nombre'))
             ->columns([
                 TextColumn::make('codigo')
                     ->label('Código')
@@ -56,12 +60,21 @@ class MaquinasTable
                     ->money('HNL')
                     ->alignEnd()
                     ->sortable(),
+                // Estado del ciclo de vida, con una capa VISUAL encima
+                // (decisión Mauricio 2026-07-15): llegada confirmada HOY →
+                // "Trabajando · OBRA" todo el día; mañana vuelve sola.
+                // Taller y baja siempre ganan (trabajandoHoy los excluye).
                 TextColumn::make('estado')
                     ->label('Estado')
                     ->badge()
-                    ->color(fn (EstadoMaquina $state): string => $state->getColor())
-                    ->icon(fn (EstadoMaquina $state): string => $state->getIcon())
-                    ->formatStateUsing(fn (EstadoMaquina $state): string => $state->getLabel())
+                    ->color(fn (EstadoMaquina $state, Maquina $record): string => $record->trabajandoHoy() ? 'info' : $state->getColor())
+                    ->icon(fn (EstadoMaquina $state, Maquina $record): string => $record->trabajandoHoy() ? 'heroicon-o-play-circle' : $state->getIcon())
+                    ->formatStateUsing(fn (EstadoMaquina $state, Maquina $record): string => $record->trabajandoHoy()
+                        ? 'Trabajando · '.Str::limit((string) $record->obraDondeTrabajaHoy(), 22)
+                        : $state->getLabel())
+                    ->tooltip(fn (Maquina $record): ?string => $record->trabajandoHoy()
+                        ? 'Llegada confirmada hoy a las '.$record->agendaHoyConfirmada?->llegada_confirmada_at?->format('g:i A').' en '.$record->obraDondeTrabajaHoy()
+                        : null)
                     ->sortable(),
                 ToggleColumn::make('activo')
                     ->label('Activa')

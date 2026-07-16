@@ -6,7 +6,6 @@ namespace App\Services\Maquinaria;
 
 use App\Enums\EstadoAsignacion;
 use App\Exceptions\Maquinaria\MaquinariaException;
-use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\ConsumoCombustible;
 use App\Models\ParteTrabajo;
@@ -104,8 +103,9 @@ final class RegistrarDiaMaquinaService
 
     /**
      * Filas prellenadas para la planilla del día: todas las asignaciones
-     * ACTIVAS (máquina → obra con tarifa), con las horas previstas de la
-     * agenda de ese día (si la hay) y marcas de lo ya registrado.
+     * ACTIVAS (máquina → obra con tarifa) con marcas de lo ya registrado.
+     * Las horas van vacías: las REALES las escribe quien captura — la
+     * agenda ya no estima horas (decisión Mauricio 2026-07-14).
      *
      * @return list<array<string, mixed>>
      */
@@ -124,12 +124,6 @@ final class RegistrarDiaMaquinaService
 
         $ids = $asignaciones->pluck('id');
 
-        // Horas previstas de la agenda del día, por máquina+obra.
-        $agenda = AgendaMaquina::query()
-            ->whereDate('fecha', $fecha)
-            ->get()
-            ->keyBy(fn (AgendaMaquina $a): string => "{$a->maquina_id}-{$a->proyecto_id}");
-
         // Lo ya capturado ese día (aviso anti doble captura).
         $conParte = ParteTrabajo::query()
             ->whereIn('asignacion_maquina_id', $ids)
@@ -144,13 +138,9 @@ final class RegistrarDiaMaquinaService
             ->flip();
 
         // Referencia: el último precio de litro usado en el sistema.
-        $ultimoPrecio = ConsumoCombustible::query()
-            ->latest('id')
-            ->value('precio_litro');
+        $ultimoPrecio = $this->ultimoPrecioLitro();
 
-        return array_values($asignaciones->map(function (AsignacionMaquina $a) use ($agenda, $conParte, $conConsumo, $ultimoPrecio): array {
-            $agendado = $agenda->get("{$a->maquina_id}-{$a->proyecto_id}");
-
+        return array_values($asignaciones->map(function (AsignacionMaquina $a) use ($conParte, $conConsumo, $ultimoPrecio): array {
             $marcas = array_filter([
                 $conParte->has($a->id) ? '✓ horas' : null,
                 $conConsumo->has($a->id) ? '✓ combustible' : null,
@@ -159,14 +149,9 @@ final class RegistrarDiaMaquinaService
             return [
                 'asignacion_id' => $a->id,
                 'etiqueta'      => "{$a->maquina->nombre} → {$a->proyecto->nombre}",
-                'horas'         => $agendado?->horas_previstas !== null
-                    ? rtrim(rtrim((string) $agendado->horas_previstas, '0'), '.')
-                    : null,
-                'litros' => null,
-                // decimal(_,4) en DB — recortado para la planilla ('39.75').
-                'precio_litro' => $ultimoPrecio !== null
-                    ? rtrim(rtrim((string) $ultimoPrecio, '0'), '.')
-                    : null,
+                'horas'         => null,
+                'litros'        => null,
+                'precio_litro'  => $ultimoPrecio,
                 'motivo_extra'  => null,
                 'operador'      => null,
                 'ya_registrado' => $marcas === [] ? '' : implode(' · ', $marcas),
@@ -178,6 +163,21 @@ final class RegistrarDiaMaquinaService
      * Normaliza un input numérico de la planilla: vacío/0 → null (no se
      * registra), cualquier otro valor → string para bcmath.
      */
+    /**
+     * Último precio por litro usado en el sistema, recortado para la UI
+     * ('39.75' — la DB lo guarda decimal(_,4)). Prellenado de formularios.
+     */
+    public function ultimoPrecioLitro(): ?string
+    {
+        $precio = ConsumoCombustible::query()
+            ->latest('id')
+            ->value('precio_litro');
+
+        return $precio !== null
+            ? rtrim(rtrim((string) $precio, '0'), '.')
+            : null;
+    }
+
     private static function texto(mixed $valor): ?string
     {
         return is_string($valor) && trim($valor) !== '' ? $valor : null;

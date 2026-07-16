@@ -36,6 +36,8 @@ final class CalendarioMaquinariaService
 
     private const string COLOR_PROGRAMADA = '#2563eb';     // azul — agenda futura
 
+    private const string COLOR_TRABAJANDO = '#7c3aed';     // violeta — llegó y sigue en la obra
+
     private const string COLOR_ASIGNACION = '#0d9488';     // teal — compromiso
 
     private const string COLOR_FINALIZADA = '#9ca3af';     // gris
@@ -45,6 +47,14 @@ final class CalendarioMaquinariaService
     /**
      * Eventos que tocan el rango visible [desde, hasta].
      *
+     * `$soloProyectos` acota TODO a esas obras (el encargado ve solo las
+     * suyas — mismo alcance que requisiciones y solicitudes); null = sin
+     * límite (maquinaria/gerencia). Los mantenimientos no pertenecen a
+     * una obra: en la vista acotada no aparecen (el taller es asunto del
+     * rol maquinaria).
+     *
+     * @param list<int>|null $soloProyectos
+     *
      * @return array<int, array<string, mixed>>
      */
     public function eventos(
@@ -52,27 +62,31 @@ final class CalendarioMaquinariaService
         string $hasta,
         ?int $maquinaId = null,
         ?int $proyectoId = null,
+        ?array $soloProyectos = null,
     ): array {
         return [
-            ...$this->partesTrabajo($desde, $hasta, $maquinaId, $proyectoId),
-            ...$this->agenda($desde, $hasta, $maquinaId, $proyectoId),
-            ...$this->asignaciones($desde, $hasta, $maquinaId, $proyectoId),
-            ...$this->mantenimientos($desde, $hasta, $maquinaId),
+            ...$this->partesTrabajo($desde, $hasta, $maquinaId, $proyectoId, $soloProyectos),
+            ...$this->agenda($desde, $hasta, $maquinaId, $proyectoId, $soloProyectos),
+            ...$this->asignaciones($desde, $hasta, $maquinaId, $proyectoId, $soloProyectos),
+            ...($soloProyectos === null ? $this->mantenimientos($desde, $hasta, $maquinaId) : []),
         ];
     }
 
     /**
      * Horas REALES trabajadas: un evento por parte, en su día, con horas.
      *
+     * @param list<int>|null $soloProyectos
+     *
      * @return array<int, array<string, mixed>>
      */
-    private function partesTrabajo(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId): array
+    private function partesTrabajo(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId, ?array $soloProyectos): array
     {
         return ParteTrabajo::query()
             ->with(['asignacion.maquina:id,codigo,nombre', 'asignacion.proyecto:id,nombre'])
             ->whereBetween('fecha', [$desde, $hasta])
             ->when($maquinaId, fn ($q) => $q->whereHas('asignacion', fn ($a) => $a->where('maquina_id', $maquinaId)))
             ->when($proyectoId, fn ($q) => $q->whereHas('asignacion', fn ($a) => $a->where('proyecto_id', $proyectoId)))
+            ->when($soloProyectos !== null, fn ($q) => $q->whereHas('asignacion', fn ($a) => $a->whereIn('proyecto_id', $soloProyectos)))
             ->get()
             ->map(fn (ParteTrabajo $p): array => [
                 'id'     => "parte-{$p->id}",
@@ -85,23 +99,47 @@ final class CalendarioMaquinariaService
     }
 
     /**
-     * Agenda PROGRAMADA: compromiso futuro de un día con horas previstas.
+     * Agenda PROGRAMADA: compromiso futuro de un día con hora de llegada.
+     *
+     * @param list<int>|null $soloProyectos
      *
      * @return array<int, array<string, mixed>>
      */
-    private function agenda(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId): array
+    private function agenda(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId, ?array $soloProyectos): array
     {
         return AgendaMaquina::query()
             ->with(['maquina:id,codigo,nombre', 'proyecto:id,nombre'])
             ->whereBetween('fecha', [$desde, $hasta])
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))
             ->when($proyectoId, fn ($q) => $q->where('proyecto_id', $proyectoId))
+            ->when($soloProyectos !== null, fn ($q) => $q->whereIn('proyecto_id', $soloProyectos))
+            // Plan CUMPLIDO desaparece: si ya hay un parte real (verde) de
+            // esa máquina en esa obra ese día, el azul ya no aporta nada.
+            ->whereNotExists(function ($q): void {
+                $q->selectRaw('1')
+                    ->from('partes_trabajo as pt')
+                    ->join('asignaciones_maquina as am', 'am.id', '=', 'pt.asignacion_maquina_id')
+                    ->whereColumn('am.maquina_id', 'agenda_maquina.maquina_id')
+                    ->whereColumn('am.proyecto_id', 'agenda_maquina.proyecto_id')
+                    ->whereColumn('pt.fecha', 'agenda_maquina.fecha')
+                    ->whereNull('pt.deleted_at');
+            })
             ->get()
             ->map(fn (AgendaMaquina $a): array => [
-                'id'     => "agenda-{$a->id}",
-                'title'  => "🗓 {$a->maquina->nombre} · {$a->proyecto->nombre} — ".self::horas($a->horas_previstas).' prog.',
-                'start'  => $a->fecha->toDateString(),
-                'color'  => self::COLOR_PROGRAMADA,
+                'id' => "agenda-{$a->id}",
+                // La agenda es simple: a qué hora LLEGA y a dónde (en
+                // AM/PM — el formato de la constructora). El ciclo lo
+                // cuenta el COLOR (decisión Mauricio 2026-07-16): azul =
+                // plan, VIOLETA = llegó (y sigue violeta al terminar,
+                // hasta que se registren las horas/litros: ahí el parte
+                // VERDE reemplaza a este evento). Sin emojis — los datos
+                // hablan solos.
+                'title' => "{$a->maquina->nombre} · {$a->proyecto->nombre}"
+                    .self::cicloLlegada($a),
+                'start' => $a->fecha->toDateString(),
+                'color' => $a->llegada_confirmada_at === null
+                    ? self::COLOR_PROGRAMADA
+                    : self::COLOR_TRABAJANDO,
                 'allDay' => true,
             ])
             ->all();
@@ -111,9 +149,11 @@ final class CalendarioMaquinariaService
      * Asignaciones: rango definido = barra (compromiso contractual);
      * abierta = SOLO marcador el día de inicio.
      *
+     * @param list<int>|null $soloProyectos
+     *
      * @return array<int, array<string, mixed>>
      */
-    private function asignaciones(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId): array
+    private function asignaciones(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId, ?array $soloProyectos): array
     {
         return AsignacionMaquina::query()
             ->with(['maquina:id,codigo,nombre', 'proyecto:id,nombre'])
@@ -121,6 +161,23 @@ final class CalendarioMaquinariaService
             ->where(fn ($q) => $q->whereNull('fecha_fin')->orWhere('fecha_fin', '>=', $desde))
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))
             ->when($proyectoId, fn ($q) => $q->where('proyecto_id', $proyectoId))
+            ->when($soloProyectos !== null, fn ($q) => $q->whereIn('proyecto_id', $soloProyectos))
+            // La asignación FINALIZADA de UN solo día que ya tiene su
+            // parte registrado ese día no aporta nada junto al verde —
+            // es la administrativa (p. ej. la automática al registrar la
+            // jornada desde el calendario) y solo duplicaría el evento.
+            ->whereNot(fn ($q) => $q
+                ->where('estado', EstadoAsignacion::Finalizada->value)
+                ->whereColumn('fecha_fin', 'fecha_inicio')
+                ->whereExists(function ($sub): void {
+                    $sub->selectRaw('1')
+                        ->from('partes_trabajo as pt')
+                        ->join('asignaciones_maquina as am2', 'am2.id', '=', 'pt.asignacion_maquina_id')
+                        ->whereColumn('am2.maquina_id', 'asignaciones_maquina.maquina_id')
+                        ->whereColumn('am2.proyecto_id', 'asignaciones_maquina.proyecto_id')
+                        ->whereColumn('pt.fecha', 'asignaciones_maquina.fecha_inicio')
+                        ->whereNull('pt.deleted_at');
+                }))
             ->get()
             ->map(function (AsignacionMaquina $a): array {
                 $abierta = $a->fecha_fin === null;
@@ -129,7 +186,7 @@ final class CalendarioMaquinariaService
                 return [
                     'id'    => "asignacion-{$a->id}",
                     'title' => $abierta
-                        ? "📌 {$a->maquina->nombre} → {$a->proyecto->nombre} · desde ".$a->fecha_inicio->format('d/m')
+                        ? "{$a->maquina->nombre} → {$a->proyecto->nombre} · desde ".$a->fecha_inicio->format('d/m')
                         : "{$a->maquina->nombre} · {$a->proyecto->nombre}",
                     'start' => $a->fecha_inicio->toDateString(),
                     // Abierta: marcador de UN día (sin end). Cerrada: fin
@@ -162,8 +219,8 @@ final class CalendarioMaquinariaService
                 return [
                     'id'    => "mantenimiento-{$m->id}",
                     'title' => $abierto
-                        ? "🔧 {$m->maquina->nombre} — En mantenimiento desde ".$m->fecha_inicio->format('d/m')
-                        : "🔧 {$m->maquina->nombre} — Mantenimiento",
+                        ? "{$m->maquina->nombre} — En mantenimiento desde ".$m->fecha_inicio->format('d/m')
+                        : "{$m->maquina->nombre} — Mantenimiento",
                     'start' => $m->fecha_inicio->toDateString(),
                     ...($abierto ? [] : ['end' => $m->fecha_fin->copy()->addDay()->toDateString()]),
                     'color'  => self::COLOR_MANTENIMIENTO,
@@ -171,6 +228,24 @@ final class CalendarioMaquinariaService
                 ];
             })
             ->all();
+    }
+
+    /**
+     * El tramo del título que narra el ciclo de la llegada:
+     * plan ("llega 8:00 AM"), adentro ("llegó 8:15 AM") o cerrado
+     * ("8:15 AM → 1:00 PM").
+     */
+    private static function cicloLlegada(AgendaMaquina $a): string
+    {
+        if ($a->llegada_confirmada_at !== null && $a->salida_confirmada_at !== null) {
+            return ' — '.$a->llegada_confirmada_at->format('g:i A').' → '.$a->salida_confirmada_at->format('g:i A');
+        }
+
+        if ($a->llegada_confirmada_at !== null) {
+            return ' — llegó '.$a->llegada_confirmada_at->format('g:i A');
+        }
+
+        return $a->horaEntrada12() !== null ? " — llega {$a->horaEntrada12()}" : '';
     }
 
     /**

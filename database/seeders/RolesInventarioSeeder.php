@@ -54,8 +54,10 @@ class RolesInventarioSeeder extends Seeder
             $this->permisosDe('Bodega'),
             $this->permisosDe('Proveedor'),
             $this->permisosDe('CuentaPorPagar'),
-            // Gerencia también compromete maquinaria (agenda del calendario).
+            // Gerencia también compromete maquinaria (agenda del calendario)
+            // y resuelve solicitudes de máquina.
             $this->permisosDe('AgendaMaquina'),
+            $this->permisosDe('SolicitudMaquina'),
             $this->existentes([Permisos::VER_TODAS_LAS_BODEGAS, 'View:MyProfilePage', 'page_MyProfilePage']),
             // Gerencia SÍ audita el registro de actividad.
             $this->existentes(['ViewAny:Activity', 'View:Activity']),
@@ -86,6 +88,8 @@ class RolesInventarioSeeder extends Seeder
             $this->permisosDe('ConsumoCombustible'),
             $this->permisosDe('MantenimientoMaquina'),
             $this->permisosDe('AgendaMaquina'),
+            // Las solicitudes de máquina las resuelve este rol.
+            $this->permisosDe('SolicitudMaquina'),
             $this->soloLectura('Proyecto'),
             $this->existentes(['View:MyProfilePage', 'page_MyProfilePage']),
         ));
@@ -97,6 +101,9 @@ class RolesInventarioSeeder extends Seeder
         $encargado = Role::firstOrCreate(['name' => 'encargado_obra', 'guard_name' => 'web']);
         $encargado->syncPermissions(array_merge(
             $this->existentes(['ViewAny:Requisicion', 'View:Requisicion', 'Create:Requisicion', 'Update:Requisicion']),
+            // Pide maquinaria para SUS obras (el scoping lo aplica el
+            // Resource); resolver/rechazar queda en maquinaria y gerencia.
+            $this->existentes(['ViewAny:SolicitudMaquina', 'View:SolicitudMaquina', 'Create:SolicitudMaquina']),
             $this->soloLectura('Proyecto'),
             $this->existentes(['View:MyProfilePage', 'page_MyProfilePage']),
         ));
@@ -193,6 +200,11 @@ class RolesInventarioSeeder extends Seeder
         Permission::findOrCreate('View:CalendarioMaquinaria', 'web');
         $maquinaria->givePermissionTo('View:CalendarioMaquinaria');
         $gerencia->givePermissionTo('View:CalendarioMaquinaria');
+        // El encargado también lo ve — SOLO LECTURA y SOLO sus obras
+        // (decisión Mauricio 2026-07-15): el alcance lo aplican la página
+        // y el widget; sin Create:AgendaMaquina no puede agendar y sin
+        // View:CapturaDelDia no registra jornadas desde el calendario.
+        $encargado->givePermissionTo('View:CalendarioMaquinaria');
 
         // Captura del día (planilla rápida de partes + combustible).
         Permission::findOrCreate('View:CapturaDelDia', 'web');

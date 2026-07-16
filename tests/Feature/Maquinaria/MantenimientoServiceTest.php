@@ -20,7 +20,8 @@ use App\Services\Maquinaria\MantenimientoService;
 
 beforeEach(function (): void {
     $this->asignar = new AsignarMaquinaService;
-    $this->service = new MantenimientoService($this->asignar);
+    // SIEMPRE app(): el constructor del service crece con el proyecto.
+    $this->service = app(MantenimientoService::class);
     $this->obra = Proyecto::factory()->create();
 });
 

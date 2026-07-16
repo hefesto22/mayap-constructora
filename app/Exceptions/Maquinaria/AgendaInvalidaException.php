@@ -16,13 +16,6 @@ class AgendaInvalidaException extends MaquinariaException
         );
     }
 
-    public static function horasInvalidas(string $horas): self
-    {
-        return new self(
-            "Las horas previstas deben ser mayores a 0 y máximo 24 por día. Recibido: {$horas}."
-        );
-    }
-
     public static function enMantenimiento(string $maquina, string $fecha): self
     {
         return new self(
@@ -62,6 +55,48 @@ class AgendaInvalidaException extends MaquinariaException
     {
         return new self(
             "El lote no puede cubrir más de {$maxDias} días. Agenda por tramos más cortos."
+        );
+    }
+
+    public static function llegadaAntesDeTiempo(string $fecha): self
+    {
+        return new self(
+            "Esa máquina está agendada para el {$fecha} — la llegada se confirma ese día, no antes."
+        );
+    }
+
+    public static function llegadaYaConfirmada(string $cuando): self
+    {
+        return new self(
+            "La llegada ya fue confirmada ({$cuando}) — no hace falta confirmarla dos veces."
+        );
+    }
+
+    public static function confirmaSoloLaObra(): self
+    {
+        return new self(
+            'Solo el encargado de ESA obra (o maquinaria/gerencia) puede confirmar la llegada.'
+        );
+    }
+
+    public static function sigueTrabajandoEnOtraObra(string $maquina, string $obra, string $llego): self
+    {
+        return new self(
+            "La máquina {$maquina} sigue trabajando en {$obra} (llegó {$llego}) — esa obra debe confirmar primero que terminó ahí."
+        );
+    }
+
+    public static function salidaSinLlegada(): self
+    {
+        return new self(
+            'No se puede confirmar la salida de una máquina que nunca llegó — confirma primero la llegada.'
+        );
+    }
+
+    public static function salidaYaConfirmada(string $cuando): self
+    {
+        return new self(
+            "La salida ya fue confirmada ({$cuando}) — no hace falta confirmarla dos veces."
         );
     }
 }

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Enums\EstadoAsignacion;
-use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\ConsumoCombustible;
 use App\Models\Maquina;
@@ -81,16 +80,8 @@ test('filas vacías se ignoran; la que falla se salta y reporta sin frenar al re
         ->and(implode(' ', $resultado['saltados']))->toContain('motivo')->toContain('precio');
 });
 
-test('filasDelDia precarga asignaciones activas con horas de la agenda y marca lo ya registrado', function (): void {
+test('filasDelDia precarga asignaciones activas con horas vacías y marca lo ya registrado', function (): void {
     $asignacion = capturaDiaAsignacionActiva();
-
-    // Agendada hoy 6.5h para esa máquina+obra.
-    AgendaMaquina::factory()->create([
-        'maquina_id'      => $asignacion->maquina_id,
-        'proyecto_id'     => $asignacion->proyecto_id,
-        'fecha'           => today()->toDateString(),
-        'horas_previstas' => '6.50',
-    ]);
 
     // Ya tiene combustible registrado hoy (referencia de último precio).
     ConsumoCombustible::factory()->create([
@@ -106,7 +97,7 @@ test('filasDelDia precarga asignaciones activas con horas de la agenda y marca l
     expect($filas)->toHaveCount(1)
         ->and($filas[0]['asignacion_id'])->toBe($asignacion->id)
         ->and($filas[0]['etiqueta'])->toContain($asignacion->maquina->nombre)
-        ->and($filas[0]['horas'])->toBe('6.5')           // prellenado de la agenda
+        ->and($filas[0]['horas'])->toBeNull()            // las reales las escribe quien captura
         ->and($filas[0]['precio_litro'])->toBe('39.75')  // último precio usado
         ->and($filas[0]['ya_registrado'])->toContain('combustible');
 });
