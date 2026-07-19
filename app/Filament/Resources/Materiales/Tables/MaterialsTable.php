@@ -24,7 +24,12 @@ use Filament\Tables\Table;
  */
 class MaterialsTable
 {
-    public static function configure(Table $table): Table
+    /**
+     * @param bool $conCategoria false cuando el Resource ya esta acotado a
+     *                           UNA categoria (Materiales o Herramienta y equipo separados): la
+     *                           columna y el filtro de categoria sobran.
+     */
+    public static function configure(Table $table, bool $conCategoria = true): Table
     {
         return $table
             ->columns([
@@ -38,7 +43,8 @@ class MaterialsTable
                 TextColumn::make('categoria')
                     ->label('Categoría')
                     ->badge()
-                    ->sortable(),
+                    ->sortable()
+                    ->visible($conCategoria),
                 TextColumn::make('nombre')
                     ->label('Nombre')
                     ->searchable()
@@ -74,7 +80,8 @@ class MaterialsTable
                     ->options([
                         CategoriaItem::Materiales->value        => CategoriaItem::Materiales->getLabel(),
                         CategoriaItem::HerramientaEquipo->value => CategoriaItem::HerramientaEquipo->getLabel(),
-                    ]),
+                    ])
+                    ->visible($conCategoria),
                 TernaryFilter::make('activo')
                     ->label('Estado')
                     ->placeholder('Todos')

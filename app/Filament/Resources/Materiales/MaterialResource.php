@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Materiales;
 
+use App\Enums\CategoriaItem;
 use App\Filament\Resources\Materiales\Pages\CreateMaterial;
 use App\Filament\Resources\Materiales\Pages\EditMaterial;
 use App\Filament\Resources\Materiales\Pages\ListMateriales;
@@ -47,12 +48,12 @@ class MaterialResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        return MaterialForm::configure($schema);
+        return MaterialForm::configure($schema, CategoriaItem::Materiales);
     }
 
     public static function table(Table $table): Table
     {
-        return MaterialsTable::configure($table);
+        return MaterialsTable::configure($table, conCategoria: false);
     }
 
     /**
@@ -62,6 +63,9 @@ class MaterialResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
+            // SOLO materiales: herramienta y equipo tiene su propia seccion
+            // en el grupo Maquinaria (mismo catalogo, otra puerta).
+            ->where('categoria', CategoriaItem::Materiales->value)
             ->with(['unidadMedida:id,codigo,simbolo,nombre'])
             ->withCount('items');
     }

@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Materiales\Schemas;
 use App\Enums\CategoriaItem;
 use App\Models\Material;
 use App\Models\UnidadMedida;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -28,37 +29,46 @@ use Filament\Schemas\Schema;
  */
 class MaterialForm
 {
-    public static function configure(Schema $schema): Schema
+    /**
+     * @param CategoriaItem|null $categoriaFija Cuando el Resource ya define
+     *                                          la categoria (Materiales o Herramienta y equipo como secciones
+     *                                          separadas), el select desaparece y el valor viaja fijo.
+     */
+    public static function configure(Schema $schema, ?CategoriaItem $categoriaFija = null): Schema
     {
         return $schema->components([
             Tabs::make('material_tabs')
                 ->columnSpanFull()
                 ->persistTabInQueryString()
                 ->tabs([
-                    self::tabIdentificacion(),
+                    self::tabIdentificacion($categoriaFija),
                     self::tabEstado(),
                 ]),
         ]);
     }
 
-    private static function tabIdentificacion(): Tab
+    private static function tabIdentificacion(?CategoriaItem $categoriaFija): Tab
     {
         return Tab::make('Identificación')
             ->icon('heroicon-o-identification')
             ->schema([
-                Select::make('categoria')
-                    ->label('Categoría')
-                    ->options([
-                        CategoriaItem::Materiales->value        => CategoriaItem::Materiales->getLabel(),
-                        CategoriaItem::HerramientaEquipo->value => CategoriaItem::HerramientaEquipo->getLabel(),
-                    ])
-                    ->default(CategoriaItem::Materiales->value)
-                    ->required()
-                    ->native(false)
-                    ->prefixIcon('heroicon-o-squares-2x2')
-                    ->disabledOn('edit')
-                    ->dehydrated()
-                    ->helperText('Solo recursos físicos inventariables. NO editable después de crear (el código depende de ella).'),
+                $categoriaFija !== null
+                    ? Hidden::make('categoria')
+                        ->default($categoriaFija->value)
+                        ->dehydrated()
+                    : Select::make('categoria')
+                        ->label('Categoría')
+                        ->options([
+                            CategoriaItem::Materiales->value        => CategoriaItem::Materiales->getLabel(),
+                            CategoriaItem::HerramientaEquipo->value => CategoriaItem::HerramientaEquipo->getLabel(),
+                        ])
+                        ->default(CategoriaItem::Materiales->value)
+                        ->required()
+                        ->native(false)
+                        ->prefixIcon('heroicon-o-squares-2x2')
+                        ->disabledOn('edit')
+                        ->dehydrated()
+                        ->helperText('Solo recursos físicos inventariables. NO editable después de crear (el código depende de ella).'),
 
                 TextInput::make('codigo')
                     ->label('Código del sistema')
