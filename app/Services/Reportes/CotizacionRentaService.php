@@ -70,7 +70,13 @@ final class CotizacionRentaService
     {
         $proyecto->loadMissing('cliente:id,nombre,telefono,condicion_pago,dias_credito');
 
-        $telefono = preg_replace('/\D+/', '', (string) $proyecto->cliente?->telefono) ?? '';
+        $cliente = $proyecto->cliente;
+
+        if ($cliente === null) {
+            return null;
+        }
+
+        $telefono = preg_replace('/\D+/', '', (string) $cliente->telefono) ?? '';
 
         if ($telefono === '') {
             return null;
