@@ -41,6 +41,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon|null $fecha_recepcion
  * @property string|null $numero_factura
  * @property TipoDocumentoFiscal|null $tipo_documento_fiscal
+ * @property array<int, string>|null $fotos_factura
  * @property bool $aplica_isv
  * @property string $isv_porcentaje
  * @property string $subtotal_cache
@@ -80,6 +81,7 @@ class Compra extends Model
         'fecha_recepcion',
         'numero_factura',
         'tipo_documento_fiscal',
+        'fotos_factura',
         'aplica_isv',
         'isv_porcentaje',
         'costo_envio',
@@ -104,6 +106,7 @@ class Compra extends Model
             'estado'                => EstadoCompra::class,
             'condicion_pago'        => CondicionPago::class,
             'tipo_documento_fiscal' => TipoDocumentoFiscal::class,
+            'fotos_factura'         => 'array',
             'fecha'                 => 'date',
             'fecha_recepcion'       => 'date',
             'anulada_at'            => 'datetime',

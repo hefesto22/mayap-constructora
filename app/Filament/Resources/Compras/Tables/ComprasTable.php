@@ -8,6 +8,7 @@ use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\TipoDocumentoFiscal;
 use App\Exceptions\Compras\CompraException;
+use App\Filament\Resources\Compras\Actions\AccionFotosFactura;
 use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\User;
@@ -111,6 +112,7 @@ class ComprasTable
             ->recordActions([
                 EditAction::make()
                     ->visible(fn (Compra $record): bool => $record->estado === EstadoCompra::Borrador),
+                AccionFotosFactura::make(),
                 Action::make('registrar')
                     ->label('Registrar')
                     ->icon('heroicon-o-truck')

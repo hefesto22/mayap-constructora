@@ -129,6 +129,16 @@ Schedule::command('maquinaria:avisar-mantenimientos')
     ->onOneServer()
     ->name('maquinaria-avisos-mantenimiento');
 
+// ─── Compras: ciclo fiscal mensual ─────────────────────────────────────
+// Diario e idempotente: si el mes anterior aún no tiene reporte fiscal
+// (PDF con todas las compras + fotos de facturas) lo genera y avisa;
+// después purga las fotos de los reportes que ya cumplieron el colchón
+// de 7 días (solo con PDF sano). El PDF queda como archivo permanente.
+Schedule::command('compras:ciclo-fiscal-mensual')
+    ->dailyAt('06:30')
+    ->onOneServer()
+    ->name('compras-ciclo-fiscal-mensual');
+
 // ─── Activity Log ──────────────────────────────────────────────────────
 // Limpieza periódica del log de Spatie ActivityLog. Por defecto el comando
 // borra registros con más de 365 días (configurable en config/activitylog.php

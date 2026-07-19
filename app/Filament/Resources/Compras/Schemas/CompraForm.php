@@ -8,6 +8,7 @@ use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\EstadoProyecto;
 use App\Enums\TipoDocumentoFiscal;
+use App\Filament\Resources\Compras\Actions\AccionFotosFactura;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraLinea;
@@ -238,6 +239,10 @@ class CompraForm
                     ->helperText(fn (callable $get): ?string => $get('tipo_documento_fiscal') === TipoDocumentoFiscal::Factura->value
                         ? 'Obligatorio: el documento es factura.'
                         : null),
+
+                // Fotos del documento (WebP automático). Después de
+                // confirmar, se suben desde la acción "Fotos" de la tabla.
+                AccionFotosFactura::campo(),
 
                 TextInput::make('costo_envio')
                     ->label('Costo de envío (flete)')

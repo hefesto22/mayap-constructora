@@ -13,7 +13,7 @@ use Spatie\Browsershot\Browsershot;
  * que en local (Herd/macOS) se autodetecta y en el VPS viene de .env.
  * Los servicios de reporte arman el HTML; este lo convierte.
  */
-final class PdfRenderer
+final class PdfRenderer implements RenderizadorPdf
 {
     /**
      * Convierte HTML en PDF y lo guarda en la ruta dada (la crea si hace

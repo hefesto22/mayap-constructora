@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Listeners\RecordUserLogin;
+use App\Services\Reportes\PdfRenderer;
+use App\Services\Reportes\RenderizadorPdf;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -19,7 +21,9 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // HTML → PDF: la implementación real usa Browsershot/Chromium;
+        // los tests atan una falsa (generar PDFs reales exige Chrome).
+        $this->app->bind(RenderizadorPdf::class, PdfRenderer::class);
     }
 
     public function boot(): void
