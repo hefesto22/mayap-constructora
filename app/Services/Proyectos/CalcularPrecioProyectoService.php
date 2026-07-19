@@ -51,7 +51,10 @@ final class CalcularPrecioProyectoService
     public function recalcular(Proyecto $proyecto): Proyecto
     {
         return DB::transaction(function () use ($proyecto): Proyecto {
-            $proyecto->loadMissing('renglones');
+            // load (NO loadMissing): la relación puede venir cargada VIEJA
+            // (p. ej. recién agregada una línea) y los totales deben salir
+            // SIEMPRE de lo que hay en la DB dentro de esta transacción.
+            $proyecto->load($proyecto->esRenta() ? 'lineasRenta' : 'renglones');
 
             $subtotalCrudo = $this->sumarSubtotales($proyecto);
             $isvCrudo = $this->calcularIsv($proyecto, $subtotalCrudo);
@@ -80,7 +83,7 @@ final class CalcularPrecioProyectoService
      */
     public function previsualizar(Proyecto $proyecto): array
     {
-        $proyecto->loadMissing('renglones');
+        $proyecto->load($proyecto->esRenta() ? 'lineasRenta' : 'renglones');
 
         $subtotalCrudo = $this->sumarSubtotales($proyecto);
         $isvCrudo = $this->calcularIsv($proyecto, $subtotalCrudo);
@@ -102,7 +105,12 @@ final class CalcularPrecioProyectoService
     {
         $acumulado = '0';
 
-        foreach ($proyecto->renglones as $renglon) {
+        // Renta de maquinaria: la composicion son lineas de renta
+        // (maquina x cantidad x tarifa), no renglones APU. Misma
+        // formula de totales, distinta fuente de subtotales.
+        $lineas = $proyecto->esRenta() ? $proyecto->lineasRenta : $proyecto->renglones;
+
+        foreach ($lineas as $renglon) {
             $acumulado = bcadd(
                 $acumulado,
                 (string) $renglon->subtotal_cache,

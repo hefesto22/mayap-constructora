@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\DB;
  * @property Carbon $fecha_emision
  * @property Carbon $fecha_vencimiento
  * @property EstadoCuentaPorCobrar $estado
+ * @property int|null $ultimo_aviso_dias
  * @property string|null $notas
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -58,6 +59,7 @@ class CuentaPorCobrar extends Model
         'fecha_emision',
         'fecha_vencimiento',
         'estado',
+        'ultimo_aviso_dias',
         'notas',
     ];
 
@@ -72,6 +74,7 @@ class CuentaPorCobrar extends Model
             'saldo'             => 'decimal:2',
             'fecha_emision'     => 'date',
             'fecha_vencimiento' => 'date',
+            'ultimo_aviso_dias' => 'integer',
         ];
     }
 
@@ -147,5 +150,33 @@ class CuentaPorCobrar extends Model
     public function scopePendientes(Builder $query): Builder
     {
         return $query->where('saldo', '>', 0);
+    }
+
+    /**
+     * Con saldo y vencimiento dentro de los proximos $dias (incluye HOY).
+     * Alimenta la pestana "Por vencer" y el radar de avisos.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopePorVencer(Builder $query, int $dias = 7): Builder
+    {
+        return $query->where('saldo', '>', 0)
+            ->whereDate('fecha_vencimiento', '>=', today())
+            ->whereDate('fecha_vencimiento', '<=', today()->addDays($dias));
+    }
+
+    /**
+     * Con saldo y fecha maxima de pago YA pasada: los morosos.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeVencidas(Builder $query): Builder
+    {
+        return $query->where('saldo', '>', 0)
+            ->whereDate('fecha_vencimiento', '<', today());
     }
 }

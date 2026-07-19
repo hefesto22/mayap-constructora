@@ -25,6 +25,7 @@ use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Renglones del proyecto como TABLA PAGINADA — escala a cientos de líneas
@@ -42,6 +43,15 @@ class RenglonesRelationManager extends RelationManager
     protected static ?string $title = 'Composición (renglones)';
 
     protected static string|BackedEnum|null $icon = 'heroicon-o-squares-plus';
+
+    /**
+     * Solo en proyectos presupuestados: las rentas de maquinaria usan
+     * su propio manager de líneas (LineasRentaRelationManager).
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return $ownerRecord instanceof Proyecto && ! $ownerRecord->esRenta();
+    }
 
     /**
      * Solo se pueden tocar renglones en Borrador. En otros estados la

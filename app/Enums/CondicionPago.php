@@ -9,7 +9,7 @@ use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 
 /**
- * Condición de pago de un proveedor (y, a futuro, de clientes).
+ * Condición de pago de un proveedor o de un cliente.
  *
  * - Contado: se paga al recibir. No genera saldo en cuentas por pagar.
  * - Credito: se paga a N días. Genera saldo y cuenta por pagar.

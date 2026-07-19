@@ -6,7 +6,9 @@ namespace App\Filament\Resources\Proyectos\Pages;
 
 use App\Enums\EstadoProyecto;
 use App\Exceptions\Proyectos\ProyectoNoEditableException;
+use App\Filament\Resources\Proyectos\Actions\AccionCobrarProyecto;
 use App\Filament\Resources\Proyectos\Actions\AccionesEjecucion;
+use App\Filament\Resources\Proyectos\Actions\AccionesRenta;
 use App\Filament\Resources\Proyectos\ProyectoResource;
 use App\Models\Proyecto;
 use App\Services\Proyectos\ActualizarPreciosProyectoService;
@@ -33,6 +35,11 @@ class EditProyecto extends EditRecord
                 ->label('Ver')
                 ->color('gray'),
             ActionGroup::make([
+                // Renta de maquinaria (aprobar agenda y genera CxC; extender suma)
+                AccionesRenta::aprobar(),
+                AccionesRenta::extender(),
+                // El cliente paga (anticipo o abono) y se anota aqui mismo.
+                AccionCobrarProyecto::make(),
                 // Estado comercial
                 $this->actionCambiarEstado(),
                 $this->actionVolverABorrador(),
@@ -105,7 +112,7 @@ class EditProyecto extends EditRecord
             // y queda congelado (los cambios van por orden de cambio).
             ->visible(
                 fn (Proyecto $record): bool => $record->estado === EstadoProyecto::Borrador
-                && $record->renglones()->exists()
+                && ($record->esRenta() ? $record->lineasRenta()->exists() : $record->renglones()->exists())
             );
     }
 
@@ -178,6 +185,12 @@ class EditProyecto extends EditRecord
                         foreach ($record->estado->transicionesSimples() as $estado) {
                             // "Volver a borrador" tiene su propia acción dedicada.
                             if ($estado === EstadoProyecto::Borrador) {
+                                continue;
+                            }
+
+                            // Las rentas se aprueban con "Aprobar renta" (agenda
+                            // + CxC), nunca por este select genérico.
+                            if ($record->esRenta() && $estado === EstadoProyecto::Aprobada) {
                                 continue;
                             }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Schemas;
 
 use App\Enums\EstadoProyecto;
+use App\Enums\TipoProyecto;
 use App\Models\Cliente;
 use App\Models\Proyecto;
 use App\Models\Zona;
@@ -20,6 +21,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -63,6 +65,18 @@ class ProyectoForm
         return Tab::make('Identificación')
             ->icon('heroicon-o-identification')
             ->schema([
+                ToggleButtons::make('tipo')
+                    ->label('Tipo de proyecto')
+                    ->options(TipoProyecto::options())
+                    ->default(TipoProyecto::Presupuestado->value)
+                    ->inline()
+                    ->required()
+                    ->live()
+                    ->disabledOn('edit')
+                    ->dehydrated()
+                    ->columnSpanFull()
+                    ->helperText('Presupuestado: obra con renglones de fichas APU. Renta de maquinaria: cliente externo que solo renta máquinas por horas o días — se agenda y cobra desde aquí. El tipo NO se cambia después de crear.'),
+
                 TextInput::make('codigo')
                     ->label('Código del sistema')
                     ->disabled()
@@ -216,7 +230,8 @@ class ProyectoForm
     {
         return Tab::make('Control de materiales')
             ->icon('heroicon-o-cube')
-            ->visible(fn (?Proyecto $record): bool => $record !== null)
+            // Solo presupuestados: una renta no tiene fichas ni materiales.
+            ->visible(fn (?Proyecto $record): bool => $record !== null && ! $record->esRenta())
             ->badge(function (?Proyecto $record): ?string {
                 if ($record === null) {
                     return null;
@@ -253,6 +268,11 @@ class ProyectoForm
     {
         return Tab::make('Actividades')
             ->icon('heroicon-o-check-circle')
+            // Solo presupuestados: una renta no lleva avance físico. En
+            // crear reacciona en vivo al selector de tipo.
+            ->visible(fn (?Proyecto $record, Get $get): bool => $record !== null
+                ? ! $record->esRenta()
+                : $get('tipo') !== TipoProyecto::RentaMaquinaria->value)
             ->badge(fn (?Proyecto $record): ?string => $record !== null
                 ? $record->avance_fisico_cache.'%'
                 : null)

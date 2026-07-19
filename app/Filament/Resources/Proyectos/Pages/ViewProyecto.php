@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Proyectos\Pages;
 
+use App\Filament\Resources\Proyectos\Actions\AccionCobrarProyecto;
+use App\Filament\Resources\Proyectos\Actions\AccionesRenta;
 use App\Filament\Resources\Proyectos\ProyectoResource;
 use App\Support\Permisos;
 use Filament\Actions\Action;
@@ -33,6 +35,11 @@ class ViewProyecto extends ViewRecord
                 permiso: Permisos::DESCARGAR_PDF_COSTOS_PROYECTO,
                 ruta: 'reportes.costo-obra',
             ),
+
+            // Renta de maquinaria: aprobar (agenda + CxC) y extender.
+            AccionesRenta::aprobar(),
+            AccionesRenta::extender(),
+            AccionCobrarProyecto::make(),
 
             EditAction::make(),
         ];

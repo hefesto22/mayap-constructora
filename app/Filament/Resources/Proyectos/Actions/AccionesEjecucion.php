@@ -10,6 +10,7 @@ use App\Exceptions\Proyectos\ProyectoException;
 use App\Models\Proyecto;
 use App\Services\Proyectos\AjustarPlazoProyectoService;
 use App\Services\Proyectos\CambiarEstadoEjecucionService;
+use App\Services\Proyectos\FinalizarRentaService;
 use App\Services\Proyectos\IniciarProyectoService;
 use App\Services\Proyectos\RegistrarAnticipoService;
 use App\Support\Permisos;
@@ -97,7 +98,9 @@ final class AccionesEjecucion
             ->label('Registrar anticipo')
             ->icon('heroicon-o-banknotes')
             ->color('success')
-            ->visible(fn (?Proyecto $record): bool => $record !== null && in_array(
+            // Rentas NO: su anticipo es un COBRO contra la CxC
+            // (AccionCobrarProyecto) — una sola puerta de dinero por tipo.
+            ->visible(fn (?Proyecto $record): bool => $record !== null && ! $record->esRenta() && in_array(
                 $record->estado,
                 [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                 strict: true,
@@ -274,10 +277,33 @@ final class AccionesEjecucion
             ])
             ->action(function (Proyecto $record, array $data): void {
                 self::ejecutarConManejo(function () use ($record, $data): void {
-                    app(CambiarEstadoEjecucionService::class)->finalizar(
-                        $record,
-                        Carbon::parse((string) $data['fecha_fin_real']),
-                    );
+                    $fecha = Carbon::parse((string) $data['fecha_fin_real']);
+
+                    // Rentas: la regla de cobro es distinta — se cobra lo
+                    // cotizado como mínimo y el extra de horas reales se
+                    // suma a la cuenta por cobrar al finalizar.
+                    if ($record->esRenta()) {
+                        $usuarioId = auth()->id();
+
+                        $resultado = app(FinalizarRentaService::class)
+                            ->finalizar($record, $fecha, is_numeric($usuarioId) ? (int) $usuarioId : null);
+
+                        $conExtra = bccomp($resultado['extra'], '0', 2) > 0;
+
+                        Notification::make()
+                            ->success()
+                            ->title('Renta finalizada')
+                            ->body($conExtra
+                                ? 'Horas reales sobre lo pactado: se sumó L '
+                                    .number_format((float) $resultado['extra'], 2)
+                                    .' a la cuenta por cobrar.'
+                                : 'Sin horas extra: se cobra lo cotizado.')
+                            ->send();
+
+                        return;
+                    }
+
+                    app(CambiarEstadoEjecucionService::class)->finalizar($record, $fecha);
 
                     Notification::make()->success()->title('Proyecto finalizado')->send();
                 });

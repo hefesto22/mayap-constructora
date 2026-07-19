@@ -110,6 +110,15 @@ Schedule::job(new MarcarProyectosVencidosJob)
     ->onOneServer()
     ->name('proyectos-marcar-vencidos');
 
+// ─── Cobranza: avisos de vencimiento ───────────────────────────────────
+// Campanita a gerencia/recepción con las cuentas por cobrar que vencen
+// en 7 días, 3 días, HOY o que ya vencieron (escalones idempotentes:
+// ultimo_aviso_dias). Una pasada diaria en horario de oficina.
+Schedule::command('cobranza:avisar-vencimientos')
+    ->dailyAt('07:30')
+    ->onOneServer()
+    ->name('cobranza-avisos-vencimiento');
+
 // ─── Activity Log ──────────────────────────────────────────────────────
 // Limpieza periódica del log de Spatie ActivityLog. Por defecto el comando
 // borra registros con más de 365 días (configurable en config/activitylog.php

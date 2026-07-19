@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\EstadoProyecto;
 use App\Enums\ModoPlazo;
+use App\Enums\TipoProyecto;
 use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\ProyectoFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -55,6 +56,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  *
  * @property int $id
  * @property string $codigo
+ * @property TipoProyecto $tipo
  * @property int $zona_id
  * @property int $cliente_id
  * @property string $nombre
@@ -88,6 +90,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property-read Zona $zona
  * @property-read Cliente $cliente
  * @property-read Collection<int, ProyectoRenglon> $renglones
+ * @property-read Collection<int, ProyectoLineaRenta> $lineasRenta
  * @property-read Collection<int, ProyectoActividad> $actividades
  */
 class Proyecto extends Model
@@ -99,9 +102,21 @@ class Proyecto extends Model
     use LogsActivity;
     use SoftDeletes;
 
+    /**
+     * Default en memoria espejo del default de la DB: un Proyecto recién
+     * instanciado (factory, create sin tipo) ya sabe que es presupuestado
+     * sin necesidad de refresh — esRenta() nunca ve null.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'tipo' => 'presupuestado',
+    ];
+
     /** @var list<string> */
     protected $fillable = [
         'codigo',
+        'tipo',
         'zona_id',
         'cliente_id',
         'nombre',
@@ -140,6 +155,7 @@ class Proyecto extends Model
             'fecha_emision'       => 'date',
             'fecha_validez'       => 'date',
             'estado'              => EstadoProyecto::class,
+            'tipo'                => TipoProyecto::class,
             'aplica_isv'          => 'boolean',
             'isv_porcentaje'      => 'decimal:2',
             'subtotal_cache'      => 'decimal:2',
@@ -329,6 +345,49 @@ class Proyecto extends Model
     public function renglones(): HasMany
     {
         return $this->hasMany(ProyectoRenglon::class)->orderBy('orden');
+    }
+
+    /**
+     * Lineas de renta (proyectos tipo renta_maquinaria): maquina x
+     * cantidad (horas o dias) x tarifa. El espejo liviano de renglones.
+     *
+     * @return HasMany<ProyectoLineaRenta, $this>
+     */
+    public function lineasRenta(): HasMany
+    {
+        return $this->hasMany(ProyectoLineaRenta::class)->orderBy('orden');
+    }
+
+    /**
+     * Azucar semantica: este proyecto es una renta de maquinaria?
+     */
+    public function esRenta(): bool
+    {
+        return $this->tipo->esRenta();
+    }
+
+    /**
+     * Cuentas por cobrar ligadas al proyecto (la renta genera la suya
+     * al aprobarse; tambien admite CxC manuales ligadas a la obra).
+     *
+     * @return HasMany<CuentaPorCobrar, $this>
+     */
+    public function cuentasPorCobrar(): HasMany
+    {
+        return $this->hasMany(CuentaPorCobrar::class);
+    }
+
+    /**
+     * La cuenta pendiente MAS URGENTE del proyecto (con saldo, la mas
+     * proxima a vencer). Es la que cobra "Registrar cobro" desde el
+     * proyecto; null = el cliente no debe nada de esta obra.
+     */
+    public function cuentaPorCobrarPendiente(): ?CuentaPorCobrar
+    {
+        return $this->cuentasPorCobrar()
+            ->pendientes()
+            ->orderBy('fecha_vencimiento')
+            ->first();
     }
 
     /**

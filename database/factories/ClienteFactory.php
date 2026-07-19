@@ -56,6 +56,18 @@ class ClienteFactory extends Factory
         return $this->state(fn (): array => ['activo' => false]);
     }
 
+    /**
+     * Cliente con credito a N dias (default 30) — su cuenta por cobrar
+     * vence a esos dias de la emision.
+     */
+    public function aCredito(int $dias = 30): self
+    {
+        return $this->state(fn (): array => [
+            'condicion_pago' => 'credito',
+            'dias_credito'   => $dias,
+        ]);
+    }
+
     public function conNombre(string $nombre): self
     {
         return $this->state(fn (): array => ['nombre' => $nombre]);

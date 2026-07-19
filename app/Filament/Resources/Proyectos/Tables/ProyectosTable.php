@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Tables;
 
 use App\Enums\EstadoProyecto;
+use App\Enums\TipoProyecto;
 use App\Filament\Resources\Proyectos\Actions\AccionesEjecucion;
 use App\Filament\Support\CostoObra;
 use App\Models\Proyecto;
@@ -56,6 +57,14 @@ class ProyectosTable
                     ->label('Zona')
                     ->badge()
                     ->color('gray'),
+
+                TextColumn::make('tipo')
+                    ->label('Tipo')
+                    ->badge()
+                    ->color(fn (TipoProyecto $state): string => $state->getColor())
+                    ->icon(fn (TipoProyecto $state): string => $state->getIcon())
+                    ->formatStateUsing(fn (TipoProyecto $state): string => $state->getLabel())
+                    ->sortable(),
 
                 TextColumn::make('cliente.nombre')
                     ->label('Cliente')
@@ -167,6 +176,10 @@ class ProyectosTable
                 SelectFilter::make('estado')
                     ->label('Estado')
                     ->options(EstadoProyecto::options()),
+
+                SelectFilter::make('tipo')
+                    ->label('Tipo')
+                    ->options(TipoProyecto::options()),
 
                 SelectFilter::make('cliente_id')
                     ->label('Cliente')

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Database\Factories;
 
 use App\Enums\EstadoProyecto;
+use App\Enums\TipoProyecto;
 use App\Models\Cliente;
 use App\Models\Proyecto;
 use App\Models\Zona;
@@ -46,6 +47,19 @@ class ProyectoFactory extends Factory
             'total_cache'         => 0,
             'precio_calculado_at' => null,
         ];
+    }
+
+    /**
+     * Proyecto tipo RENTA DE MAQUINARIA (liviano: lineas de renta en vez
+     * de renglones APU). El tipo default de la factory sigue siendo
+     * presupuestado — el default de la columna hace el resto.
+     */
+    public function renta(): self
+    {
+        return $this->state(fn (): array => [
+            'tipo'   => TipoProyecto::RentaMaquinaria->value,
+            'nombre' => 'RENTA DE RETROEXCAVADORA',
+        ]);
     }
 
     public function enZona(Zona $zona): self

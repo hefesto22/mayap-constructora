@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\CondicionPago;
 use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\ClienteFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -45,6 +46,8 @@ use Illuminate\Support\Facades\DB;
  * @property string|null $email
  * @property string|null $direccion
  * @property string|null $ciudad
+ * @property CondicionPago $condicion_pago
+ * @property int $dias_credito
  * @property string|null $notas
  * @property bool $activo
  * @property Carbon|null $created_at
@@ -69,6 +72,8 @@ class Cliente extends Model
         'email',
         'direccion',
         'ciudad',
+        'condicion_pago',
+        'dias_credito',
         'notas',
         'activo',
     ];
@@ -79,7 +84,9 @@ class Cliente extends Model
     protected function casts(): array
     {
         return [
-            'activo' => 'boolean',
+            'activo'         => 'boolean',
+            'condicion_pago' => CondicionPago::class,
+            'dias_credito'   => 'integer',
         ];
     }
 
@@ -216,6 +223,17 @@ class Cliente extends Model
     }
 
     // ─── Accessors útiles ──────────────────────────────────────────
+
+    /**
+     * Fecha en que VENCE una deuda emitida en $fecha para este cliente:
+     * contado vence el mismo dia; credito a $dias_credito dias.
+     */
+    public function fechaVencimientoDesde(Carbon $fecha): Carbon
+    {
+        return $this->condicion_pago === CondicionPago::Credito
+            ? $fecha->copy()->addDays($this->dias_credito)
+            : $fecha->copy();
+    }
 
     /**
      * Etiqueta corta para selects: "CLI-00001 · Juan Pérez · 0801...".

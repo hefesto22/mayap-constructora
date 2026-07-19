@@ -9,6 +9,7 @@ use App\Filament\Resources\Proyectos\Pages\CreateProyecto;
 use App\Filament\Resources\Proyectos\Pages\EditProyecto;
 use App\Filament\Resources\Proyectos\Pages\ListProyectos;
 use App\Filament\Resources\Proyectos\Pages\ViewProyecto;
+use App\Filament\Resources\Proyectos\RelationManagers\LineasRentaRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\MaquinariaRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\RenglonesRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\SolicitudesMaquinaRelationManager;
@@ -160,6 +161,8 @@ class ProyectoResource extends Resource
     {
         return [
             RenglonesRelationManager::class,
+            // Rentas: líneas máquina × horas/días (solo tipo renta).
+            LineasRentaRelationManager::class,
             // Historial de maquinaria: qué se agendó, si trabajó (partes
             // reales) y qué solicitudes hubo — todo queda en el proyecto.
             MaquinariaRelationManager::class,

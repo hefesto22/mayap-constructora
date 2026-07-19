@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Clientes\Schemas;
 
+use App\Enums\CondicionPago;
 use App\Models\Cliente;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -84,6 +86,23 @@ class ClienteForm
                     ->maxLength(150)
                     ->placeholder('contacto@cliente.com')
                     ->prefixIcon('heroicon-o-envelope'),
+
+                Select::make('condicion_pago')
+                    ->label('Condición de pago')
+                    ->options(CondicionPago::options())
+                    ->default(CondicionPago::Contado->value)
+                    ->required()
+                    ->live()
+                    ->native(false)
+                    ->helperText('Contado: sus cuentas vencen el mismo día. Crédito: vencen a los días acordados.'),
+
+                TextInput::make('dias_credito')
+                    ->label('Días de crédito')
+                    ->numeric()
+                    ->minValue(0)
+                    ->default(0)
+                    ->visible(fn (callable $get): bool => $get('condicion_pago') === CondicionPago::Credito->value)
+                    ->helperText('Plazo máximo de pago desde que se emite la cuenta por cobrar.'),
 
                 TextInput::make('ciudad')
                     ->label('Ciudad')
