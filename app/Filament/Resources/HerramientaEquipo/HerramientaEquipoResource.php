@@ -34,6 +34,12 @@ class HerramientaEquipoResource extends Resource
 
     protected static ?string $slug = 'herramienta-y-equipo';
 
+    /**
+     * SIN item propio en el menu: se llega por el toggle del listado
+     * de Maquinaria (decision Mauricio 2026-07-19).
+     */
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-wrench-screwdriver';
 
     protected static ?string $recordTitleAttribute = 'nombre';
