@@ -56,10 +56,14 @@ test('el seeder crea los roles operativos con el alcance correcto', function ():
     $maquinaria = Role::findByName(Roles::MAQUINARIA, 'web');
     $encargado = Role::findByName(Roles::ENCARGADO_OBRA, 'web');
 
-    // Recepción compra, pero NO despacha requisiciones ni edita catálogo.
+    // Recepción es la COMODÍN (decisión Mauricio 2026-07-19): compra Y
+    // cubre bodega/maquinaria cuando el titular no está. Lo que sigue
+    // vedado: editar catálogos y auto-validarse (verificar/anular).
     expect($recepcion->hasPermissionTo('Create:Compra', 'web'))->toBeTrue()
         ->and($recepcion->hasPermissionTo('ViewAny:Requisicion', 'web'))->toBeTrue()
-        ->and($recepcion->hasPermissionTo('Update:Requisicion', 'web'))->toBeFalse()
+        ->and($recepcion->hasPermissionTo('Update:Requisicion', 'web'))->toBeTrue()
+        ->and($recepcion->hasPermissionTo('Create:ParteTrabajo', 'web'))->toBeTrue()
+        ->and($recepcion->hasPermissionTo('Create:Maquina', 'web'))->toBeTrue()
         ->and($recepcion->hasPermissionTo('Create:Material', 'web'))->toBeFalse();
 
     // Maquinaria administra el parque, proyectos solo lectura.
@@ -238,7 +242,9 @@ test('Mi Bandeja muestra los pendientes según el rol', function (): void {
         ->assertSuccessful()
         ->assertSee('Requisiciones por autorizar');
 
-    // Recepción NO ve la bandeja de bodega, sí la de compras.
+    // Recepción es la COMODÍN (decisión Mauricio 2026-07-19): además de
+    // su bandeja de compras VE la de bodega, porque la cubre cuando el
+    // bodeguero no está.
     $recepcion = User::factory()->create(['is_active' => true]);
     $recepcion->assignRole(Roles::RECEPCION);
 
@@ -246,5 +252,5 @@ test('Mi Bandeja muestra los pendientes según el rol', function (): void {
         ->test(MiBandejaWidget::class)
         ->assertSuccessful()
         ->assertSee('Compras pendientes')
-        ->assertDontSee('Requisiciones por autorizar');
+        ->assertSee('Requisiciones por autorizar');
 });

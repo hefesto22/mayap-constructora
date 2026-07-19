@@ -16,7 +16,8 @@ use Illuminate\Database\Eloquent\Collection;
  * Campanitas de mantenimiento preventivo — "a esta máquina ya le toca
  * el cambio de aceite".
  *
- * Destinatarios: gerencia y maquinaria (quien programa el taller).
+ * Destinatarios: gerencia, maquinaria y recepción (la comodín que
+ * cubre cuando el titular no está — decisión Mauricio 2026-07-19).
  * Igual que cobranza: POR ROL, notifyNow (nunca sendToDatabase),
  * best-effort — sin usuarios con rol → silencio, jamás tumba al
  * scheduler.
@@ -86,7 +87,7 @@ final class NotificadorMantenimiento
     private function responsables(): Collection
     {
         return User::query()
-            ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::GERENCIA, Roles::MAQUINARIA]))
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::GERENCIA, Roles::MAQUINARIA, Roles::RECEPCION]))
             ->where('is_active', true)
             ->get();
     }

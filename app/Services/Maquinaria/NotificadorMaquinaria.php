@@ -139,7 +139,7 @@ final class NotificadorMaquinaria
             ]);
 
         $this->despachar(
-            $this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA),
+            $this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA, Roles::RECEPCION),
             $notificacion,
             $confirmador->id,
         );
@@ -173,7 +173,7 @@ final class NotificadorMaquinaria
             ]);
 
         $this->despachar(
-            $this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA),
+            $this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA, Roles::RECEPCION),
             $notificacion,
             $confirmador->id,
         );
@@ -206,7 +206,7 @@ final class NotificadorMaquinaria
                     ->button(),
             ]);
 
-        $this->despachar($this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA), $notificacion, $actorId);
+        $this->despachar($this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA, Roles::RECEPCION), $notificacion, $actorId);
     }
 
     /**
@@ -239,7 +239,7 @@ final class NotificadorMaquinaria
             ]);
 
         $destinatarios = $this->encargadosDe($solicitud->proyecto)
-            ->merge($this->usuariosConRol(Roles::MAQUINARIA))
+            ->merge($this->usuariosConRol(Roles::MAQUINARIA, Roles::RECEPCION))
             ->when($solicitud->solicitante !== null, fn (Collection $c) => $c->push($solicitud->solicitante));
 
         $this->despachar($destinatarios, $notificacion, $actorId);

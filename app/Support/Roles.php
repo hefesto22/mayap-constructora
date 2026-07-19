@@ -45,11 +45,13 @@ final class Roles
     ];
 
     /**
-     * ¿El usuario opera bodega (o tiene visión total)?
+     * ¿El usuario opera bodega (o tiene visión total)? Recepción cuenta:
+     * es la comodín que cubre bodega cuando el bodeguero no está
+     * (decisión Mauricio 2026-07-19).
      */
     public static function despachaBodega(?User $user): bool
     {
-        return $user !== null && $user->hasAnyRole([self::BODEGUERO, self::GERENCIA])
+        return $user !== null && $user->hasAnyRole([self::BODEGUERO, self::RECEPCION, self::GERENCIA])
             || self::esSuper($user);
     }
 

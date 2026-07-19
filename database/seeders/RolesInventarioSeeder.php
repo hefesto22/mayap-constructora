@@ -71,10 +71,25 @@ class RolesInventarioSeeder extends Seeder
             $this->permisosDe('Compra'),
             $this->permisosDe('Proveedor'),
             $this->permisosDe('CuentaPorPagar'),
-            $this->soloLectura('Requisicion'),
+            $this->permisosDe('CuentaPorCobrar'),
+            $this->permisosDe('Cliente'),
+            // COMODÍN (decisión Mauricio 2026-07-19): recepción cubre
+            // maquinaria y bodega cuando el titular no está — opera
+            // requisiciones, existencias y todo el parque de máquinas.
+            // Lo que NO gana: verificar/corregir recepciones (quien
+            // compró no se auto-valida), anular compras ni catálogos.
+            $this->permisosDe('Requisicion'),
+            $this->permisosDe('Existencia'),
+            $this->permisosDe('Maquina'),
+            $this->permisosDe('AsignacionMaquina'),
+            $this->permisosDe('ParteTrabajo'),
+            $this->permisosDe('ConsumoCombustible'),
+            $this->permisosDe('MantenimientoMaquina'),
+            $this->permisosDe('AgendaMaquina'),
+            $this->permisosDe('SolicitudMaquina'),
+            $this->soloLectura('Proyecto'),
             $this->soloLectura('Material'),
             $this->soloLectura('Bodega'),
-            $this->soloLectura('Existencia'),
             $this->existentes(['View:MyProfilePage', 'page_MyProfilePage']),
         ));
 
@@ -186,6 +201,13 @@ class RolesInventarioSeeder extends Seeder
         ]);
         $encargado->givePermissionTo(Permisos::RECIBIR_REQUISICION);
         $recepcion->givePermissionTo(Permisos::REALIZAR_COMPRA_REQUISICION);
+        // Cobertura bodega (comodín): también autoriza, despacha y
+        // rechaza requisiciones cuando el bodeguero no está.
+        $recepcion->givePermissionTo([
+            Permisos::AUTORIZAR_REQUISICION,
+            Permisos::DESPACHAR_REQUISICION,
+            Permisos::RECHAZAR_REQUISICION,
+        ]);
         $gerencia->givePermissionTo([
             Permisos::AUTORIZAR_REQUISICION,
             Permisos::DESPACHAR_REQUISICION,
@@ -200,6 +222,8 @@ class RolesInventarioSeeder extends Seeder
         Permission::findOrCreate('View:CalendarioMaquinaria', 'web');
         $maquinaria->givePermissionTo('View:CalendarioMaquinaria');
         $gerencia->givePermissionTo('View:CalendarioMaquinaria');
+        // Recepción (comodín) también agenda cuando cubre maquinaria.
+        $recepcion->givePermissionTo('View:CalendarioMaquinaria');
         // El encargado también lo ve — SOLO LECTURA y SOLO sus obras
         // (decisión Mauricio 2026-07-15): el alcance lo aplican la página
         // y el widget; sin Create:AgendaMaquina no puede agendar y sin
@@ -210,6 +234,7 @@ class RolesInventarioSeeder extends Seeder
         Permission::findOrCreate('View:CapturaDelDia', 'web');
         $maquinaria->givePermissionTo('View:CapturaDelDia');
         $gerencia->givePermissionTo('View:CapturaDelDia');
+        $recepcion->givePermissionTo('View:CapturaDelDia');
 
         // El super_admin sincronizó sus permisos ANTES de que estos custom
         // existieran (shield:super-admin en AdminUserSeeder) — asignarle
