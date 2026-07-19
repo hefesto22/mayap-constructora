@@ -7,7 +7,8 @@ namespace App\Services\Reportes;
 use Spatie\Browsershot\Browsershot;
 
 /**
- * ÚNICA puerta de HTML → PDF (Browsershot/Chromium) para los reportes.
+ * ÚNICA puerta de HTML → PDF/imagen (Browsershot/Chromium) para los
+ * reportes.
  *
  * Centraliza la configuración de entorno (rutas de Chrome/Node, sandbox)
  * que en local (Herd/macOS) se autodetecta y en el VPS viene de .env.
@@ -21,17 +22,48 @@ final class PdfRenderer implements RenderizadorPdf
      */
     public function guardar(string $html, string $rutaDestino): string
     {
-        $directorio = dirname($rutaDestino);
+        $this->asegurarDirectorio($rutaDestino);
 
-        if (! is_dir($directorio)) {
-            mkdir($directorio, 0755, true);
-        }
+        $shot = $this->configurar(
+            Browsershot::html($html)
+                ->format('Letter')
+                ->margins(12, 12, 12, 12)
+                ->showBackground(),
+        );
 
-        $shot = Browsershot::html($html)
-            ->format('Letter')
-            ->margins(12, 12, 12, 12)
-            ->showBackground();
+        $shot->savePdf($rutaDestino);
 
+        return $rutaDestino;
+    }
+
+    /**
+     * Convierte HTML en IMAGEN PNG (captura de página completa) — para
+     * documentos que se comparten por WhatsApp, donde una imagen se ve
+     * al instante en el chat sin abrir nada. deviceScaleFactor 2 = nítida
+     * también en pantallas de teléfono.
+     */
+    public function imagen(string $html, string $rutaDestino, int $ancho = 820): string
+    {
+        $this->asegurarDirectorio($rutaDestino);
+
+        $shot = $this->configurar(
+            Browsershot::html($html)
+                ->windowSize($ancho, 600)
+                ->deviceScaleFactor(2)
+                ->fullPage()
+                ->setScreenshotType('png'),
+        );
+
+        $shot->save($rutaDestino);
+
+        return $rutaDestino;
+    }
+
+    /**
+     * Configuración de entorno común a PDF e imagen.
+     */
+    private function configurar(Browsershot $shot): Browsershot
+    {
         $chromePath = config('browsershot.chrome_path');
 
         if (is_string($chromePath) && $chromePath !== '') {
@@ -67,8 +99,15 @@ final class PdfRenderer implements RenderizadorPdf
                 ->setEnvironmentOptions(['HOME' => $home]);
         }
 
-        $shot->savePdf($rutaDestino);
+        return $shot;
+    }
 
-        return $rutaDestino;
+    private function asegurarDirectorio(string $rutaDestino): void
+    {
+        $directorio = dirname($rutaDestino);
+
+        if (! is_dir($directorio)) {
+            mkdir($directorio, 0755, true);
+        }
     }
 }

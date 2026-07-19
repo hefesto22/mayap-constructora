@@ -22,6 +22,8 @@ declare(strict_types=1);
 use App\Http\Controllers\Reportes\ActaRecepcionPdfController;
 use App\Http\Controllers\Reportes\ComposicionProyectoPdfController;
 use App\Http\Controllers\Reportes\CostoObraPdfController;
+use App\Http\Controllers\Reportes\CotizacionRentaImagenController;
+use App\Http\Controllers\Reportes\CotizacionRentaPdfController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -41,4 +43,12 @@ Route::middleware(['auth', 'throttle:pdfs'])
 
         Route::get('proyectos/{proyecto}/composicion', ComposicionProyectoPdfController::class)
             ->name('composicion-proyecto');
+
+        // Cotización de renta: PDF inline + imagen PNG de descarga (para
+        // adjuntarla en el WhatsApp del cliente). Solo proyectos renta.
+        Route::get('proyectos/{proyecto}/cotizacion-renta', CotizacionRentaPdfController::class)
+            ->name('cotizacion-renta');
+
+        Route::get('proyectos/{proyecto}/cotizacion-renta-imagen', CotizacionRentaImagenController::class)
+            ->name('cotizacion-renta-imagen');
     });
