@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Pages;
 
 use App\Filament\Resources\Proyectos\Actions\AccionCobrarProyecto;
+use App\Filament\Resources\Proyectos\Actions\AccionEnviarCotizacionWhatsApp;
 use App\Filament\Resources\Proyectos\Actions\AccionesRenta;
 use App\Filament\Resources\Proyectos\ProyectoResource;
 use App\Models\Proyecto;
@@ -36,6 +37,10 @@ class ViewProyecto extends ViewRecord
             // La IMAGEN es la protagonista: se manda por WhatsApp y el
             // cliente la ve al instante. El PDF queda para lo formal.
             // Mismo permiso que la composición: ambos son "lo pactado".
+            // Envío DIRECTO: el sistema se la manda al cliente vía
+            // Evolution API (solo con WHATSAPP_ENABLED=true).
+            AccionEnviarCotizacionWhatsApp::make(),
+
             Action::make('cotizacion_imagen')
                 ->label('Imagen para WhatsApp')
                 ->icon('heroicon-o-photo')

@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────────
+# Evolution API v2 — WhatsApp de la empresa (envío directo)
+#
+# Levantar:   docker compose -f docker/evolution/docker-compose.yml up -d
+# Manager:    http://localhost:8081/manager  (crear instancia "mayap"
+#             y escanear el QR con el TELÉFONO DE LA EMPRESA — una vez)
+# Apagar:     docker compose -f docker/evolution/docker-compose.yml down
+#
+# Variables que espera el .env del proyecto Laravel:
+#   WHATSAPP_ENABLED=true
+#   WHATSAPP_EVOLUTION_URL=http://localhost:8081
+#   WHATSAPP_EVOLUTION_API_KEY=${EVOLUTION_API_KEY}  (la misma de abajo)
+#   WHATSAPP_EVOLUTION_INSTANCE=mayap
+#
+# Puertos 8081/6380/5433 para NO chocar con el postgres/redis del
+# docker-compose principal del proyecto.
+#
+# REGLA DE ORO (vía no oficial): SOLO el número de MAYAP en producción,
+# volumen normal de cotizaciones y recordatorios — nada de spam masivo.
+# ─────────────────────────────────────────────────────────────────
+
+services:
+
+  evolution:
+    # Conviene fijar una versión exacta cuando esté en producción
+    # (docker hub: evoapicloud/evolution-api).
+    image: evoapicloud/evolution-api:latest
+    container_name: mayap_evolution
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      # Cambia esta llave por una larga y aleatoria (openssl rand -hex 24)
+      # y usa LA MISMA en WHATSAPP_EVOLUTION_API_KEY del .env de Laravel.
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-cambia-esta-llave}
+      SERVER_URL: http://localhost:8081
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-postgres:5432/evolution?schema=public
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: evolution
+      LOG_LEVEL: ERROR
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+
+  evolution-postgres:
+    image: postgres:16-alpine
+    container_name: mayap_evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution
+    ports:
+      - "5433:5432"
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: mayap_evolution_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - evolution_redis_data:/data
+
+volumes:
+  evolution_instances:
+    name: mayap_evolution_instances
+  evolution_postgres_data:
+    name: mayap_evolution_postgres_data
+  evolution_redis_data:
+    name: mayap_evolution_redis_data

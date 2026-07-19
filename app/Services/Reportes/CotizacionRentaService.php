@@ -6,6 +6,7 @@ namespace App\Services\Reportes;
 
 use App\Enums\CondicionPago;
 use App\Models\Proyecto;
+use App\Services\WhatsApp\EnviarWhatsAppService;
 use Illuminate\Support\Facades\View;
 
 /**
@@ -31,7 +32,7 @@ final class CotizacionRentaService
      */
     public function construirHtml(Proyecto $proyecto): string
     {
-        $proyecto->loadMissing([
+        $proyecto->load([
             'cliente:id,codigo,nombre,rtn,telefono,condicion_pago,dias_credito',
             'lineasRenta' => fn ($q) => $q->orderBy('orden'),
             'lineasRenta.maquina:id,codigo,nombre,tipo,marca,modelo',
@@ -68,7 +69,10 @@ final class CotizacionRentaService
      */
     public function linkWhatsApp(Proyecto $proyecto): ?string
     {
-        $proyecto->loadMissing('cliente:id,nombre,telefono,condicion_pago,dias_credito');
+        // load() y NO loadMissing(): la página suele traer 'cliente' ya
+        // cargado con pocas columnas (sin teléfono) y loadMissing no lo
+        // recarga — mismo bug cazado en CalcularPrecioProyectoService.
+        $proyecto->load('cliente:id,nombre,telefono,condicion_pago,dias_credito');
 
         $cliente = $proyecto->cliente;
 
@@ -76,21 +80,24 @@ final class CotizacionRentaService
             return null;
         }
 
-        $telefono = preg_replace('/\D+/', '', (string) $cliente->telefono) ?? '';
+        $telefono = EnviarWhatsAppService::normalizarTelefono($cliente->telefono);
 
-        if ($telefono === '') {
+        if ($telefono === null) {
             return null;
         }
 
-        if (strlen($telefono) === 8) {
-            $telefono = '504'.$telefono;
-        }
+        return 'https://wa.me/'.$telefono.'?text='.rawurlencode($this->mensajeCotizacion($proyecto));
+    }
 
-        $mensaje = "Buen día, le comparto la cotización {$proyecto->codigo} de renta de maquinaria"
+    /**
+     * El mensaje que acompaña la cotización — lo usan el enlace wa.me
+     * y el envío directo (caption de la imagen).
+     */
+    public function mensajeCotizacion(Proyecto $proyecto): string
+    {
+        return "Buen día, le comparto la cotización {$proyecto->codigo} de renta de maquinaria"
             .' por L '.number_format((float) $proyecto->total_cache, 2)
             .' (ISV incluido). Quedamos atentos a su confirmación.';
-
-        return 'https://wa.me/'.$telefono.'?text='.rawurlencode($mensaje);
     }
 
     /**
