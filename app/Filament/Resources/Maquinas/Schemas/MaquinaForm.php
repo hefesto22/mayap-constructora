@@ -102,6 +102,14 @@ class MaquinaForm
                     ->suffix('h')
                     ->helperText('Lectura inicial del reloj de horas. Luego lo mueven los partes de trabajo.'),
 
+                TextInput::make('kilometraje_actual')
+                    ->label('Kilometraje actual')
+                    ->numeric()
+                    ->minValue(0)
+                    ->step('any')
+                    ->suffix('km')
+                    ->helperText('Solo para unidades que se controlan por km (volquetas, camiones). Lectura manual: se actualiza aquí o al registrar un cambio de mantenimiento.'),
+
                 TextInput::make('tarifa_hora')
                     ->label('Tarifa por hora (por defecto)')
                     ->numeric()

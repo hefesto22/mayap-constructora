@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Compras\Schemas;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\EstadoProyecto;
+use App\Enums\TipoDocumentoFiscal;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraLinea;
@@ -218,10 +219,25 @@ class CompraForm
                     ->native(false)
                     ->helperText('Se hereda del proveedor al elegirlo. Crédito genera una cuenta por pagar con su plazo; contado no.'),
 
+                // Documento fiscal (decisión Mauricio 2026-07-19): opcional
+                // en borrador (a veces llega después), pero SIN él la compra
+                // no se confirma — y factura exige su número. La regla dura
+                // vive en ConfirmarCompraService; aquí solo se guía.
+                Select::make('tipo_documento_fiscal')
+                    ->label('Documento fiscal emitido')
+                    ->options(TipoDocumentoFiscal::options())
+                    ->native(false)
+                    ->live()
+                    ->helperText('Qué emitió el proveedor. Se puede dejar vacío en borrador, pero es obligatorio para confirmar. El ISV va aparte: hay boletas sin ISV y facturas con él.'),
+
                 TextInput::make('numero_factura')
                     ->label('N.º de factura')
                     ->maxLength(50)
-                    ->placeholder('Factura del proveedor'),
+                    ->placeholder('Factura del proveedor')
+                    ->required(fn (callable $get): bool => $get('tipo_documento_fiscal') === TipoDocumentoFiscal::Factura->value)
+                    ->helperText(fn (callable $get): ?string => $get('tipo_documento_fiscal') === TipoDocumentoFiscal::Factura->value
+                        ? 'Obligatorio: el documento es factura.'
+                        : null),
 
                 TextInput::make('costo_envio')
                     ->label('Costo de envío (flete)')

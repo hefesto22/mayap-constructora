@@ -119,6 +119,16 @@ Schedule::command('cobranza:avisar-vencimientos')
     ->onOneServer()
     ->name('cobranza-avisos-vencimiento');
 
+// ─── Maquinaria: mantenimiento preventivo ──────────────────────────────
+// Campanita a gerencia/maquinaria con los planes de mantenimiento
+// (aceite, puntas, cuchillas...) PRÓXIMOS (90% del intervalo de horas /
+// km / días) o VENCIDOS. Idempotente: ultimo_aviso_estado solo escala
+// próximo → vencido; registrar el cambio rearma el ciclo.
+Schedule::command('maquinaria:avisar-mantenimientos')
+    ->dailyAt('07:00')
+    ->onOneServer()
+    ->name('maquinaria-avisos-mantenimiento');
+
 // ─── Activity Log ──────────────────────────────────────────────────────
 // Limpieza periódica del log de Spatie ActivityLog. Por defecto el comando
 // borra registros con más de 365 días (configurable en config/activitylog.php

@@ -10,8 +10,10 @@ use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\MaquinaFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -36,6 +38,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int|null $anio
  * @property string|null $serie
  * @property string $horometro_actual
+ * @property string|null $kilometraje_actual
  * @property string $tarifa_hora
  * @property string $jornada_horas
  * @property EstadoMaquina $estado
@@ -45,6 +48,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read AgendaMaquina|null $agendaHoyConfirmada
+ * @property-read Collection<int, PlanMantenimiento> $planesMantenimiento
  */
 class Maquina extends Model
 {
@@ -67,6 +71,7 @@ class Maquina extends Model
         'anio',
         'serie',
         'horometro_actual',
+        'kilometraje_actual',
         'tarifa_hora',
         'jornada_horas',
         'estado',
@@ -80,13 +85,14 @@ class Maquina extends Model
     protected function casts(): array
     {
         return [
-            'tipo'             => TipoMaquina::class,
-            'estado'           => EstadoMaquina::class,
-            'anio'             => 'integer',
-            'horometro_actual' => 'decimal:2',
-            'tarifa_hora'      => 'decimal:2',
-            'jornada_horas'    => 'decimal:2',
-            'activo'           => 'boolean',
+            'tipo'               => TipoMaquina::class,
+            'estado'             => EstadoMaquina::class,
+            'anio'               => 'integer',
+            'horometro_actual'   => 'decimal:2',
+            'kilometraje_actual' => 'decimal:2',
+            'tarifa_hora'        => 'decimal:2',
+            'jornada_horas'      => 'decimal:2',
+            'activo'             => 'boolean',
         ];
     }
 
@@ -95,7 +101,7 @@ class Maquina extends Model
         return LogOptions::defaults()
             ->logOnly([
                 'codigo', 'nombre', 'tipo', 'marca', 'modelo', 'anio', 'serie',
-                'horometro_actual', 'tarifa_hora', 'jornada_horas', 'estado', 'activo',
+                'horometro_actual', 'kilometraje_actual', 'tarifa_hora', 'jornada_horas', 'estado', 'activo',
             ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
@@ -222,6 +228,32 @@ class Maquina extends Model
         return $this->trabajandoHoy()
             ? $this->agendaHoyConfirmada?->proyecto->nombre
             : null;
+    }
+
+    // ─── Mantenimiento preventivo ──────────────────────────────────
+
+    /**
+     * @return HasMany<PlanMantenimiento, $this>
+     */
+    public function planesMantenimiento(): HasMany
+    {
+        return $this->hasMany(PlanMantenimiento::class);
+    }
+
+    /**
+     * El plan ACTIVO con la peor alerta — alimenta el badge de
+     * mantenimiento del listado. Null si no hay planes activos.
+     *
+     * Enlaza cada plan de vuelta a ESTA instancia antes de calcular,
+     * para que estadoAlerta() no dispare N+1 al leer el horómetro/km.
+     */
+    public function planPeorAlerta(): ?PlanMantenimiento
+    {
+        return $this->planesMantenimiento
+            ->filter(fn (PlanMantenimiento $plan): bool => $plan->activo)
+            ->each(fn (PlanMantenimiento $plan) => $plan->setRelation('maquina', $this))
+            ->sortByDesc(fn (PlanMantenimiento $plan): int => $plan->estadoAlerta()->severidad())
+            ->first();
     }
 
     // ─── Scopes ────────────────────────────────────────────────────

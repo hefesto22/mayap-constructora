@@ -8,6 +8,7 @@ use App\Filament\Resources\Maquinas\Pages\CreateMaquina;
 use App\Filament\Resources\Maquinas\Pages\EditMaquina;
 use App\Filament\Resources\Maquinas\Pages\HojaDeVidaMaquina;
 use App\Filament\Resources\Maquinas\Pages\ListMaquinas;
+use App\Filament\Resources\Maquinas\RelationManagers\PlanesMantenimientoRelationManager;
 use App\Filament\Resources\Maquinas\Schemas\MaquinaForm;
 use App\Filament\Resources\Maquinas\Tables\MaquinasTable;
 use App\Models\Maquina;
@@ -44,6 +45,13 @@ class MaquinaResource extends Resource
     public static function table(Table $table): Table
     {
         return MaquinasTable::configure($table);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            PlanesMantenimientoRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

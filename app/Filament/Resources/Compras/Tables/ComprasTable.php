@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Compras\Tables;
 
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
+use App\Enums\TipoDocumentoFiscal;
 use App\Exceptions\Compras\CompraException;
 use App\Models\Compra;
 use App\Models\CompraLinea;
@@ -74,6 +75,20 @@ class ComprasTable
                     ->alignEnd()
                     ->sortable()
                     ->visible(fn (): bool => ! Roles::soloEncargado(auth()->user())),
+                // Documento fiscal: dato de la negociación, igual que Pago.
+                // "—" = compra vieja o borrador que aún no lo declara.
+                TextColumn::make('tipo_documento_fiscal')
+                    ->label('Documento')
+                    ->badge()
+                    ->placeholder('—')
+                    ->color(fn (TipoDocumentoFiscal $state): string => $state->getColor())
+                    ->icon(fn (TipoDocumentoFiscal $state): string => $state->getIcon())
+                    ->formatStateUsing(fn (TipoDocumentoFiscal $state): string => $state->getLabel())
+                    ->tooltip(fn (Compra $record): ?string => $record->numero_factura !== null
+                        ? 'N.º '.$record->numero_factura
+                        : null)
+                    ->toggleable()
+                    ->visible(fn (): bool => ! Roles::soloEncargado(auth()->user())),
                 TextColumn::make('fecha')
                     ->label('Fecha')
                     ->date('d/M/Y')
@@ -89,6 +104,9 @@ class ComprasTable
                     ->relationship('proveedor', 'nombre')
                     ->searchable()
                     ->preload(),
+                SelectFilter::make('tipo_documento_fiscal')
+                    ->label('Documento fiscal')
+                    ->options(TipoDocumentoFiscal::options()),
             ])
             ->recordActions([
                 EditAction::make()

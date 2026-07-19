@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Maquinas\Tables;
 
+use App\Enums\AlertaMantenimiento;
 use App\Enums\EstadoMaquina;
 use App\Enums\TipoMaquina;
 use App\Filament\Resources\Maquinas\Actions\AccionEnviarAMantenimiento;
@@ -26,9 +27,10 @@ class MaquinasTable
     public static function configure(Table $table): Table
     {
         return $table
-            // Para pintar "Trabajando · OBRA" sin N+1: el agendado de HOY
-            // ya confirmado viaja con cada fila.
-            ->modifyQueryUsing(fn ($query) => $query->with('agendaHoyConfirmada.proyecto:id,nombre'))
+            // Para pintar "Trabajando · OBRA" y la alerta de mantenimiento
+            // sin N+1: el agendado de HOY confirmado y los planes viajan
+            // con cada fila.
+            ->modifyQueryUsing(fn ($query) => $query->with(['agendaHoyConfirmada.proyecto:id,nombre', 'planesMantenimiento']))
             ->columns([
                 TextColumn::make('codigo')
                     ->label('Código')
@@ -54,6 +56,29 @@ class MaquinasTable
                     ->suffix(' h')
                     ->alignEnd()
                     ->sortable()
+                    ->toggleable(),
+                // Alerta de mantenimiento preventivo (decisión Mauricio
+                // 2026-07-19): el PEOR plan activo manda — VENCIDO gana a
+                // PRÓXIMO gana a Al día. Derivada al vuelo, nunca guardada.
+                TextColumn::make('mantenimiento')
+                    ->label('Mantenimiento')
+                    ->badge()
+                    ->state(function (Maquina $record): string {
+                        $plan = $record->planPeorAlerta();
+
+                        if ($plan === null) {
+                            return 'Sin plan';
+                        }
+
+                        $estado = $plan->estadoAlerta();
+
+                        return $estado === AlertaMantenimiento::AlDia
+                            ? $estado->getLabel()
+                            : $estado->getLabel().' · '.Str::limit($plan->nombre, 22);
+                    })
+                    ->color(fn (Maquina $record): string => $record->planPeorAlerta()?->estadoAlerta()->getColor() ?? 'gray')
+                    ->icon(fn (Maquina $record): ?string => $record->planPeorAlerta()?->estadoAlerta()->getIcon())
+                    ->tooltip(fn (Maquina $record): ?string => $record->planPeorAlerta()?->usoResumen())
                     ->toggleable(),
                 TextColumn::make('tarifa_hora')
                     ->label('Tarifa/h')

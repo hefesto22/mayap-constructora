@@ -61,6 +61,23 @@ final class CompraNoConfirmableException extends CompraException
         );
     }
 
+    public static function sinDocumentoFiscal(string $codigo): self
+    {
+        return new self(
+            "La compra {$codigo} no se puede confirmar sin declarar qué documento ".
+            'fiscal emitió el proveedor: factura, recibo por honorarios, boleta de '.
+            "compra o ninguno. Se captura en la pestaña 'Datos de la compra'."
+        );
+    }
+
+    public static function facturaSinNumero(string $codigo): self
+    {
+        return new self(
+            "La compra {$codigo} declara FACTURA como documento fiscal pero no tiene ".
+            'número de factura. Captura el correlativo del documento para poder confirmar.'
+        );
+    }
+
     public static function requisicionDeOtraObra(string $codigoCompra, string $codigoRequisicion): self
     {
         return new self(

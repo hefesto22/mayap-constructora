@@ -62,6 +62,17 @@ final readonly class ConfirmarCompraService
             throw CompraNoConfirmableException::sinLineas($compra->codigo);
         }
 
+        // Documento fiscal (decisión Mauricio 2026-07-19): confirmar exige
+        // declarar qué emitió el proveedor; si fue factura, con su número.
+        // En borrador puede faltar — el documento a veces llega después.
+        if ($compra->tipo_documento_fiscal === null) {
+            throw CompraNoConfirmableException::sinDocumentoFiscal($compra->codigo);
+        }
+
+        if ($compra->tipo_documento_fiscal->exigeNumero() && blank($compra->numero_factura)) {
+            throw CompraNoConfirmableException::facturaSinNumero($compra->codigo);
+        }
+
         // Compra directa a obra enlazada a requisición: la requisición debe
         // ser de la MISMA obra — si no, el costo se imputaría al proyecto
         // equivocado.

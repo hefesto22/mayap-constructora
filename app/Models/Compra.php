@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
+use App\Enums\TipoDocumentoFiscal;
 use App\Models\Concerns\HasUppercaseAttributes;
 use App\Services\Inventario\Ubicacion;
 use Database\Factories\CompraFactory;
@@ -39,6 +40,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon $fecha
  * @property Carbon|null $fecha_recepcion
  * @property string|null $numero_factura
+ * @property TipoDocumentoFiscal|null $tipo_documento_fiscal
  * @property bool $aplica_isv
  * @property string $isv_porcentaje
  * @property string $subtotal_cache
@@ -77,6 +79,7 @@ class Compra extends Model
         'fecha',
         'fecha_recepcion',
         'numero_factura',
+        'tipo_documento_fiscal',
         'aplica_isv',
         'isv_porcentaje',
         'costo_envio',
@@ -98,26 +101,27 @@ class Compra extends Model
     protected function casts(): array
     {
         return [
-            'estado'          => EstadoCompra::class,
-            'condicion_pago'  => CondicionPago::class,
-            'fecha'           => 'date',
-            'fecha_recepcion' => 'date',
-            'anulada_at'      => 'datetime',
-            'completada_at'   => 'datetime',
-            'aplica_isv'      => 'boolean',
-            'isv_porcentaje'  => 'decimal:2',
-            'costo_envio'     => 'decimal:2',
-            'descuento'       => 'decimal:2',
-            'subtotal_cache'  => 'decimal:2',
-            'isv_cache'       => 'decimal:2',
-            'total_cache'     => 'decimal:2',
+            'estado'                => EstadoCompra::class,
+            'condicion_pago'        => CondicionPago::class,
+            'tipo_documento_fiscal' => TipoDocumentoFiscal::class,
+            'fecha'                 => 'date',
+            'fecha_recepcion'       => 'date',
+            'anulada_at'            => 'datetime',
+            'completada_at'         => 'datetime',
+            'aplica_isv'            => 'boolean',
+            'isv_porcentaje'        => 'decimal:2',
+            'costo_envio'           => 'decimal:2',
+            'descuento'             => 'decimal:2',
+            'subtotal_cache'        => 'decimal:2',
+            'isv_cache'             => 'decimal:2',
+            'total_cache'           => 'decimal:2',
         ];
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['codigo', 'proveedor_id', 'bodega_id', 'estado', 'condicion_pago', 'fecha', 'numero_factura', 'total_cache'])
+            ->logOnly(['codigo', 'proveedor_id', 'bodega_id', 'estado', 'condicion_pago', 'fecha', 'numero_factura', 'tipo_documento_fiscal', 'total_cache'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => "Compra {$eventName}");

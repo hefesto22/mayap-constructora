@@ -137,6 +137,8 @@ parameters:
               - app/Models/Maquina.php
               - app/Models/Empleado.php
               - app/Models/ProyectoLineaRenta.php
+              - app/Models/PlanMantenimiento.php
+              - app/Models/CambioMantenimiento.php
 
         # ── bcmath en calculadores y factories ──────────────────────────────
         # Los strings que llegan a bcmul/bcadd/bcsub/bccomp/bcdiv vienen de
@@ -200,6 +202,7 @@ parameters:
               - app/Services/Proyectos/ExtenderRentaService.php
               - app/Services/Proyectos/FinalizarRentaService.php
               - app/Filament/Resources/Proyectos/Actions/AccionCobrarProyecto.php
+              - app/Services/Maquinaria/RegistrarCambioMantenimientoService.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no

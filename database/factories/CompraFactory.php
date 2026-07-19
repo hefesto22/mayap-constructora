@@ -6,6 +6,7 @@ namespace Database\Factories;
 
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
+use App\Enums\TipoDocumentoFiscal;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\Proveedor;
@@ -33,13 +34,17 @@ class CompraFactory extends Factory
             'condicion_pago'  => CondicionPago::Contado->value,
             'fecha'           => now()->startOfDay(),
             'fecha_recepcion' => null,
-            'numero_factura'  => null,
-            'aplica_isv'      => true,
-            'isv_porcentaje'  => 15.00,
-            'subtotal_cache'  => 0,
-            'isv_cache'       => 0,
-            'total_cache'     => 0,
-            'notas'           => null,
+            // Factura con número por defecto: confirmar exige documento
+            // fiscal declarado (y factura exige número) — los tests que
+            // prueban lo contrario lo sobreescriben explícitamente.
+            'numero_factura'        => strtoupper($this->faker->bothify('FAC-####-####')),
+            'tipo_documento_fiscal' => TipoDocumentoFiscal::Factura->value,
+            'aplica_isv'            => true,
+            'isv_porcentaje'        => 15.00,
+            'subtotal_cache'        => 0,
+            'isv_cache'             => 0,
+            'total_cache'           => 0,
+            'notas'                 => null,
         ];
     }
 
