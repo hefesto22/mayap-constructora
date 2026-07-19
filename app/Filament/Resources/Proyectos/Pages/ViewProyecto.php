@@ -12,9 +12,16 @@ use App\Models\Proyecto;
 use App\Services\Reportes\CotizacionRentaService;
 use App\Support\Permisos;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
+/**
+ * Cabecera SIN ruido (decisión Mauricio 2026-07-19): UN botón principal
+ * (el envío directo por WhatsApp, el caso del día a día) y las demás
+ * salidas de la cotización agrupadas en el menú "Cotización" — nada de
+ * cuatro botones sueltos para la misma cosa.
+ */
 class ViewProyecto extends ViewRecord
 {
     protected static string $resource = ProyectoResource::class;
@@ -22,9 +29,46 @@ class ViewProyecto extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Presupuesto completo pactado (renglones, precios, ISV,
-            // condiciones, firmas) — respaldo contractual y expediente.
-            // Solo presupuestados: la renta tiene su propia cotización.
+            // ── La acción estrella de las rentas: se la mando al cliente ──
+            AccionEnviarCotizacionWhatsApp::make(),
+
+            // ── Las demás salidas de la cotización, agrupadas ─────────────
+            ActionGroup::make([
+                $this->accionVerPdf(
+                    nombre: 'cotizacion_pdf',
+                    etiqueta: 'Ver PDF',
+                    permiso: Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO,
+                    ruta: 'reportes.cotizacion-renta',
+                ),
+
+                Action::make('cotizacion_imagen')
+                    ->label('Descargar imagen (WhatsApp)')
+                    ->icon('heroicon-o-photo')
+                    ->visible(fn (): bool => auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false)
+                    ->url(fn (): string => route('reportes.cotizacion-renta-imagen', $this->getRecord())),
+
+                // Respaldo manual: abre el chat con mensaje prellenado y se
+                // adjunta la imagen descargada (WhatsApp no permite adjuntar
+                // automático por enlace).
+                Action::make('whatsapp_cliente')
+                    ->label('Abrir chat del cliente')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->visible(fn (): bool => app(CotizacionRentaService::class)->linkWhatsApp($this->proyecto()) !== null
+                        && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false))
+                    ->url(
+                        fn (): string => (string) app(CotizacionRentaService::class)->linkWhatsApp($this->proyecto()),
+                        shouldOpenInNewTab: true,
+                    ),
+            ])
+                ->label('Cotización')
+                ->icon('heroicon-o-document-text')
+                ->color('gray')
+                ->button()
+                ->visible(fn (): bool => $this->proyecto()->esRenta()
+                    && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false)),
+
+            // Presupuesto completo pactado — SOLO presupuestados: la renta
+            // tiene su propia cotización.
             $this->accionVerPdf(
                 nombre: 'pdf_composicion',
                 etiqueta: 'PDF Composición',
@@ -32,45 +76,6 @@ class ViewProyecto extends ViewRecord
                 ruta: 'reportes.composicion-proyecto',
             )->visible(fn (): bool => ! $this->proyecto()->esRenta()
                 && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false)),
-
-            // ── Cotización de renta (decisión Mauricio 2026-07-19) ─────
-            // La IMAGEN es la protagonista: se manda por WhatsApp y el
-            // cliente la ve al instante. El PDF queda para lo formal.
-            // Mismo permiso que la composición: ambos son "lo pactado".
-            // Envío DIRECTO: el sistema se la manda al cliente vía
-            // Evolution API (solo con WHATSAPP_ENABLED=true).
-            AccionEnviarCotizacionWhatsApp::make(),
-
-            Action::make('cotizacion_imagen')
-                ->label('Imagen para WhatsApp')
-                ->icon('heroicon-o-photo')
-                ->color('success')
-                ->visible(fn (): bool => $this->proyecto()->esRenta()
-                    && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false))
-                ->url(fn (): string => route('reportes.cotizacion-renta-imagen', $this->getRecord())),
-
-            $this->accionVerPdf(
-                nombre: 'cotizacion_pdf',
-                etiqueta: 'Cotización PDF',
-                permiso: Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO,
-                ruta: 'reportes.cotizacion-renta',
-            )->visible(fn (): bool => $this->proyecto()->esRenta()
-                && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false)),
-
-            // Abre el chat del cliente con mensaje prellenado: se adjunta
-            // la imagen descargada y se envía (WhatsApp no permite
-            // adjuntar automático).
-            Action::make('whatsapp_cliente')
-                ->label('WhatsApp del cliente')
-                ->icon('heroicon-o-chat-bubble-left-right')
-                ->color('success')
-                ->visible(fn (): bool => $this->proyecto()->esRenta()
-                    && app(CotizacionRentaService::class)->linkWhatsApp($this->proyecto()) !== null
-                    && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false))
-                ->url(
-                    fn (): string => (string) app(CotizacionRentaService::class)->linkWhatsApp($this->proyecto()),
-                    shouldOpenInNewTab: true,
-                ),
 
             // Reporte gerencial: costo real y MARGEN — dato sensible.
             $this->accionVerPdf(
