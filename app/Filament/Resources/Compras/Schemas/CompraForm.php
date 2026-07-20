@@ -146,26 +146,28 @@ class CompraForm
                     })
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record)),
 
-                // Categoría (decisión Mauricio 2026-07-20): materiales usa
-                // el catálogo e inventario; taller/equipo/oficina son
-                // compras LIBRES — líneas a mano, gasto directo.
-                Select::make('categoria')
-                    ->label('Categoría de la compra')
+                // Categorías (decisión Mauricio 2026-07-20): la factura
+                // real puede traer de VARIAS a la vez — se marcan TODAS y
+                // el formulario enseña las tabs que el conjunto pida.
+                Select::make('categorias')
+                    ->label('Categorías de la compra')
                     ->options(CategoriaCompra::options())
-                    ->default(CategoriaCompra::Materiales->value)
+                    ->multiple()
+                    ->default([CategoriaCompra::Materiales->value])
                     ->required()
+                    ->minItems(1)
                     ->live()
                     ->native(false)
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    // Al pasar a compra libre, el destino vuelve a bodega
-                    // (las libres no se entregan a obra).
+                    // Sin materiales no hay entrega directa a obra: el
+                    // destino vuelve a bodega.
                     ->afterStateUpdated(function (mixed $state, Set $set): void {
-                        if ($state !== CategoriaCompra::Materiales->value) {
+                        if (! self::incluye($state, CategoriaCompra::Materiales)) {
                             $set('destino_tipo', 'bodega');
                             $set('proyecto_id', null);
                         }
                     })
-                    ->helperText('Materiales y Equipo usan su catálogo (MAT- / HE-) y mueven inventario. Taller y Oficina se escriben a mano. Las líneas libres están disponibles en TODAS las compras para lo que no esté en catálogo.'),
+                    ->helperText('Marcá TODAS las que traiga la factura. Materiales y Equipo usan su catálogo (MAT- / HE-) y mueven inventario; Taller y Oficina se escriben a mano en Líneas libres.'),
 
                 // Vínculo opcional con la reparación de una máquina: el
                 // gasto queda trazable y la fecha estimada del pedido
@@ -180,7 +182,7 @@ class CompraForm
                         ->mapWithKeys(fn (MantenimientoMaquina $m): array => [$m->id => "{$m->codigo} — {$m->maquina->nombre}"])
                         ->all())
                     ->searchable()
-                    ->visible(fn (callable $get): bool => $get('categoria') === CategoriaCompra::Taller->value)
+                    ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Taller))
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
                     ->helperText('Solo reparaciones en proceso. Amarra estos repuestos a la máquina.'),
 
@@ -189,7 +191,7 @@ class CompraForm
                 DatePicker::make('fecha_estimada_llegada')
                     ->label('Fecha estimada de llegada (pedidos)')
                     ->native(false)
-                    ->visible(fn (callable $get): bool => $get('categoria') !== CategoriaCompra::Materiales->value)
+                    ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::EquipoConstruccion, CategoriaCompra::Oficina))
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
                     ->helperText('Solo pedidos con espera: al Registrar queda "por recibir" y ese día avisa. Si se compró y recogió el mismo día, dejala vacía y usá "Confirmar (recibida)".'),
 
@@ -209,9 +211,9 @@ class CompraForm
                         }
                     })
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    // Las compras libres no eligen destino: no mueven
-                    // inventario — la bodega queda solo como referencia.
-                    ->visible(fn (callable $get): bool => $get('categoria') === CategoriaCompra::Materiales->value)
+                    // Solo materiales se entrega directo a obra; sin
+                    // materiales en el conjunto la bodega es referencia.
+                    ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Materiales))
                     ->columnSpanFull(),
 
                 Select::make('bodega_id')
@@ -231,14 +233,11 @@ class CompraForm
                     ->searchable()
                     ->preload()
                     ->visible(fn (callable $get): bool => $get('destino_tipo') !== 'obra'
-                        || $get('categoria') !== CategoriaCompra::Materiales->value)
+                        || ! self::incluye($get('categorias'), CategoriaCompra::Materiales))
                     ->required(fn (callable $get): bool => $get('destino_tipo') !== 'obra'
-                        || $get('categoria') !== CategoriaCompra::Materiales->value)
+                        || ! self::incluye($get('categorias'), CategoriaCompra::Materiales))
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    ->helperText(fn (callable $get): string => in_array($get('categoria'), [
-                        CategoriaCompra::Materiales->value,
-                        CategoriaCompra::EquipoConstruccion->value,
-                    ], true)
+                    ->helperText(fn (callable $get): string => self::incluye($get('categorias'), CategoriaCompra::Materiales, CategoriaCompra::EquipoConstruccion)
                         ? 'Bodega donde entra el stock del catálogo al confirmar.'
                         : 'Solo referencia administrativa: las líneas libres no mueven inventario.'),
 
@@ -252,9 +251,9 @@ class CompraForm
                     ->searchable()
                     ->preload()
                     ->visible(fn (callable $get): bool => $get('destino_tipo') === 'obra'
-                        && $get('categoria') === CategoriaCompra::Materiales->value)
+                        && self::incluye($get('categorias'), CategoriaCompra::Materiales))
                     ->required(fn (callable $get): bool => $get('destino_tipo') === 'obra'
-                        && $get('categoria') === CategoriaCompra::Materiales->value)
+                        && self::incluye($get('categorias'), CategoriaCompra::Materiales))
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
                     ->helperText('El costo se imputa a esta obra al precio real de factura, sin pasar por bodega.'),
 
@@ -342,12 +341,9 @@ class CompraForm
         return Tab::make('Catálogo (inventario)')
             ->icon('heroicon-o-cube')
             // Materiales de construcción Y equipo usan catálogo con
-            // inventario (decisión Mauricio 2026-07-20); cada uno ve
-            // SOLO su categoría física (MAT- o HE-).
-            ->visible(fn (callable $get): bool => in_array($get('categoria'), [
-                CategoriaCompra::Materiales->value,
-                CategoriaCompra::EquipoConstruccion->value,
-            ], true))
+            // inventario (decisión Mauricio 2026-07-20); el select lista
+            // las categorías físicas (MAT- / HE-) que el conjunto traiga.
+            ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Materiales, CategoriaCompra::EquipoConstruccion))
             ->schema([
                 Repeater::make('lineas')
                     // Partición por material_id: este repeater SOLO maneja
@@ -360,9 +356,9 @@ class CompraForm
                     ->reorderable(false)
                     ->defaultItems(1)
                     // Equipo puede venir de compras viejas SIN líneas de
-                    // catálogo (eran libres): el mínimo solo aplica a
-                    // materiales de construcción.
-                    ->minItems(fn (callable $get): int => $get('categoria') === CategoriaCompra::Materiales->value ? 1 : 0)
+                    // catálogo (eran libres): el mínimo solo aplica cuando
+                    // el conjunto trae materiales de construcción.
+                    ->minItems(fn (callable $get): int => self::incluye($get('categorias'), CategoriaCompra::Materiales) ? 1 : 0)
                     // Atajo "Registrar compra" desde una requisición
                     // (?requisicion=ID): las líneas nacen prellenadas con
                     // los materiales y cantidades FALTANTES — recepción
@@ -398,17 +394,26 @@ class CompraForm
                     ->schema([
                         Select::make('material_id')
                             ->hiddenLabel()
-                            // El catálogo respeta la categoría de la compra
-                            // (pedido Mauricio 2026-07-20): materiales de
-                            // construcción lista MAT-; equipo lista HE-
-                            // (andamios, herramienta menor…). Nada de
+                            // El catálogo respeta las categorías marcadas
+                            // (pedido Mauricio 2026-07-20): materiales lista
+                            // MAT-; equipo lista HE- (andamios, herramienta
+                            // menor…); la factura mixta ve AMBOS. Nada de
                             // andamios "comprados como material".
                             ->relationship('material', 'nombre', function ($query, callable $get) {
-                                $fisica = $get('../../categoria') === CategoriaCompra::EquipoConstruccion->value
-                                    ? CategoriaItem::HerramientaEquipo
-                                    : CategoriaItem::Materiales;
+                                $categorias = $get('../../categorias');
+                                $fisicas = [];
 
-                                return $query->where('activo', true)->deCategoria($fisica)->orderBy('nombre');
+                                if (self::incluye($categorias, CategoriaCompra::Materiales)) {
+                                    $fisicas[] = CategoriaItem::Materiales->value;
+                                }
+
+                                if (self::incluye($categorias, CategoriaCompra::EquipoConstruccion)) {
+                                    $fisicas[] = CategoriaItem::HerramientaEquipo->value;
+                                }
+
+                                return $query->where('activo', true)
+                                    ->whereIn('categoria', $fisicas === [] ? [CategoriaItem::Materiales->value] : $fisicas)
+                                    ->orderBy('nombre');
                             })
                             ->getOptionLabelFromRecordUsing(fn (Material $record): string => "{$record->codigo} — {$record->nombre}")
                             ->searchable(['codigo', 'nombre'])
@@ -568,15 +573,10 @@ class CompraForm
                     ->addActionLabel('+ Agregar línea')
                     ->reorderable(false)
                     // En materiales/equipo son OPCIONALES (acompañan al
-                    // catálogo); en taller/oficina son la compra entera.
-                    ->defaultItems(fn (callable $get): int => in_array($get('categoria'), [
-                        CategoriaCompra::Taller->value,
-                        CategoriaCompra::Oficina->value,
-                    ], true) ? 1 : 0)
-                    ->minItems(fn (callable $get): int => in_array($get('categoria'), [
-                        CategoriaCompra::Taller->value,
-                        CategoriaCompra::Oficina->value,
-                    ], true) ? 1 : 0)
+                    // catálogo); con taller u oficina en el conjunto hay
+                    // al menos un renglón a mano.
+                    ->defaultItems(fn (callable $get): int => self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::Oficina) ? 1 : 0)
+                    ->minItems(fn (callable $get): int => self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::Oficina) ? 1 : 0)
                     ->columnSpanFull()
                     ->cloneable()
                     ->table([
@@ -702,10 +702,37 @@ class CompraForm
     /**
      * La línea libre nunca lleva catálogo ni destino propio.
      *
-     * @param array<string, mixed> $data
      *
      * @return array<string, mixed>
      */
+    /**
+     * ¿El conjunto de categorías marcado trae ALGUNA de las pedidas?
+     *
+     * El estado del multi-select llega como strings recién tecleado y
+     * como enums CategoriaCompra al hidratar una compra guardada (cast
+     * AsEnumCollection) — aquí se normaliza una sola vez.
+     */
+    private static function incluye(mixed $estado, CategoriaCompra ...$buscadas): bool
+    {
+        if (! is_iterable($estado)) {
+            return false;
+        }
+
+        $valores = [];
+
+        foreach ($estado as $categoria) {
+            $valores[] = $categoria instanceof CategoriaCompra ? $categoria->value : (string) $categoria;
+        }
+
+        foreach ($buscadas as $buscada) {
+            if (in_array($buscada->value, $valores, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static function normalizarLineaLibre(array $data): array
     {
         $data['material_id'] = null;

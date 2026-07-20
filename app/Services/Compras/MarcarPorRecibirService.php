@@ -18,10 +18,11 @@ use Illuminate\Support\Facades\DB;
  * y suena la campanita con el reporte de lo esperado: al bodeguero su
  * porción, al encargado de obra la suya.
  *
- * Compras LIBRES (taller/equipo/oficina, 2026-07-20): registrar = "el
- * pedido quedó hecho, en espera de llegada". No hay conteo por destinos
- * ni presupuesto de obra que validar; avisa a la oficina y, si viene
- * amarrada a un mantenimiento, sincroniza su fecha de repuestos.
+ * Compras LIBRES (sin materiales en el conjunto, 2026-07-20): registrar
+ * = "el pedido quedó hecho, en espera de llegada". No hay conteo por
+ * destinos ni presupuesto de obra que validar; avisa a la oficina. La
+ * amarrada a un mantenimiento sincroniza su fecha de repuestos sea cual
+ * sea el conjunto (la factura mixta de taller también avisa al taller).
  */
 final readonly class MarcarPorRecibirService
 {
@@ -71,10 +72,13 @@ final readonly class MarcarPorRecibirService
             // Campanita DENTRO de la transacción: rollback = sin avisos.
             if ($compra->esLibre()) {
                 $this->notificador->pedidoLibreRegistrado($compra, $userId);
-                $this->repuestos->pedidoRegistrado($compra, $userId);
             } else {
                 $this->notificador->porRecibir($compra, $userId);
             }
+
+            // Amarrada a una reparación: sincroniza la fecha de repuestos
+            // del mantenimiento (no-op sin mantenimiento_id).
+            $this->repuestos->pedidoRegistrado($compra, $userId);
         });
     }
 }

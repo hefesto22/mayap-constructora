@@ -9,14 +9,13 @@ use Filament\Support\Contracts\HasIcon;
 use Filament\Support\Contracts\HasLabel;
 
 /**
- * Categoría de una compra (decisión Mauricio 2026-07-20): separa las
- * compras de materiales de construcción (el flujo original, con catálogo
- * e inventario) de las compras LIBRES — repuestos de taller, equipo y
- * oficina — que no tienen catálogo: sus líneas se escriben a mano y son
- * gasto directo, sin tocar inventario ni presupuesto de obra.
+ * Categorías de una compra (decisión Mauricio 2026-07-20): una factura
+ * real puede traer de VARIAS a la vez — la cabecera guarda el CONJUNTO
+ * (`compras.categorias`). Materiales y Equipo usan catálogo e inventario
+ * (MAT- / HE-); Taller y Oficina son renglones a mano, gasto directo.
  *
- * Las compras libres tienen dos modalidades: POR PEDIDO (Registrar →
- * Por recibir, con fecha estimada de llegada y campanita) o del MISMO
+ * Las compras sin materiales tienen dos modalidades: POR PEDIDO
+ * (Registrar → Por recibir, con fecha estimada y campanita) o del MISMO
  * DÍA (Confirmar recibida de una vez).
  */
 enum CategoriaCompra: string implements HasColor, HasIcon, HasLabel
@@ -57,11 +56,11 @@ enum CategoriaCompra: string implements HasColor, HasIcon, HasLabel
     }
 
     /**
-     * ¿Compra libre? (sin catálogo: líneas a mano, sin inventario).
+     * ¿Esta categoría usa catálogo con inventario? (MAT- o HE-).
      */
-    public function esLibre(): bool
+    public function usaCatalogo(): bool
     {
-        return $this !== self::Materiales;
+        return $this === self::Materiales || $this === self::EquipoConstruccion;
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Models\Concerns\HasUppercaseAttributes;
 use App\Services\Inventario\Ubicacion;
 use Database\Factories\CompraFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -30,12 +32,15 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * inventario (vía RegistrarMovimientoService) que alimentan el promedio
  * ponderado. El avance de estado vive en el Service (ConfirmarCompra).
  *
- * CATEGORÍAS (decisión Mauricio 2026-07-20): `materiales` es el flujo
- * original (catálogo + inventario); `taller`, `equipo_construccion` y
- * `oficina` son compras LIBRES — líneas escritas a mano, gasto directo,
- * sin inventario. `fecha_estimada_llegada` + `aviso_llegada_at` dan el
- * seguimiento de pedidos con días de espera; `mantenimiento_id` amarra
- * una compra de repuestos a la reparación de la máquina.
+ * CATEGORÍAS (decisión Mauricio 2026-07-20, multi desde el mismo día):
+ * una factura real puede traer de VARIAS a la vez — `categorias` es el
+ * CONJUNTO que trae el documento. `materiales` y `equipo_construccion`
+ * usan catálogo e inventario (MAT- / HE-); `taller` y `oficina` son
+ * renglones a mano, gasto directo. El flujo lo decide el conjunto: con
+ * `materiales` hay verificación por bulto; sin él, "Marcar recibida".
+ * `fecha_estimada_llegada` + `aviso_llegada_at` dan el seguimiento de
+ * pedidos con días de espera; `mantenimiento_id` amarra una compra de
+ * repuestos a la reparación de la máquina.
  *
  * AUTO-CÓDIGO: COM-{AÑO}-{NUMERO_5}, contador por año (patrón de Proyecto).
  *
@@ -44,7 +49,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int $proveedor_id
  * @property int $bodega_id
  * @property EstadoCompra $estado
- * @property CategoriaCompra $categoria
+ * @property Collection<int, CategoriaCompra> $categorias
  * @property CondicionPago $condicion_pago
  * @property int|null $mantenimiento_id
  * @property Carbon $fecha
@@ -84,12 +89,12 @@ class Compra extends Model
     /**
      * Default en memoria (espejo del default de la DB): una compra recién
      * instanciada ya es de materiales — los tests y seeders que no pasan
-     * categoría no revientan con null.
+     * categorías no revientan con null.
      *
      * @var array<string, mixed>
      */
     protected $attributes = [
-        'categoria' => 'materiales',
+        'categorias' => '["materiales"]',
     ];
 
     /** @var list<string> */
@@ -101,7 +106,7 @@ class Compra extends Model
         'requisicion_id',
         'mantenimiento_id',
         'estado',
-        'categoria',
+        'categorias',
         'condicion_pago',
         'fecha',
         'fecha_recepcion',
@@ -132,7 +137,7 @@ class Compra extends Model
     {
         return [
             'estado'                 => EstadoCompra::class,
-            'categoria'              => CategoriaCompra::class,
+            'categorias'             => AsEnumCollection::class.':'.CategoriaCompra::class,
             'condicion_pago'         => CondicionPago::class,
             'tipo_documento_fiscal'  => TipoDocumentoFiscal::class,
             'fotos_factura'          => 'array',
@@ -155,7 +160,7 @@ class Compra extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['codigo', 'proveedor_id', 'bodega_id', 'estado', 'categoria', 'condicion_pago', 'fecha', 'numero_factura', 'tipo_documento_fiscal', 'total_cache'])
+            ->logOnly(['codigo', 'proveedor_id', 'bodega_id', 'estado', 'categorias', 'condicion_pago', 'fecha', 'numero_factura', 'tipo_documento_fiscal', 'total_cache'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => "Compra {$eventName}");
@@ -267,12 +272,32 @@ class Compra extends Model
     }
 
     /**
-     * ¿Compra libre (taller/equipo/oficina)? Sus líneas son texto sin
-     * catálogo y NO tocan inventario.
+     * ¿La factura trae esta categoría? (el conjunto puede traer varias).
+     */
+    public function tiene(CategoriaCompra $categoria): bool
+    {
+        return $this->categorias->contains($categoria);
+    }
+
+    /**
+     * ¿Alguna categoría con catálogo e inventario (MAT- o HE-)?
+     * Decide si el formulario muestra la tab de catálogo.
+     */
+    public function usaCatalogo(): bool
+    {
+        return $this->tiene(CategoriaCompra::Materiales)
+            || $this->tiene(CategoriaCompra::EquipoConstruccion);
+    }
+
+    /**
+     * ¿Compra libre? SIN materiales de construcción no hay conteo por
+     * bulto del bodeguero: se usa "Marcar recibida" (todo llegó de una
+     * vez). Con materiales en el conjunto, manda la verificación — las
+     * líneas sin catálogo simplemente no se cuentan.
      */
     public function esLibre(): bool
     {
-        return $this->categoria->esLibre();
+        return ! $this->tiene(CategoriaCompra::Materiales);
     }
 
     /**

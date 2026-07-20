@@ -37,6 +37,7 @@ final readonly class VerificarRecepcionService
         private ConfirmarCompraService $confirmar,
         private NotificadorCompras $notificador,
         private AlcanceDestinoCompra $alcance,
+        private SincronizarRepuestosMantenimientoService $repuestos,
     ) {}
 
     /**
@@ -99,6 +100,11 @@ final readonly class VerificarRecepcionService
             // catálogo lo están.
             if ($compra->lineas->filter(fn (CompraLinea $l): bool => $l->material_id !== null)->every(fn (CompraLinea $l): bool => $l->verificada())) {
                 $this->confirmar->confirmar($compra, $verificador->id);
+
+                // Factura mixta amarrada a una reparación: la llegada de
+                // los repuestos queda en la bitácora del mantenimiento
+                // (no-op sin mantenimiento_id).
+                $this->repuestos->llegadaRegistrada($compra, $verificador->id);
 
                 $compra->lineas->contains(fn (CompraLinea $l): bool => $l->tieneDiferencia())
                     ? $this->notificador->verificadaConDiferencias($compra, $verificador->id)

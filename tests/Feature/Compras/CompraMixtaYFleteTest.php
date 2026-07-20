@@ -233,7 +233,7 @@ test('EQUIPO con catalogo HE-: la herramienta comprada entra a inventario al con
     ]);
 
     $compra = Compra::factory()->paraBodega($bodega)->create([
-        'categoria'      => CategoriaCompra::EquipoConstruccion,
+        'categorias'     => [CategoriaCompra::EquipoConstruccion],
         'aplica_isv'     => true,
         'isv_porcentaje' => 15.00,
     ]);
@@ -252,3 +252,54 @@ test('EQUIPO con catalogo HE-: la herramienta comprada entra a inventario al con
         ->where('material_id', $herramienta->id)
         ->value('cantidad'))->toBe('4.0000');
 });
+
+test('GOLDEN MULTI-CATEGORIA: la factura trae materiales Y taller — no es libre y solo el catalogo mueve stock', function (): void {
+    $cemento = Material::factory()->create(['nombre' => 'CEMENTO GRIS']);
+
+    $compra = Compra::factory()->paraBodega($this->bodega)->create([
+        'categorias'     => [CategoriaCompra::Materiales, CategoriaCompra::Taller],
+        'aplica_isv'     => false,
+        'isv_porcentaje' => 0,
+    ]);
+
+    CompraLinea::factory()->create([
+        'compra_id' => $compra->id, 'material_id' => $cemento->id,
+        'cantidad'  => 10, 'costo_unitario' => 220,
+    ]);
+    CompraLinea::factory()->create([
+        'compra_id'   => $compra->id, 'material_id' => null,
+        'descripcion' => 'FILTRO DE ACEITE 1R-0750',
+        'cantidad'    => 2, 'costo_unitario' => 500,
+    ]);
+
+    // Con materiales en el conjunto NO es libre: pasa por verificación
+    // de bultos (el filtro, sin catálogo, no se cuenta).
+    expect($compra->esLibre())->toBeFalse()
+        ->and($compra->usaCatalogo())->toBeTrue()
+        ->and($compra->tiene(CategoriaCompra::Taller))->toBeTrue();
+
+    $this->service->confirmar($compra);
+    $compra->refresh();
+
+    // Neto 2,200 + 1,000 = 3,200; inventario SOLO del cemento.
+    expect($compra->subtotal_cache)->toBe('3200.00')
+        ->and(Existencia::query()->where('bodega_id', $this->bodega->id)->count())->toBe(1)
+        ->and(Existencia::query()->where('material_id', $cemento->id)->value('cantidad'))->toBe('10.0000');
+});
+
+test('sin materiales en el conjunto la compra sigue siendo libre (taller + oficina)', function (): void {
+    $compra = Compra::factory()->create([
+        'categorias' => [CategoriaCompra::Taller, CategoriaCompra::Oficina],
+    ]);
+
+    expect($compra->esLibre())->toBeTrue()
+        ->and($compra->usaCatalogo())->toBeFalse();
+});
+
+test('la base de datos rechaza una categoria inventada en el conjunto', function (): void {
+    Compra::factory()->create(['categorias' => ['ferreteria_pirata']]);
+})->throws(QueryException::class);
+
+test('la base de datos rechaza el conjunto de categorias VACIO', function (): void {
+    Compra::factory()->create(['categorias' => []]);
+})->throws(QueryException::class);

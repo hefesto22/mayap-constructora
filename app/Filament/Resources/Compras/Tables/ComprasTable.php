@@ -35,6 +35,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class ComprasTable
 {
@@ -53,11 +54,12 @@ class ComprasTable
                     ->searchable()
                     ->sortable()
                     ->limit(35),
-                // Categoría (2026-07-20): materiales vs compras libres
-                // (taller/equipo/oficina) — separa el control de gastos.
-                TextColumn::make('categoria')
-                    ->label('Categoría')
+                // Categorías (2026-07-20): la factura mixta trae varias —
+                // un badge por cada una separa el control de gastos.
+                TextColumn::make('categorias')
+                    ->label('Categorías')
                     ->badge()
+                    ->getStateUsing(fn (Compra $record): array => $record->categorias->all())
                     ->color(fn (CategoriaCompra $state): string => $state->getColor())
                     ->icon(fn (CategoriaCompra $state): string => $state->getIcon())
                     ->formatStateUsing(fn (CategoriaCompra $state): string => $state->getLabel())
@@ -125,9 +127,14 @@ class ComprasTable
                 SelectFilter::make('estado')
                     ->label('Estado')
                     ->options(EstadoCompra::options()),
-                SelectFilter::make('categoria')
+                SelectFilter::make('categorias')
                     ->label('Categoría')
-                    ->options(CategoriaCompra::options()),
+                    ->options(CategoriaCompra::options())
+                    // El conjunto es jsonb: filtra las compras cuyo
+                    // conjunto CONTIENE la categoría elegida.
+                    ->query(fn (Builder $query, array $data): Builder => filled($data['value'] ?? null)
+                        ? $query->whereJsonContains('categorias', $data['value'])
+                        : $query),
                 SelectFilter::make('proveedor_id')
                     ->label('Proveedor')
                     ->relationship('proveedor', 'nombre')

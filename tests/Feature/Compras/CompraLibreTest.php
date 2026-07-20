@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\DB;
 function compraLibre(array $attrs = []): Compra
 {
     $compra = Compra::factory()->create([
-        'categoria' => 'taller',
+        'categorias' => ['taller'],
         ...$attrs,
     ]);
 
