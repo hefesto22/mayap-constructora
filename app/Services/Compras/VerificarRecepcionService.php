@@ -94,7 +94,10 @@ final readonly class VerificarRecepcionService
 
             // ¿Quedó TODO verificado? → confirmar: stock por lo recibido,
             // CxP por lo facturado, requisición despachada por lo recibido.
-            if ($compra->lineas->every(fn (CompraLinea $l): bool => $l->verificada())) {
+            // Las líneas LIBRES (sin material) no se verifican: no mueven
+            // inventario — la compra queda verificada cuando TODAS las de
+            // catálogo lo están.
+            if ($compra->lineas->filter(fn (CompraLinea $l): bool => $l->material_id !== null)->every(fn (CompraLinea $l): bool => $l->verificada())) {
                 $this->confirmar->confirmar($compra, $verificador->id);
 
                 $compra->lineas->contains(fn (CompraLinea $l): bool => $l->tieneDiferencia())
@@ -143,6 +146,7 @@ final readonly class VerificarRecepcionService
         $compra->loadMissing('lineas.material:id,nombre,consumo_inmediato');
 
         return $compra->lineas
+            ->reject(fn (CompraLinea $l): bool => $l->material_id === null) // libres: no se verifican
             ->reject(fn (CompraLinea $l): bool => $l->verificada())
             ->filter(fn (CompraLinea $l): bool => $this->puedeVerificar($user, $compra, $l))
             ->values();

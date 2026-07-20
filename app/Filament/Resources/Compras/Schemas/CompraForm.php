@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Compras\Schemas;
 
 use App\Enums\CategoriaCompra;
+use App\Enums\CategoriaItem;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\EstadoMantenimiento;
@@ -164,7 +165,7 @@ class CompraForm
                             $set('proyecto_id', null);
                         }
                     })
-                    ->helperText('Materiales usa el catálogo y mueve inventario. Taller, equipo y oficina se escriben a mano (sin catálogo) y no tocan inventario.'),
+                    ->helperText('Materiales y Equipo usan su catálogo (MAT- / HE-) y mueven inventario. Taller y Oficina se escriben a mano. Las líneas libres están disponibles en TODAS las compras para lo que no esté en catálogo.'),
 
                 // Vínculo opcional con la reparación de una máquina: el
                 // gasto queda trazable y la fecha estimada del pedido
@@ -234,9 +235,12 @@ class CompraForm
                     ->required(fn (callable $get): bool => $get('destino_tipo') !== 'obra'
                         || $get('categoria') !== CategoriaCompra::Materiales->value)
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    ->helperText(fn (callable $get): string => $get('categoria') === CategoriaCompra::Materiales->value
-                        ? 'Bodega donde entra el stock al confirmar.'
-                        : 'Solo referencia administrativa: las compras libres no mueven inventario.'),
+                    ->helperText(fn (callable $get): string => in_array($get('categoria'), [
+                        CategoriaCompra::Materiales->value,
+                        CategoriaCompra::EquipoConstruccion->value,
+                    ], true)
+                        ? 'Bodega donde entra el stock del catálogo al confirmar.'
+                        : 'Solo referencia administrativa: las líneas libres no mueven inventario.'),
 
                 Select::make('proyecto_id')
                     ->label('Obra destino')
@@ -335,17 +339,30 @@ class CompraForm
 
     private static function tabLineas(): Tab
     {
-        return Tab::make('Materiales comprados')
+        return Tab::make('Catálogo (inventario)')
             ->icon('heroicon-o-cube')
-            ->visible(fn (callable $get): bool => $get('categoria') === CategoriaCompra::Materiales->value)
+            // Materiales de construcción Y equipo usan catálogo con
+            // inventario (decisión Mauricio 2026-07-20); cada uno ve
+            // SOLO su categoría física (MAT- o HE-).
+            ->visible(fn (callable $get): bool => in_array($get('categoria'), [
+                CategoriaCompra::Materiales->value,
+                CategoriaCompra::EquipoConstruccion->value,
+            ], true))
             ->schema([
                 Repeater::make('lineas')
-                    ->relationship()
+                    // Partición por material_id: este repeater SOLO maneja
+                    // las líneas de catálogo; las libres (material null)
+                    // viven en su propio repeater — así los dos bloques
+                    // conviven en la misma compra sin pisarse.
+                    ->relationship(modifyQueryUsing: fn ($query) => $query->whereNotNull('material_id'))
                     ->label('Líneas de la factura')
-                    ->addActionLabel('+ Agregar material')
+                    ->addActionLabel('+ Agregar del catálogo')
                     ->reorderable(false)
                     ->defaultItems(1)
-                    ->minItems(1)
+                    // Equipo puede venir de compras viejas SIN líneas de
+                    // catálogo (eran libres): el mínimo solo aplica a
+                    // materiales de construcción.
+                    ->minItems(fn (callable $get): int => $get('categoria') === CategoriaCompra::Materiales->value ? 1 : 0)
                     // Atajo "Registrar compra" desde una requisición
                     // (?requisicion=ID): las líneas nacen prellenadas con
                     // los materiales y cantidades FALTANTES — recepción
@@ -381,7 +398,18 @@ class CompraForm
                     ->schema([
                         Select::make('material_id')
                             ->hiddenLabel()
-                            ->relationship('material', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                            // El catálogo respeta la categoría de la compra
+                            // (pedido Mauricio 2026-07-20): materiales de
+                            // construcción lista MAT-; equipo lista HE-
+                            // (andamios, herramienta menor…). Nada de
+                            // andamios "comprados como material".
+                            ->relationship('material', 'nombre', function ($query, callable $get) {
+                                $fisica = $get('../../categoria') === CategoriaCompra::EquipoConstruccion->value
+                                    ? CategoriaItem::HerramientaEquipo
+                                    : CategoriaItem::Materiales;
+
+                                return $query->where('activo', true)->deCategoria($fisica)->orderBy('nombre');
+                            })
                             ->getOptionLabelFromRecordUsing(fn (Material $record): string => "{$record->codigo} — {$record->nombre}")
                             ->searchable(['codigo', 'nombre'])
                             ->preload()
@@ -523,25 +551,32 @@ class CompraForm
     }
 
     /**
-     * Líneas LIBRES (decisión Mauricio 2026-07-20): repuestos de taller,
-     * equipo y oficina no tienen catálogo — cada línea se escribe a mano
-     * (descripción + cantidad + precio) y es GASTO DIRECTO: nunca genera
-     * movimientos de inventario. Mismo binding a `lineas`; solo uno de
-     * los dos repeaters está visible (y dehidrata) según la categoría.
+     * Líneas LIBRES: renglones sin catálogo, escritos a mano (descripción
+     * + cantidad + precio) — GASTO DIRECTO, nunca inventario. Desde el
+     * 2026-07-20 están disponibles en TODA compra (una factura real trae
+     * de todo): se particionan por material_id NULL para convivir con el
+     * repeater de catálogo sin pisarse.
      */
     private static function tabLineasLibres(): Tab
     {
-        return Tab::make('Detalle de la compra')
+        return Tab::make('Líneas libres')
             ->icon('heroicon-o-clipboard-document-list')
-            ->visible(fn (callable $get): bool => $get('categoria') !== CategoriaCompra::Materiales->value)
             ->schema([
                 Repeater::make('lineas_libres')
-                    ->relationship('lineas')
-                    ->label('Líneas de la factura')
+                    ->relationship('lineas', modifyQueryUsing: fn ($query) => $query->whereNull('material_id'))
+                    ->label('Renglones sin catálogo (gasto directo)')
                     ->addActionLabel('+ Agregar línea')
                     ->reorderable(false)
-                    ->defaultItems(1)
-                    ->minItems(1)
+                    // En materiales/equipo son OPCIONALES (acompañan al
+                    // catálogo); en taller/oficina son la compra entera.
+                    ->defaultItems(fn (callable $get): int => in_array($get('categoria'), [
+                        CategoriaCompra::Taller->value,
+                        CategoriaCompra::Oficina->value,
+                    ], true) ? 1 : 0)
+                    ->minItems(fn (callable $get): int => in_array($get('categoria'), [
+                        CategoriaCompra::Taller->value,
+                        CategoriaCompra::Oficina->value,
+                    ], true) ? 1 : 0)
                     ->columnSpanFull()
                     ->cloneable()
                     ->table([

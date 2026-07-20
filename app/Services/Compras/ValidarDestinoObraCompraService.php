@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Compras;
 
+use App\Enums\CategoriaItem;
 use App\Enums\EstadoProyecto;
 use App\Exceptions\Compras\CompraNoConfirmableException;
 use App\Models\Compra;
@@ -37,7 +38,7 @@ final readonly class ValidarDestinoObraCompraService
 
     public function validar(Compra $compra, ?User $actor): void
     {
-        $compra->loadMissing('lineas.material:id,nombre');
+        $compra->loadMissing('lineas.material:id,nombre,categoria');
 
         /** @var array<int, list<CompraLinea>> $porObra */
         $porObra = [];
@@ -78,6 +79,13 @@ final readonly class ValidarDestinoObraCompraService
             }
 
             foreach ($lineas as $linea) {
+                // Solo los MATERIALES de construcción tienen presupuesto
+                // de obra: las líneas libres (gasto directo) y la
+                // herramienta/equipo (va por Maquinaria) pasan de largo.
+                if ($linea->material === null || $linea->material->categoria !== CategoriaItem::Materiales) {
+                    continue;
+                }
+
                 $presupuesto = $this->presupuesto->paraMaterial($obraId, $linea->material_id);
 
                 if ($presupuesto === null || bccomp($presupuesto->presupuestado, '0', 4) <= 0) {
