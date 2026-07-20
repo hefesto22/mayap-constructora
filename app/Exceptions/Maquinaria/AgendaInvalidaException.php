@@ -99,4 +99,32 @@ class AgendaInvalidaException extends MaquinariaException
             "La salida ya fue confirmada ({$cuando}) — no hace falta confirmarla dos veces."
         );
     }
+
+    public static function noLlegoEnFuturo(string $fecha): self
+    {
+        return new self(
+            "Esa máquina está agendada para el {$fecha} — todavía puede llegar. \"No llegó\" se marca cuando la fecha ya pasó."
+        );
+    }
+
+    public static function noLlegoConLlegada(string $cuando): self
+    {
+        return new self(
+            "La llegada de esa máquina SÍ fue confirmada ({$cuando}) — no se puede marcar como que no llegó."
+        );
+    }
+
+    public static function noLlegoYaMarcado(string $cuando): self
+    {
+        return new self(
+            "Esa agenda ya quedó marcada como no llegada ({$cuando}) — no hace falta marcarla dos veces."
+        );
+    }
+
+    public static function noLlegoSinMotivo(): self
+    {
+        return new self(
+            'Para marcar que la máquina no llegó hay que anotar el motivo — es la constancia de la contingencia.'
+        );
+    }
 }

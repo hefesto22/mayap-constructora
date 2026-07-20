@@ -38,6 +38,7 @@
                  vive en Partes de Trabajo. --}}
             <div class="cal-leyenda">
                 <span><i style="background:#2563eb"></i> Programada</span>
+                <span><i style="background:#dc2626"></i> Sin confirmar</span>
                 <span><i style="background:#7c3aed"></i> Trabajando</span>
                 <span><i style="background:#0d9488"></i> Asignación</span>
                 <span><i style="background:#d97706"></i> Mantenimiento</span>

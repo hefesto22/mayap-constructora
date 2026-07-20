@@ -180,6 +180,38 @@ final class NotificadorMaquinaria
     }
 
     /**
+     * La contingencia quedó marcada: la máquina NO llegó a la obra
+     * agendada. Maquinaria y gerencia se enteran con el motivo para
+     * reprogramar o reclamar (decisión Mauricio 2026-07-20).
+     */
+    public function maquinaNoLlego(AgendaMaquina $agendado, User $marcador): void
+    {
+        $agendado->loadMissing(['maquina:id,nombre', 'proyecto:id,nombre']);
+
+        $notificacion = Notification::make()
+            ->title('Máquina NO llegó a la obra')
+            ->body(
+                "{$agendado->maquina->nombre} no llegó a {$agendado->proyecto->nombre} el "
+                .$agendado->fecha->format('d/m/Y')
+                ." — marcó {$marcador->name}. Motivo: {$agendado->no_llego_motivo}"
+            )
+            ->icon('heroicon-o-x-circle')
+            ->iconColor('danger')
+            ->actions([
+                Action::make('ver')
+                    ->label('Ver calendario')
+                    ->url(CalendarioMaquinaria::getUrl())
+                    ->button(),
+            ]);
+
+        $this->despachar(
+            $this->usuariosConRol(Roles::MAQUINARIA, Roles::GERENCIA, Roles::RECEPCION),
+            $notificacion,
+            $marcador->id,
+        );
+    }
+
+    /**
      * La agenda no pudo agendarla sola: al rol maquinaria le toca
      * resolverla (otra fecha, otra máquina o rechazo con motivo).
      */

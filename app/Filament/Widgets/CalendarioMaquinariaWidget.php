@@ -17,11 +17,13 @@ use App\Services\Maquinaria\AsignarMaquinaService;
 use App\Services\Maquinaria\CalendarioMaquinariaService;
 use App\Services\Maquinaria\ConfirmarLlegadaService;
 use App\Services\Maquinaria\MantenimientoService;
+use App\Services\Maquinaria\MarcarNoLlegoAgendaService;
 use App\Services\Maquinaria\RegistrarDiaMaquinaService;
 use App\Support\Roles;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -171,6 +173,20 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 ->body('Esa máquina está agendada para el '.$agendado->fecha->format('d/m/Y').' — la llegada se confirma ese día.')
                 ->info()
                 ->send();
+
+            return;
+        }
+
+        // La fecha ya pasó sin confirmación: CONTINGENCIA roja — se
+        // resuelve aquí mismo (decisión Mauricio 2026-07-20): llegó
+        // tarde, o no llegó y queda la constancia con motivo.
+        if ($agendado->fecha->isPast() && ! $agendado->fecha->isToday()) {
+            $this->mountAction('resolverAgendaVencida', [
+                'agenda_id' => $agendado->id,
+                'etiqueta'  => "{$agendado->maquina->nombre} → {$agendado->proyecto->nombre}",
+                'fecha'     => $agendado->fecha->toDateString(),
+                'hora'      => $agendado->horaEntrada12(),
+            ]);
 
             return;
         }
@@ -585,6 +601,105 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 } catch (MaquinariaException $e) {
                     Notification::make()
                         ->title('No se pudo confirmar')
+                        ->body($e->getMessage())
+                        ->danger()
+                        ->send();
+                }
+            });
+    }
+
+    /**
+     * Modal de CONTINGENCIA (decisión Mauricio 2026-07-20): la fecha del
+     * agendado pasó y nadie confirmó la llegada — el evento quedó ROJO.
+     * Dos salidas: SÍ llegó (confirmación tardía; el ciclo sigue igual:
+     * salida y jornada con los mismos clicks) o NO llegó (constancia con
+     * motivo — el evento se retira, la bitácora de la obra lo guarda y
+     * maquinaria recibe la campanita).
+     */
+    public function resolverAgendaVencidaAction(): Action
+    {
+        return Action::make('resolverAgendaVencida')
+            ->modalHeading('¿Qué pasó con esta máquina?')
+            ->modalWidth('lg')
+            ->modalSubmitActionLabel('Guardar')
+            ->schema([
+                Placeholder::make('resumen')
+                    ->hiddenLabel()
+                    ->content(fn (Get $get): HtmlString => new HtmlString(
+                        '<div style="padding:.75rem 1rem;border-radius:.5rem;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25)">'
+                        .'<span style="font-weight:700;font-size:1.05rem">'.e((string) $get('etiqueta')).'</span>'
+                        .'<br><span style="color:#6b7280;font-size:.85rem">'.e(Carbon::parse((string) $get('fecha'))->format('d/m/Y'))
+                        .($get('hora') !== null ? ' · llegada prevista '.e((string) $get('hora')) : '')
+                        .' — la fecha pasó y nadie confirmó la llegada.</span>'
+                        .'</div>'
+                    )),
+
+                Radio::make('resolucion')
+                    ->label('¿Qué pasó ese día?')
+                    ->options([
+                        'llego'    => 'SÍ llegó — solo faltó confirmarla (queda confirmada ahora y el ciclo sigue: salida y jornada)',
+                        'no_llego' => 'NO llegó — dejar constancia con motivo (el evento se retira del calendario)',
+                    ])
+                    ->required()
+                    ->live(),
+
+                Textarea::make('motivo')
+                    ->label('Motivo (queda en la bitácora de la obra)')
+                    ->rows(2)
+                    ->mayusculas()
+                    ->placeholder('SE DAÑÓ EN RUTA / EL CLIENTE MOVIÓ LA FECHA / SIN OPERADOR')
+                    ->visible(fn (Get $get): bool => $get('resolucion') === 'no_llego')
+                    ->required(fn (Get $get): bool => $get('resolucion') === 'no_llego'),
+
+                Hidden::make('agenda_id'),
+                Hidden::make('etiqueta'),
+                Hidden::make('fecha'),
+                Hidden::make('hora'),
+            ])
+            ->fillForm(fn (array $arguments): array => [
+                'agenda_id' => $arguments['agenda_id'] ?? null,
+                'etiqueta'  => $arguments['etiqueta'] ?? '',
+                'fecha'     => $arguments['fecha'] ?? today()->toDateString(),
+                'hora'      => $arguments['hora'] ?? null,
+            ])
+            ->action(function (array $data): void {
+                $agendado = AgendaMaquina::find((int) ($data['agenda_id'] ?? 0));
+                $user = auth()->user();
+
+                if ($agendado === null || ! $user instanceof User) {
+                    return;
+                }
+
+                try {
+                    if (($data['resolucion'] ?? '') === 'no_llego') {
+                        $marcado = app(MarcarNoLlegoAgendaService::class)
+                            ->marcar($agendado, (string) ($data['motivo'] ?? ''), $user);
+
+                        Notification::make()
+                            ->title('Constancia guardada')
+                            ->body(
+                                "{$marcado->maquina->nombre} quedó marcada como NO llegada a {$marcado->proyecto->nombre} "
+                                .'el '.$marcado->fecha->format('d/m/Y').'. El motivo quedó en la bitácora de la obra.'
+                            )
+                            ->success()
+                            ->send();
+                    } else {
+                        $confirmado = app(ConfirmarLlegadaService::class)->confirmar($agendado, $user);
+
+                        Notification::make()
+                            ->title('Llegada confirmada (tarde)')
+                            ->body(
+                                "{$confirmado->maquina->nombre} en {$confirmado->proyecto->nombre} — "
+                                .'el siguiente click sobre el evento ofrece la salida y la jornada.'
+                            )
+                            ->success()
+                            ->send();
+                    }
+
+                    $this->refreshRecords();
+                } catch (MaquinariaException $e) {
+                    Notification::make()
+                        ->title('No se pudo resolver')
                         ->body($e->getMessage())
                         ->danger()
                         ->send();

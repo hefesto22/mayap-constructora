@@ -36,6 +36,8 @@ final class CalendarioMaquinariaService
 {
     private const string COLOR_PROGRAMADA = '#2563eb';     // azul — agenda futura
 
+    private const string COLOR_SIN_CONFIRMAR = '#dc2626';  // rojo — la fecha pasó y nadie confirmó
+
     private const string COLOR_TRABAJANDO = '#7c3aed';     // violeta — llegó y sigue en la obra
 
     private const string COLOR_ASIGNACION = '#0d9488';     // teal — compromiso
@@ -86,6 +88,9 @@ final class CalendarioMaquinariaService
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))
             ->when($proyectoId, fn ($q) => $q->where('proyecto_id', $proyectoId))
             ->when($soloProyectos !== null, fn ($q) => $q->whereIn('proyecto_id', $soloProyectos))
+            // La contingencia RESUELTA ("no llegó" con motivo) ya no se
+            // pinta: la constancia vive en la bitácora de la obra.
+            ->whereNull('no_llego_at')
             // Plan CUMPLIDO desaparece: si ya hay un parte real de esa
             // máquina en esa obra ese día, el evento se retira y el día
             // queda limpio (lo trabajado no se pinta — 2026-07-20).
@@ -99,23 +104,33 @@ final class CalendarioMaquinariaService
                     ->whereNull('pt.deleted_at');
             })
             ->get()
-            ->map(fn (AgendaMaquina $a): array => [
-                'id' => "agenda-{$a->id}",
-                // La agenda es simple: a qué hora LLEGA y a dónde (en
-                // AM/PM — el formato de la constructora). El ciclo lo
-                // cuenta el COLOR (decisión Mauricio 2026-07-16): azul =
-                // plan, VIOLETA = llegó (y sigue violeta al terminar,
-                // hasta que se registren las horas/litros: ahí este
-                // evento se retira y el día queda limpio). Sin emojis —
-                // los datos hablan solos.
-                'title' => "{$a->maquina->nombre} · {$a->proyecto->nombre}"
-                    .self::cicloLlegada($a),
-                'start' => $a->fecha->toDateString(),
-                'color' => $a->llegada_confirmada_at === null
-                    ? self::COLOR_PROGRAMADA
-                    : self::COLOR_TRABAJANDO,
-                'allDay' => true,
-            ])
+            ->map(function (AgendaMaquina $a): array {
+                // La fecha pasó y nadie confirmó la llegada: CONTINGENCIA
+                // en rojo (decisión Mauricio 2026-07-20). El click la
+                // resuelve: llegó tarde o no llegó (con motivo).
+                $sinConfirmar = $a->llegada_confirmada_at === null && $a->fecha->isPast() && ! $a->fecha->isToday();
+
+                return [
+                    'id' => "agenda-{$a->id}",
+                    // La agenda es simple: a qué hora LLEGA y a dónde (en
+                    // AM/PM — el formato de la constructora). El ciclo lo
+                    // cuenta el COLOR (decisión Mauricio 2026-07-16): azul =
+                    // plan, VIOLETA = llegó (y sigue violeta al terminar,
+                    // hasta que se registren las horas/litros: ahí este
+                    // evento se retira y el día queda limpio), ROJO = la
+                    // fecha pasó sin confirmar. Sin emojis — los datos
+                    // hablan solos.
+                    'title' => "{$a->maquina->nombre} · {$a->proyecto->nombre}"
+                        .($sinConfirmar ? ' — SIN CONFIRMAR' : self::cicloLlegada($a)),
+                    'start' => $a->fecha->toDateString(),
+                    'color' => match (true) {
+                        $sinConfirmar                      => self::COLOR_SIN_CONFIRMAR,
+                        $a->llegada_confirmada_at === null => self::COLOR_PROGRAMADA,
+                        default                            => self::COLOR_TRABAJANDO,
+                    },
+                    'allDay' => true,
+                ];
+            })
             ->all();
     }
 

@@ -36,6 +36,9 @@ use Illuminate\Support\Carbon;
  * @property int|null $llegada_confirmada_por
  * @property Carbon|null $salida_confirmada_at
  * @property int|null $salida_confirmada_por
+ * @property Carbon|null $no_llego_at
+ * @property int|null $no_llego_por
+ * @property string|null $no_llego_motivo
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Maquina $maquina
@@ -63,6 +66,9 @@ class AgendaMaquina extends Model
         'llegada_confirmada_por',
         'salida_confirmada_at',
         'salida_confirmada_por',
+        'no_llego_at',
+        'no_llego_por',
+        'no_llego_motivo',
     ];
 
     /**
@@ -96,6 +102,7 @@ class AgendaMaquina extends Model
             'aviso_llegada_at'      => 'datetime',
             'llegada_confirmada_at' => 'datetime',
             'salida_confirmada_at'  => 'datetime',
+            'no_llego_at'           => 'datetime',
         ];
     }
 

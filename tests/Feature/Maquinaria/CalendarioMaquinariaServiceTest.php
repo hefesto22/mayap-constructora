@@ -149,6 +149,8 @@ test('mantenimiento con rango = barra ámbar; SIN fecha fin = marcador de un dí
 });
 
 test('el azul agendado DESAPARECE cuando ya existe el parte real de ese día (plan cumplido)', function (): void {
+    $this->travelTo('2026-07-14 08:00:00');
+
     $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
     $obra = Proyecto::factory()->enEjecucion()->create();
 
@@ -187,6 +189,10 @@ test('el azul agendado DESAPARECE cuando ya existe el parte real de ese día (pl
 });
 
 test('la agenda programada sale en azul con su hora de llegada y respeta filtros', function (): void {
+    // Fechas fijas de julio: el reloj se congela ANTES de ellas para que
+    // sigan siendo futuras (pasadas sin confirmar se pintarían rojas).
+    $this->travelTo('2026-07-14 08:00:00');
+
     $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
     $obraA = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA ALFA']);
     $obraB = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA BETA']);
@@ -277,4 +283,42 @@ test('la asignación FINALIZADA de un solo día con parte ya registrado se OCULT
     // La barra gris de un día desaparece y el parte tampoco se pinta:
     // el día trabajado queda limpio (la historia, en Partes de Trabajo).
     expect($eventos)->toHaveCount(0);
+});
+
+test('la agenda VENCIDA sin confirmar se pinta ROJA con "SIN CONFIRMAR" (contingencia a la vista)', function (): void {
+    $maquina = Maquina::factory()->create(['nombre' => 'VOLQUETA MACK 12M3']);
+    $obra = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA NORTE']);
+
+    AgendaMaquina::factory()->create([
+        'maquina_id'   => $maquina->id, 'proyecto_id' => $obra->id,
+        'fecha'        => today()->subDays(2)->toDateString(),
+        'hora_entrada' => '08:00:00',
+    ]);
+
+    $eventos = $this->servicio->eventos(
+        today()->subDays(10)->toDateString(),
+        today()->addDays(10)->toDateString(),
+    );
+
+    expect($eventos)->toHaveCount(1)
+        ->and($eventos[0]['color'])->toBe('#dc2626')
+        ->and($eventos[0]['title'])->toContain('SIN CONFIRMAR')
+        ->and($eventos[0]['title'])->toContain('VOLQUETA MACK 12M3');
+});
+
+test('la agenda marcada "NO llegó" ya no se pinta (la constancia vive en la bitácora)', function (): void {
+    $maquina = Maquina::factory()->create();
+    $obra = Proyecto::factory()->enEjecucion()->create();
+
+    AgendaMaquina::factory()->create([
+        'maquina_id'      => $maquina->id, 'proyecto_id' => $obra->id,
+        'fecha'           => today()->subDays(2)->toDateString(),
+        'no_llego_at'     => now(),
+        'no_llego_motivo' => 'SE DANO EN RUTA',
+    ]);
+
+    expect($this->servicio->eventos(
+        today()->subDays(10)->toDateString(),
+        today()->addDays(10)->toDateString(),
+    ))->toHaveCount(0);
 });
