@@ -95,6 +95,11 @@ final class AccionRegistrarAvance
                     ->body('Quedó en el historial del mantenimiento con fecha y hora.')
                     ->success()
                     ->send();
+
+                // El infolist de la página Ver comparte esta instancia:
+                // sin esto, la fase o la fecha estimada se ven viejas
+                // hasta recargar (visto en prueba de navegador 2026-07-20).
+                $record->refresh();
             });
     }
 }

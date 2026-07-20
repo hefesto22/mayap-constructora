@@ -147,7 +147,11 @@ class ComprasTable
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Registrar la compra')
-                    ->modalDescription('La compra pasa a "Por recibir": se avisa al bodeguero (y al encargado de obra si hay entrega directa) cuánto material debe llegarle. El stock entra cuando ellos VERIFICAN lo recibido.')
+                    // El texto cambia según la categoría: las compras libres
+                    // (taller / otros) no pasan por bodega ni verificación.
+                    ->modalDescription(fn (Compra $record): string => $record->esLibre()
+                        ? 'La compra pasa a "Por recibir". Es una compra libre: no mueve inventario — cuando llegue, se marca recibida (a crédito genera su cuenta por pagar) y, si viene de un mantenimiento, avisa al taller.'
+                        : 'La compra pasa a "Por recibir": se avisa al bodeguero (y al encargado de obra si hay entrega directa) cuánto material debe llegarle. El stock entra cuando ellos VERIFICAN lo recibido.')
                     ->modalSubmitActionLabel('Registrar')
                     // Solo quien COMPRA registra (recepción/gerencia). El
                     // bodeguero y el encargado únicamente VERIFICAN.

@@ -124,6 +124,11 @@ final class AccionAbonar
                     ->body('El saldo de la cuenta se actualizó.')
                     ->success()
                     ->send();
+
+                // Refresca la instancia que muestra el infolist de Ver:
+                // sin esto el saldo y el estado se ven viejos hasta
+                // recargar (visto en prueba de navegador 2026-07-20).
+                $record->refresh();
             });
     }
 }

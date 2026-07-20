@@ -54,12 +54,14 @@ class CuentasPorPagarTable
                     ->date('d/M/Y')
                     ->sortable()
                     // Resalta en rojo si está vencida y aún tiene saldo.
+                    // lt(today()) y NO isPast(): la que vence HOY todavía
+                    // no está vencida (mismo corte que la pestaña Vencidas).
                     ->color(fn (CuentaPorPagar $record): string => $record->estado !== EstadoCuentaPorPagar::Pagada
-                        && $record->fecha_vencimiento->isPast()
+                        && $record->fecha_vencimiento->lt(today())
                             ? 'danger'
                             : 'gray')
                     ->description(fn (CuentaPorPagar $record): ?string => $record->estado !== EstadoCuentaPorPagar::Pagada
-                        && $record->fecha_vencimiento->isPast()
+                        && $record->fecha_vencimiento->lt(today())
                             ? 'Vencida'
                             : null),
             ])
