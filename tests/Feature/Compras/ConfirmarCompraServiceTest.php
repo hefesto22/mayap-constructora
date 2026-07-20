@@ -109,3 +109,53 @@ test('no se puede confirmar una compra sin líneas', function (): void {
 
     $this->service->confirmar($compra);
 })->throws(CompraNoConfirmableException::class);
+
+test('FACTURA AL CENTAVO: 100 unidades a L 10.00 de factura cuadran en L 1,000.00 exactos', function (): void {
+    // Caso real (Mauricio 2026-07-20): agua de pipa a L 10.00 con ISV
+    // incluido. El neto redondeado (10 / 1.15 ≈ 8.6957) multiplicado por
+    // la cantidad arrastraba centavos (L 1,000.50): con el precio de
+    // factura guardado, el total reproduce el papel EXACTO.
+    $material = Material::factory()->create();
+    $compra = Compra::factory()->paraBodega($this->bodega)->create([
+        'aplica_isv'     => true,
+        'isv_porcentaje' => 15.00,
+    ]);
+    CompraLinea::factory()->create([
+        'compra_id'      => $compra->id,
+        'material_id'    => $material->id,
+        'cantidad'       => 100,
+        'costo_unitario' => '8.6957',   // lo que deduce el form
+        'precio_factura' => '10.0000',  // lo que dice el papel
+    ]);
+
+    $this->service->confirmar($compra);
+    $compra->refresh();
+
+    // Bruto 100 × 10 = 1,000.00; neto 869.57; ISV por diferencia 130.43.
+    expect($compra->subtotal_cache)->toBe('869.57')
+        ->and($compra->isv_cache)->toBe('130.43')
+        ->and($compra->total_cache)->toBe('1000.00');
+});
+
+test('sin precio de factura el ISV sale del bruto reconstruido (sin arrastre de centavos)', function (): void {
+    $material = Material::factory()->create();
+    $compra = Compra::factory()->paraBodega($this->bodega)->create([
+        'aplica_isv'     => true,
+        'isv_porcentaje' => 15.00,
+    ]);
+    CompraLinea::factory()->create([
+        'compra_id'      => $compra->id,
+        'material_id'    => $material->id,
+        'cantidad'       => 100,
+        'costo_unitario' => '8.6957', // neto tecleado a mano, sin precio de factura
+    ]);
+
+    $this->service->confirmar($compra);
+    $compra->refresh();
+
+    // 869.57 × 1.15 = 999.9955 → bruto 1,000.01... redondeo del neto a 4
+    // decimales: el total queda a UN centavo del papel, no a cincuenta.
+    expect($compra->subtotal_cache)->toBe('869.57')
+        ->and($compra->isv_cache)->toBe('130.44')
+        ->and($compra->total_cache)->toBe('1000.01');
+});

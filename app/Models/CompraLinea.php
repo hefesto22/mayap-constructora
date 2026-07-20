@@ -31,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $proyecto_id
  * @property string $cantidad
  * @property string $costo_unitario
+ * @property string|null $precio_factura
  * @property bool $exento
  * @property string $subtotal
  * @property string|null $cantidad_recibida
@@ -57,6 +58,7 @@ class CompraLinea extends Model
         'proyecto_id',
         'cantidad',
         'costo_unitario',
+        'precio_factura',
         'exento',
         'subtotal',
         'cantidad_recibida',
@@ -72,6 +74,7 @@ class CompraLinea extends Model
         return [
             'cantidad'          => 'decimal:4',
             'costo_unitario'    => 'decimal:4',
+            'precio_factura'    => 'decimal:4',
             'exento'            => 'boolean',
             'subtotal'          => 'decimal:2',
             'cantidad_recibida' => 'decimal:4',

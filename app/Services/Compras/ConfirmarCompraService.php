@@ -103,19 +103,7 @@ final readonly class ConfirmarCompraService
             }
 
             // ── Pasada 1: subtotales de línea y subtotal de la factura ──
-            $subtotal = '0';
-
-            foreach ($compra->lineas as $linea) {
-                $subtotalLinea = $this->bcround(
-                    bcmul((string) $linea->cantidad, (string) $linea->costo_unitario, self::SCALE_INTERNO),
-                    self::SCALE_MONTO,
-                );
-
-                $linea->subtotal = $subtotalLinea;
-                $linea->save();
-
-                $subtotal = bcadd($subtotal, $subtotalLinea, self::SCALE_INTERNO);
-            }
+            [$subtotal, $isvLineas] = $this->subtotalesDeLineas($compra);
 
             // ── Prorrateo de flete − descuento (landed cost, NIC 2) ─────
             // Cada línea absorbe su parte proporcional a su valor; el
@@ -204,12 +192,16 @@ final readonly class ConfirmarCompraService
 
             if ($compra->aplica_isv) {
                 $factor = bcdiv((string) $compra->isv_porcentaje, '100', self::SCALE_INTERNO);
-                $isv = bcmul($this->baseGravada($compra, $ajustes), $factor, self::SCALE_INTERNO);
+                $isv = bcadd(
+                    $isvLineas,
+                    $this->isvDeFactura($this->ajusteGravado($compra, $ajustes), $factor),
+                    self::SCALE_MONTO,
+                );
             }
 
             $compra->subtotal_cache = $this->bcround($subtotal, self::SCALE_MONTO);
-            $compra->isv_cache = $this->bcround($isv, self::SCALE_MONTO);
-            $compra->total_cache = $this->bcround(bcadd($base, $isv, self::SCALE_INTERNO), self::SCALE_MONTO);
+            $compra->isv_cache = $isv;
+            $compra->total_cache = bcadd($this->bcround($base, self::SCALE_MONTO), $isv, self::SCALE_MONTO);
 
             $compra->estado = EstadoCompra::Confirmada;
             $compra->fecha_recepcion = $compra->fecha;
@@ -303,12 +295,72 @@ final readonly class ConfirmarCompraService
     }
 
     /**
-     * Valor efectivo (subtotal + ajuste prorrateado) de las líneas
-     * GRAVADAS — la base sobre la que se calcula el ISV.
+     * Pasada de subtotales: fija el subtotal NETO de cada línea y
+     * devuelve [subtotal neto total, ISV acumulado de las líneas].
+     *
+     * La fuente de la verdad es el precio de FACTURA de la línea cuando
+     * existe (decisión Mauricio 2026-07-20): bruto = cantidad × precio,
+     * neto = bruto / (1 + tasa) e ISV = bruto − neto — la suma reproduce
+     * la factura AL CENTAVO (100 × L 10.00 = L 1,000.00, no L 1,000.50).
+     * Sin precio de factura (líneas viejas o neto tecleado a mano), el
+     * ISV sale por diferencia del bruto reconstruido desde el neto.
+     *
+     * @return array{0: string, 1: string} [subtotal_neto, isv_de_lineas]
+     */
+    private function subtotalesDeLineas(Compra $compra): array
+    {
+        $factor = $compra->aplica_isv
+            ? bcdiv((string) $compra->isv_porcentaje, '100', self::SCALE_INTERNO)
+            : '0';
+        $unoMasTasa = bcadd('1', $factor, self::SCALE_INTERNO);
+
+        $subtotal = '0';
+        $isvLineas = '0.00';
+
+        foreach ($compra->lineas as $linea) {
+            $gravada = $compra->aplica_isv && ! $linea->exento;
+            $precioFactura = $linea->precio_factura;
+            $conPrecioFactura = $gravada
+                && $precioFactura !== null
+                && bccomp((string) $precioFactura, '0', 4) > 0;
+
+            if ($conPrecioFactura) {
+                $bruto = $this->bcround(
+                    bcmul((string) $linea->cantidad, (string) $precioFactura, self::SCALE_INTERNO),
+                    self::SCALE_MONTO,
+                );
+                $subtotalLinea = $this->bcround(
+                    bcdiv($bruto, $unoMasTasa, self::SCALE_INTERNO),
+                    self::SCALE_MONTO,
+                );
+                $isvLineas = bcadd($isvLineas, bcsub($bruto, $subtotalLinea, self::SCALE_MONTO), self::SCALE_MONTO);
+            } else {
+                $subtotalLinea = $this->bcround(
+                    bcmul((string) $linea->cantidad, (string) $linea->costo_unitario, self::SCALE_INTERNO),
+                    self::SCALE_MONTO,
+                );
+
+                if ($gravada) {
+                    $isvLineas = bcadd($isvLineas, $this->isvDeFactura($subtotalLinea, $factor), self::SCALE_MONTO);
+                }
+            }
+
+            $linea->subtotal = $subtotalLinea;
+            $linea->save();
+
+            $subtotal = bcadd($subtotal, $subtotalLinea, self::SCALE_INTERNO);
+        }
+
+        return [$subtotal, $isvLineas];
+    }
+
+    /**
+     * Parte del ajuste global (flete − descuento) prorrateado que cae
+     * en líneas GRAVADAS: sobre ella también se calcula ISV.
      *
      * @param array<int, string> $ajustes linea_id => ajuste
      */
-    private function baseGravada(Compra $compra, array $ajustes): string
+    private function ajusteGravado(Compra $compra, array $ajustes): string
     {
         $base = '0';
 
@@ -317,14 +369,25 @@ final readonly class ConfirmarCompraService
                 continue;
             }
 
-            $base = bcadd(
-                $base,
-                bcadd((string) $linea->subtotal, $ajustes[$linea->id] ?? '0', self::SCALE_INTERNO),
-                self::SCALE_INTERNO,
-            );
+            $base = bcadd($base, $ajustes[$linea->id] ?? '0', self::SCALE_INTERNO);
         }
 
         return $base;
+    }
+
+    /**
+     * ISV por DIFERENCIA contra el bruto reconstruido (neto × (1+tasa))
+     * redondeado a moneda: evita el arrastre de centavos de multiplicar
+     * netos ya redondeados por la tasa.
+     */
+    private function isvDeFactura(string $baseGravada, string $factor): string
+    {
+        $bruto = $this->bcround(
+            bcmul($baseGravada, bcadd('1', $factor, self::SCALE_INTERNO), self::SCALE_INTERNO),
+            self::SCALE_MONTO,
+        );
+
+        return bcsub($bruto, $this->bcround($baseGravada, self::SCALE_MONTO), self::SCALE_MONTO);
     }
 
     /**
@@ -371,19 +434,7 @@ final readonly class ConfirmarCompraService
     {
         $compra->loadMissing('lineas');
 
-        $subtotal = '0';
-
-        foreach ($compra->lineas as $linea) {
-            $subtotalLinea = $this->bcround(
-                bcmul((string) $linea->cantidad, (string) $linea->costo_unitario, self::SCALE_INTERNO),
-                self::SCALE_MONTO,
-            );
-
-            $linea->subtotal = $subtotalLinea;
-            $linea->save();
-
-            $subtotal = bcadd($subtotal, $subtotalLinea, self::SCALE_INTERNO);
-        }
+        [$subtotal, $isvLineas] = $this->subtotalesDeLineas($compra);
 
         $ajusteGlobal = bcsub((string) $compra->costo_envio, (string) $compra->descuento, self::SCALE_INTERNO);
         $base = bcadd($subtotal, $ajusteGlobal, self::SCALE_INTERNO);
@@ -391,16 +442,19 @@ final readonly class ConfirmarCompraService
 
         if ($compra->aplica_isv) {
             $factor = bcdiv((string) $compra->isv_porcentaje, '100', self::SCALE_INTERNO);
-            $isv = bcmul(
-                $this->baseGravada($compra, $this->prorratear($compra, $subtotal, $ajusteGlobal)),
-                $factor,
-                self::SCALE_INTERNO,
+            $isv = bcadd(
+                $isvLineas,
+                $this->isvDeFactura(
+                    $this->ajusteGravado($compra, $this->prorratear($compra, $subtotal, $ajusteGlobal)),
+                    $factor,
+                ),
+                self::SCALE_MONTO,
             );
         }
 
         $compra->subtotal_cache = $this->bcround($subtotal, self::SCALE_MONTO);
-        $compra->isv_cache = $this->bcround($isv, self::SCALE_MONTO);
-        $compra->total_cache = $this->bcround(bcadd($base, $isv, self::SCALE_INTERNO), self::SCALE_MONTO);
+        $compra->isv_cache = $isv;
+        $compra->total_cache = bcadd($this->bcround($base, self::SCALE_MONTO), $isv, self::SCALE_MONTO);
         $compra->save();
     }
 

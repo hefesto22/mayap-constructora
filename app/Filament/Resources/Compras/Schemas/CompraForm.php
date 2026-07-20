@@ -360,10 +360,11 @@ class CompraForm
                     // factura. Las tarjetas apiladas eran inmanejables.
                     ->table([
                         TableColumn::make('Material'),
-                        TableColumn::make('Cantidad')->width('110px'),
-                        TableColumn::make('Precio factura')->width('150px'),
-                        TableColumn::make('Costo neto')->width('140px'),
-                        TableColumn::make('Subtotal neto')->width('130px'),
+                        TableColumn::make('Cantidad')->width('160px'),
+                        TableColumn::make('Precio factura')->width('130px'),
+                        TableColumn::make('Total línea')->width('130px'),
+                        TableColumn::make('Costo neto')->width('120px'),
+                        TableColumn::make('Subtotal neto')->width('120px'),
                         TableColumn::make('Enviar a')->width('180px'),
                         TableColumn::make('Exento')->width('80px'),
                     ])
@@ -404,23 +405,62 @@ class CompraForm
                             ->required()
                             ->minValue(0.0001)
                             ->step('any')
+                            // La unidad del catálogo al lado del número:
+                            // responde "¿100 QUÉ estoy comprando?" (pedido
+                            // Mauricio 2026-07-20 — el agua de pipa se
+                            // compra por m³, no "por pipa").
+                            ->suffix(fn (callable $get): ?string => self::unidadDeMaterial($get('material_id')))
                             ->live(debounce: 500)
-                            ->afterStateUpdated(fn (Set $set, callable $get) => self::refrescarSubtotal($set, $get)),
+                            ->afterStateUpdated(function (Set $set, callable $get): void {
+                                self::refrescarSubtotal($set, $get);
+                                self::sincronizarTotalLinea($set, $get);
+                            }),
 
                         // Calculadora: se teclea el precio TAL CUAL lo dice la
                         // factura y el sistema deduce el neto — línea gravada
                         // divide entre 1.15; línea EXENTA va tal cual (su
                         // precio de factura no trae ISV).
-                        TextInput::make('precio_con_isv')
+                        // SE GUARDA (decisión Mauricio 2026-07-20): este
+                        // precio es la fuente de la verdad del total — el
+                        // Service reconstruye la factura desde aquí para
+                        // que cuadre AL CENTAVO.
+                        TextInput::make('precio_factura')
                             ->hiddenLabel()
                             ->numeric()
                             ->minValue(0)
                             ->step('any')
                             ->prefix('L.')
-                            ->placeholder('Tal cual factura')
+                            ->placeholder('Precio unitario')
+                            ->live(debounce: 600)
+                            ->afterStateUpdated(function (Set $set, callable $get): void {
+                                self::aplicarPrecioFactura($set, $get);
+                                self::sincronizarTotalLinea($set, $get);
+                            }),
+
+                        // El ATAJO del capturista (pedido Mauricio
+                        // 2026-07-20): la factura casi siempre trae el
+                        // TOTAL del renglón — se teclea aquí y el precio
+                        // unitario se deduce solo (10,000 entre 1,000
+                        // bloques = L 10 cada uno). Ligado en vivo con
+                        // cantidad y precio; no se guarda: es captura.
+                        TextInput::make('total_linea')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->minValue(0)
+                            ->step('any')
+                            ->prefix('L.')
+                            ->placeholder('o total del renglón')
                             ->dehydrated(false)
                             ->live(debounce: 600)
-                            ->afterStateUpdated(fn (Set $set, callable $get) => self::aplicarPrecioFactura($set, $get)),
+                            ->afterStateHydrated(function (TextInput $component, callable $get): void {
+                                $cantidad = $get('cantidad');
+                                $precio = $get('precio_factura');
+
+                                if (is_numeric($cantidad) && is_numeric($precio)) {
+                                    $component->state(number_format((float) $cantidad * (float) $precio, 2, '.', ''));
+                                }
+                            })
+                            ->afterStateUpdated(fn (Set $set, callable $get) => self::aplicarTotalLinea($set, $get)),
 
                         TextInput::make('costo_unitario')
                             ->hiddenLabel()
@@ -507,9 +547,10 @@ class CompraForm
                     ->table([
                         TableColumn::make('Descripción (a mano)'),
                         TableColumn::make('Cantidad')->width('110px'),
-                        TableColumn::make('Precio factura')->width('150px'),
-                        TableColumn::make('Costo neto')->width('140px'),
-                        TableColumn::make('Subtotal neto')->width('130px'),
+                        TableColumn::make('Precio factura')->width('130px'),
+                        TableColumn::make('Total línea')->width('130px'),
+                        TableColumn::make('Costo neto')->width('120px'),
+                        TableColumn::make('Subtotal neto')->width('120px'),
                         TableColumn::make('Exento')->width('80px'),
                     ])
                     ->compact()
@@ -538,18 +579,52 @@ class CompraForm
                             ->step('any')
                             ->default(1)
                             ->live(debounce: 500)
-                            ->afterStateUpdated(fn (Set $set, callable $get) => self::refrescarSubtotal($set, $get)),
+                            ->afterStateUpdated(function (Set $set, callable $get): void {
+                                self::refrescarSubtotal($set, $get);
+                                self::sincronizarTotalLinea($set, $get);
+                            }),
 
-                        TextInput::make('precio_con_isv')
+                        // SE GUARDA (decisión Mauricio 2026-07-20): este
+                        // precio es la fuente de la verdad del total — el
+                        // Service reconstruye la factura desde aquí para
+                        // que cuadre AL CENTAVO.
+                        TextInput::make('precio_factura')
                             ->hiddenLabel()
                             ->numeric()
                             ->minValue(0)
                             ->step('any')
                             ->prefix('L.')
-                            ->placeholder('Tal cual factura')
+                            ->placeholder('Precio unitario')
+                            ->live(debounce: 600)
+                            ->afterStateUpdated(function (Set $set, callable $get): void {
+                                self::aplicarPrecioFactura($set, $get);
+                                self::sincronizarTotalLinea($set, $get);
+                            }),
+
+                        // El ATAJO del capturista (pedido Mauricio
+                        // 2026-07-20): la factura casi siempre trae el
+                        // TOTAL del renglón — se teclea aquí y el precio
+                        // unitario se deduce solo (10,000 entre 1,000
+                        // bloques = L 10 cada uno). Ligado en vivo con
+                        // cantidad y precio; no se guarda: es captura.
+                        TextInput::make('total_linea')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->minValue(0)
+                            ->step('any')
+                            ->prefix('L.')
+                            ->placeholder('o total del renglón')
                             ->dehydrated(false)
                             ->live(debounce: 600)
-                            ->afterStateUpdated(fn (Set $set, callable $get) => self::aplicarPrecioFactura($set, $get)),
+                            ->afterStateHydrated(function (TextInput $component, callable $get): void {
+                                $cantidad = $get('cantidad');
+                                $precio = $get('precio_factura');
+
+                                if (is_numeric($cantidad) && is_numeric($precio)) {
+                                    $component->state(number_format((float) $cantidad * (float) $precio, 2, '.', ''));
+                                }
+                            })
+                            ->afterStateUpdated(fn (Set $set, callable $get) => self::aplicarTotalLinea($set, $get)),
 
                         TextInput::make('costo_unitario')
                             ->hiddenLabel()
@@ -659,6 +734,71 @@ class CompraForm
     }
 
     /**
+     * Símbolo de la unidad de medida del material ('M3', 'BOLSA', 'GAL'):
+     * se pinta como sufijo de la cantidad para que quien captura sepa en
+     * QUÉ unidad está comprando. Cache por request: los repeaters
+     * re-rinden seguido y no vale una consulta por tecla.
+     */
+    private static function unidadDeMaterial(mixed $materialId): ?string
+    {
+        static $cache = [];
+
+        if (! is_numeric($materialId)) {
+            return null;
+        }
+
+        $id = (int) $materialId;
+
+        if (! array_key_exists($id, $cache)) {
+            $unidad = Material::query()->with('unidadMedida')->find($id)?->unidadMedida;
+
+            // El sufijo debe ser CORTO: el símbolo ('M3', 'QQ'), y si la
+            // unidad no lo tiene, SOLO la primera palabra del nombre
+            // ('DÍA (ALQUILER)' → 'DÍA') — un sufijo largo aplastaba el
+            // campo y cantidades grandes como 100,000 no se veían.
+            $cache[$id] = match (true) {
+                $unidad === null          => null,
+                $unidad->simbolo !== null => $unidad->simbolo,
+                default                   => mb_strimwidth(explode(' ', trim($unidad->nombre))[0], 0, 8, ''),
+            };
+        }
+
+        return $cache[$id];
+    }
+
+    /**
+     * El total del renglón manda: deduce el precio unitario de factura
+     * (total / cantidad, 4 decimales) y de ahí el neto — el camino
+     * inverso de siempre, para copiar la factura tal cual.
+     */
+    private static function aplicarTotalLinea(Set $set, callable $get): void
+    {
+        $total = $get('total_linea');
+        $cantidad = $get('cantidad');
+
+        if (! is_numeric($total) || ! is_numeric($cantidad) || (float) $cantidad <= 0) {
+            return;
+        }
+
+        $set('precio_factura', number_format((float) $total / (float) $cantidad, 4, '.', ''));
+        self::aplicarPrecioFactura($set, $get);
+    }
+
+    /**
+     * Mantiene el total del renglón al día cuando cambian cantidad o
+     * precio unitario (cantidad × precio, 2 decimales).
+     */
+    private static function sincronizarTotalLinea(Set $set, callable $get): void
+    {
+        $cantidad = $get('cantidad');
+        $precio = $get('precio_factura');
+
+        $set('total_linea', is_numeric($cantidad) && is_numeric($precio)
+            ? number_format((float) $cantidad * (float) $precio, 2, '.', '')
+            : null);
+    }
+
+    /**
      * Deduce el costo NETO desde el precio de factura de la línea:
      *
      *  - línea GRAVADA (compra con ISV): neto = precio / 1.15;
@@ -670,7 +810,7 @@ class CompraForm
      */
     private static function aplicarPrecioFactura(Set $set, callable $get): void
     {
-        $precio = $get('precio_con_isv');
+        $precio = $get('precio_factura');
 
         if (! is_numeric($precio)) {
             self::refrescarSubtotal($set, $get);
@@ -683,7 +823,10 @@ class CompraForm
 
         $neto = $gravada ? (float) $precio / (1 + $tasa) : (float) $precio;
 
-        $set('costo_unitario', number_format($neto, 2, '.', ''));
+        // 4 decimales y NO 2: el neto es un derivado (precio / 1.15) y
+        // redondearlo de más arrastraba centavos al multiplicar por la
+        // cantidad (100 × L 10.00 daban L 1,000.50 — caso 2026-07-20).
+        $set('costo_unitario', number_format($neto, 4, '.', ''));
         self::refrescarSubtotal($set, $get);
     }
 
@@ -713,18 +856,38 @@ class CompraForm
     {
         $lineas = $get($campo);
 
+        $tasa = (float) config('honduras.impuestos.isv.tasa_general', 0.15);
+        $aplicaIsvLineas = $get('aplica_isv') === true;
+
         $subtotal = 0.0;
         $gravado = 0.0;
+        $isvLineas = 0.0;
 
         foreach (is_array($lineas) ? $lineas : [] as $linea) {
             if (! is_array($linea) || ! is_numeric($linea['cantidad'] ?? null) || ! is_numeric($linea['costo_unitario'] ?? null)) {
                 continue;
             }
 
-            $monto = (float) $linea['cantidad'] * (float) $linea['costo_unitario'];
+            $gravada = $aplicaIsvLineas && ($linea['exento'] ?? false) !== true;
+
+            // Con precio de factura, la línea se estima COMO EL SERVICE:
+            // bruto exacto de factura → neto e ISV por diferencia (así el
+            // total del preview cuadra al centavo con el papel).
+            if ($gravada && is_numeric($linea['precio_factura'] ?? null)) {
+                $bruto = round((float) $linea['cantidad'] * (float) $linea['precio_factura'], 2);
+                $monto = round($bruto / (1 + $tasa), 2);
+                $isvLineas += $bruto - $monto;
+            } else {
+                $monto = round((float) $linea['cantidad'] * (float) $linea['costo_unitario'], 2);
+
+                if ($gravada) {
+                    $isvLineas += round($monto * (1 + $tasa), 2) - $monto;
+                }
+            }
+
             $subtotal += $monto;
 
-            if (($linea['exento'] ?? false) !== true) {
+            if ($gravada) {
                 $gravado += $monto;
             }
         }
@@ -736,12 +899,15 @@ class CompraForm
         $descuento = is_numeric($get('descuento')) ? (float) $get('descuento') : 0.0;
         $ajuste = $flete - $descuento;
 
-        $gravadoEfectivo = $gravado + ($subtotal > 0 ? $ajuste * ($gravado / $subtotal) : 0.0);
+        // El ajuste (flete − descuento) prorrateado a gravadas también
+        // paga ISV — misma regla del Service.
+        $ajusteGravado = $subtotal > 0 ? $ajuste * ($gravado / $subtotal) : 0.0;
 
-        $tasa = (float) config('honduras.impuestos.isv.tasa_general', 0.15);
         $aplicaIsv = $get('aplica_isv') === true;
-        $isv = $aplicaIsv ? round(max($gravadoEfectivo, 0) * $tasa, 2) : 0.0;
-        $total = $subtotal + $ajuste + $isv;
+        $isv = $aplicaIsv
+            ? round($isvLineas + (round($ajusteGravado * (1 + $tasa), 2) - round($ajusteGravado, 2)), 2)
+            : 0.0;
+        $total = round($subtotal + $ajuste, 2) + $isv;
 
         $fmt = fn (float $v): string => 'L. '.number_format($v, 2);
         $etiquetaIsv = $aplicaIsv ? 'ISV ('.rtrim(rtrim(number_format($tasa * 100, 2), '0'), '.').'%)' : 'ISV (exenta)';
