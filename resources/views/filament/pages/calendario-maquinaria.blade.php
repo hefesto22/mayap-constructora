@@ -32,9 +32,11 @@
             </div>
 
             {{-- Leyenda: el hueco sin eventos = máquina LIBRE para alquilar.
-                 Violeta = llegada confirmada y sigue en la obra (trabajando). --}}
+                 Violeta = llegada confirmada y sigue en la obra (trabajando).
+                 Lo YA TRABAJADO no se pinta (decisión 2026-07-20): al
+                 registrarse la jornada el evento se retira — la historia
+                 vive en Partes de Trabajo. --}}
             <div class="cal-leyenda">
-                <span><i style="background:#16a34a"></i> Trabajado</span>
                 <span><i style="background:#2563eb"></i> Programada</span>
                 <span><i style="background:#7c3aed"></i> Trabajando</span>
                 <span><i style="background:#0d9488"></i> Asignación</span>

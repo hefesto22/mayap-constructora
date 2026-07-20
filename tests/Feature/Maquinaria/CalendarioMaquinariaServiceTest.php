@@ -16,8 +16,10 @@ use App\Services\Maquinaria\CalendarioMaquinariaService;
 |--------------------------------------------------------------------------
 | Calendario de maquinaria (G3) — eventos para FullCalendar.
 |--------------------------------------------------------------------------
-| Días y horas reales, no barras infinitas: verde = parte trabajado,
-| azul = agenda programada, teal = asignación (rango o marcador de inicio),
+| Compromisos, no historia (decisión Mauricio 2026-07-20): lo YA
+| trabajado no se pinta — al registrarse el parte, el día queda limpio y
+| la historia vive en Partes de Trabajo. Azul = agenda programada,
+| violeta = trabajando, teal = asignación (rango o marcador de inicio),
 | ámbar = mantenimiento, gris = finalizada. El hueco = máquina libre.
 */
 
@@ -25,7 +27,7 @@ beforeEach(function (): void {
     $this->servicio = app(CalendarioMaquinariaService::class);
 });
 
-test('el parte de trabajo sale como evento verde de UN día con sus horas', function (): void {
+test('lo YA trabajado no se pinta: el parte de trabajo no genera evento', function (): void {
     $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
     $obra = Proyecto::factory()->enEjecucion()->create(['nombre' => 'ALCANTARILLADO NORTE']);
 
@@ -51,14 +53,11 @@ test('el parte de trabajo sale como evento verde de UN día con sus horas', func
     $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31');
     $partes = array_values(array_filter($eventos, fn (array $e): bool => str_starts_with((string) $e['id'], 'parte-')));
 
-    expect($partes)->toHaveCount(1)
-        ->and($partes[0]['title'])->toContain('EXCAVADORA CAT 320')
-        ->toContain('ALCANTARILLADO NORTE')
-        ->toContain('8h')
-        ->toContain('(+2h ext)')
-        ->and($partes[0]['start'])->toBe('2026-07-10')
-        ->and($partes[0]['color'])->toBe('#16a34a')
-        ->and($partes[0])->not->toHaveKey('end'); // 1 día, no barra
+    // Saturaba la vista (decisión 2026-07-20): la historia vive en
+    // Partes de Trabajo. Solo queda la barra teal del compromiso.
+    expect($partes)->toHaveCount(0)
+        ->and($eventos)->toHaveCount(1)
+        ->and($eventos[0]['id'])->toStartWith('asignacion-');
 });
 
 test('asignación ABIERTA = marcador de un día en su inicio, nunca barra hasta fin de mes', function (): void {
@@ -249,7 +248,7 @@ test('ALCANCE ENCARGADO: soloProyectos acota agenda/asignaciones a SUS obras y o
     expect($this->servicio->eventos('2026-07-01', '2026-07-31'))->toHaveCount(3);
 });
 
-test('la asignación FINALIZADA de un solo día con parte ya registrado se OCULTA (el verde cuenta la historia)', function (): void {
+test('la asignación FINALIZADA de un solo día con parte ya registrado se OCULTA (el día queda limpio)', function (): void {
     $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320']);
     $obra = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA UNICA']);
 
@@ -274,11 +273,8 @@ test('la asignación FINALIZADA de un solo día con parte ya registrado se OCULT
     ]);
 
     $eventos = $this->servicio->eventos('2026-07-01', '2026-07-31');
-    $asignaciones = array_values(array_filter($eventos, fn (array $e): bool => str_starts_with((string) $e['id'], 'asignacion-')));
-    $partes = array_values(array_filter($eventos, fn (array $e): bool => str_starts_with((string) $e['id'], 'parte-')));
 
-    // La barra gris de un día desaparece; el parte verde queda.
-    expect($asignaciones)->toHaveCount(0)
-        ->and($partes)->toHaveCount(1)
-        ->and($partes[0]['title'])->toContain('6h');
+    // La barra gris de un día desaparece y el parte tampoco se pinta:
+    // el día trabajado queda limpio (la historia, en Partes de Trabajo).
+    expect($eventos)->toHaveCount(0);
 });

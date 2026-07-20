@@ -8,17 +8,19 @@ use App\Enums\EstadoAsignacion;
 use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\MantenimientoMaquina;
-use App\Models\ParteTrabajo;
 
 /**
  * Calendario de maquinaria (G3): arma los eventos que FullCalendar pinta.
  *
- * Filosofía (decisión Mauricio 2026-07-10): el calendario muestra DÍAS y
- * HORAS reales, no barras infinitas. Un vistazo responde: ¿qué trabajó la
- * máquina? (verde, con horas), ¿qué tiene comprometido? (azul programada),
- * ¿está en taller? (ámbar) y ¿qué días está libre? (vacío).
+ * Filosofía (decisión Mauricio 2026-07-10, afinada 2026-07-20): el
+ * calendario mira HACIA ADELANTE — compromisos, no historia. Lo YA
+ * TRABAJADO no se pinta (saturaba la vista); esa historia vive en Partes
+ * de Trabajo. Un vistazo responde: ¿qué hay comprometido? (azul
+ * programada / violeta trabajando), ¿está en taller? (ámbar) y ¿qué
+ * días está libre? (vacío).
  *
- *  - Parte de trabajo   → evento de 1 día con las horas reales (verde).
+ *  - Parte de trabajo   → NO genera evento: al registrar la jornada, el
+ *    azul/violeta de ese día se retira y el día queda limpio.
  *  - Agenda programada  → evento de 1 día con horas previstas (azul).
  *  - Asignación con rango definido → barra teal (compromiso contractual);
  *    finalizada → gris. SIN fecha fin → solo un marcador el día de inicio
@@ -32,8 +34,6 @@ use App\Models\ParteTrabajo;
  */
 final class CalendarioMaquinariaService
 {
-    private const string COLOR_TRABAJADO = '#16a34a';      // verde — horas reales
-
     private const string COLOR_PROGRAMADA = '#2563eb';     // azul — agenda futura
 
     private const string COLOR_TRABAJANDO = '#7c3aed';     // violeta — llegó y sigue en la obra
@@ -65,37 +65,10 @@ final class CalendarioMaquinariaService
         ?array $soloProyectos = null,
     ): array {
         return [
-            ...$this->partesTrabajo($desde, $hasta, $maquinaId, $proyectoId, $soloProyectos),
             ...$this->agenda($desde, $hasta, $maquinaId, $proyectoId, $soloProyectos),
             ...$this->asignaciones($desde, $hasta, $maquinaId, $proyectoId, $soloProyectos),
             ...($soloProyectos === null ? $this->mantenimientos($desde, $hasta, $maquinaId) : []),
         ];
-    }
-
-    /**
-     * Horas REALES trabajadas: un evento por parte, en su día, con horas.
-     *
-     * @param list<int>|null $soloProyectos
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function partesTrabajo(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId, ?array $soloProyectos): array
-    {
-        return ParteTrabajo::query()
-            ->with(['asignacion.maquina:id,codigo,nombre', 'asignacion.proyecto:id,nombre'])
-            ->whereBetween('fecha', [$desde, $hasta])
-            ->when($maquinaId, fn ($q) => $q->whereHas('asignacion', fn ($a) => $a->where('maquina_id', $maquinaId)))
-            ->when($proyectoId, fn ($q) => $q->whereHas('asignacion', fn ($a) => $a->where('proyecto_id', $proyectoId)))
-            ->when($soloProyectos !== null, fn ($q) => $q->whereHas('asignacion', fn ($a) => $a->whereIn('proyecto_id', $soloProyectos)))
-            ->get()
-            ->map(fn (ParteTrabajo $p): array => [
-                'id'     => "parte-{$p->id}",
-                'title'  => "{$p->asignacion->maquina->nombre} · {$p->asignacion->proyecto->nombre} — ".self::horas($p->horas, $p->horas_extra),
-                'start'  => $p->fecha->toDateString(),
-                'color'  => self::COLOR_TRABAJADO,
-                'allDay' => true,
-            ])
-            ->all();
     }
 
     /**
@@ -113,8 +86,9 @@ final class CalendarioMaquinariaService
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))
             ->when($proyectoId, fn ($q) => $q->where('proyecto_id', $proyectoId))
             ->when($soloProyectos !== null, fn ($q) => $q->whereIn('proyecto_id', $soloProyectos))
-            // Plan CUMPLIDO desaparece: si ya hay un parte real (verde) de
-            // esa máquina en esa obra ese día, el azul ya no aporta nada.
+            // Plan CUMPLIDO desaparece: si ya hay un parte real de esa
+            // máquina en esa obra ese día, el evento se retira y el día
+            // queda limpio (lo trabajado no se pinta — 2026-07-20).
             ->whereNotExists(function ($q): void {
                 $q->selectRaw('1')
                     ->from('partes_trabajo as pt')
@@ -131,9 +105,9 @@ final class CalendarioMaquinariaService
                 // AM/PM — el formato de la constructora). El ciclo lo
                 // cuenta el COLOR (decisión Mauricio 2026-07-16): azul =
                 // plan, VIOLETA = llegó (y sigue violeta al terminar,
-                // hasta que se registren las horas/litros: ahí el parte
-                // VERDE reemplaza a este evento). Sin emojis — los datos
-                // hablan solos.
+                // hasta que se registren las horas/litros: ahí este
+                // evento se retira y el día queda limpio). Sin emojis —
+                // los datos hablan solos.
                 'title' => "{$a->maquina->nombre} · {$a->proyecto->nombre}"
                     .self::cicloLlegada($a),
                 'start' => $a->fecha->toDateString(),
@@ -163,9 +137,9 @@ final class CalendarioMaquinariaService
             ->when($proyectoId, fn ($q) => $q->where('proyecto_id', $proyectoId))
             ->when($soloProyectos !== null, fn ($q) => $q->whereIn('proyecto_id', $soloProyectos))
             // La asignación FINALIZADA de UN solo día que ya tiene su
-            // parte registrado ese día no aporta nada junto al verde —
-            // es la administrativa (p. ej. la automática al registrar la
-            // jornada desde el calendario) y solo duplicaría el evento.
+            // parte registrado ese día es historia trabajada — es la
+            // administrativa (p. ej. la automática al registrar la
+            // jornada desde el calendario) y no se pinta.
             ->whereNot(fn ($q) => $q
                 ->where('estado', EstadoAsignacion::Finalizada->value)
                 ->whereColumn('fecha_fin', 'fecha_inicio')
@@ -246,25 +220,5 @@ final class CalendarioMaquinariaService
         }
 
         return $a->horaEntrada12() !== null ? " — llega {$a->horaEntrada12()}" : '';
-    }
-
-    /**
-     * "8h", "7.5h" o "8h (+2h ext)" — sin ceros de relleno.
-     */
-    private static function horas(string $horas, string $extra = '0'): string
-    {
-        $limpiar = static function (string $v): string {
-            $texto = number_format((float) $v, 2, '.', '');
-
-            return str_contains($texto, '.') ? rtrim(rtrim($texto, '0'), '.') : $texto;
-        };
-
-        $texto = $limpiar($horas).'h';
-
-        if (bccomp($extra, '0', 2) === 1) {
-            $texto .= ' (+'.$limpiar($extra).'h ext)';
-        }
-
-        return $texto;
     }
 }
