@@ -14,7 +14,8 @@ use Filament\Notifications\Notification;
 
 /**
  * Acción "Finalizar mantenimiento". Cierra la reparación y devuelve la máquina
- * a disponible vía MantenimientoService. Solo visible mientras está en proceso.
+ * a disponible vía MantenimientoService (que además deja el cierre anotado en
+ * la bitácora). Solo visible mientras está en proceso.
  */
 final class AccionFinalizarMantenimiento
 {
@@ -36,10 +37,14 @@ final class AccionFinalizarMantenimiento
                     ->native(false),
             ])
             ->action(function (MantenimientoMaquina $record, array $data): void {
+                $userId = auth()->id();
+                $userId = is_numeric($userId) ? (int) $userId : null;
+
                 try {
                     app(MantenimientoService::class)->finalizar(
                         mantenimiento: $record,
                         fechaFin: isset($data['fecha_fin']) ? (string) $data['fecha_fin'] : null,
+                        userId: $userId,
                     );
                 } catch (MantenimientoInvalidoException $e) {
                     Notification::make()

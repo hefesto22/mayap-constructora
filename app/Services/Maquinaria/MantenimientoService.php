@@ -9,6 +9,7 @@ use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoMaquina;
 use App\Exceptions\Maquinaria\MantenimientoInvalidoException;
 use App\Models\AsignacionMaquina;
+use App\Models\BitacoraMantenimiento;
 use App\Models\MantenimientoMaquina;
 use App\Models\Maquina;
 use App\Models\User;
@@ -155,11 +156,12 @@ final readonly class MantenimientoService
     }
 
     /**
-     * Finaliza el mantenimiento: la máquina vuelve a estar disponible.
+     * Finaliza el mantenimiento: la máquina vuelve a estar disponible y
+     * la bitácora recibe la última entrada (cierre con fecha y hora).
      */
-    public function finalizar(MantenimientoMaquina $mantenimiento, ?string $fechaFin = null): void
+    public function finalizar(MantenimientoMaquina $mantenimiento, ?string $fechaFin = null, ?int $userId = null): void
     {
-        DB::transaction(function () use ($mantenimiento, $fechaFin): void {
+        DB::transaction(function () use ($mantenimiento, $fechaFin, $userId): void {
             $mantenimientoBloqueado = MantenimientoMaquina::query()
                 ->whereKey($mantenimiento->getKey())
                 ->lockForUpdate()
@@ -175,6 +177,14 @@ final readonly class MantenimientoService
             $mantenimientoBloqueado->estado = EstadoMantenimiento::Finalizado;
             $mantenimientoBloqueado->fecha_fin = $fecha->max($mantenimientoBloqueado->fecha_inicio);
             $mantenimientoBloqueado->save();
+
+            // Cierre en el historial: en qué fase estaba y cuándo terminó.
+            BitacoraMantenimiento::create([
+                'mantenimiento_maquina_id' => $mantenimientoBloqueado->id,
+                'fase'                     => $mantenimientoBloqueado->fase,
+                'detalle'                  => 'Mantenimiento finalizado — la máquina volvió a estar disponible.',
+                'user_id'                  => $userId,
+            ]);
 
             $maquina = Maquina::query()
                 ->whereKey($mantenimientoBloqueado->maquina_id)

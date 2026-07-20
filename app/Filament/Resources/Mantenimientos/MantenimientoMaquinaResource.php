@@ -5,18 +5,24 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Mantenimientos;
 
 use App\Filament\Resources\Mantenimientos\Pages\ListMantenimientos;
+use App\Filament\Resources\Mantenimientos\Pages\ViewMantenimiento;
+use App\Filament\Resources\Mantenimientos\RelationManagers\BitacorasRelationManager;
+use App\Filament\Resources\Mantenimientos\Schemas\MantenimientoInfolist;
 use App\Filament\Resources\Mantenimientos\Tables\MantenimientosTable;
 use App\Models\MantenimientoMaquina;
 use BackedEnum;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Mantenimientos de máquinas — SOLO LECTURA + acción "Finalizar". Los
- * mantenimientos se crean con la acción "Enviar a mantenimiento" del catálogo
- * de máquinas (MantenimientoService). Aquí se consultan y se cierran.
+ * Mantenimientos de máquinas — SOLO LECTURA + acciones "Registrar avance"
+ * y "Finalizar". Los mantenimientos se crean con la acción "Enviar a
+ * mantenimiento" del catálogo de máquinas (MantenimientoService). Aquí se
+ * consultan, se les registra el avance de la reparación (fases + bitácora
+ * con fecha y hora) y se cierran.
  */
 class MantenimientoMaquinaResource extends Resource
 {
@@ -47,6 +53,18 @@ class MantenimientoMaquinaResource extends Resource
         return MantenimientosTable::configure($table);
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return MantenimientoInfolist::configure($schema);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            BitacorasRelationManager::class,
+        ];
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -57,6 +75,7 @@ class MantenimientoMaquinaResource extends Resource
     {
         return [
             'index' => ListMantenimientos::route('/'),
+            'view'  => ViewMantenimiento::route('/{record}'),
         ];
     }
 

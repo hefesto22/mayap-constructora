@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\EstadoMantenimiento;
+use App\Enums\FaseMantenimiento;
 use Database\Factories\MantenimientoMaquinaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +18,12 @@ use Illuminate\Support\Facades\DB;
 /**
  * Mantenimiento de máquina — evento de avería/reparación. Enlaza la asignación
  * cortada por la avería y, si hubo, la asignación de la máquina sustituta.
+ *
+ * Mientras está en proceso lleva una FASE (diagnóstico → sin repuestos →
+ * compra de repuestos → reparación) y una BITÁCORA con fecha y hora de cada
+ * diagnóstico/avance (decisión Mauricio 2026-07-20). `fecha_estimada_repuestos`
+ * dispara la campanita del día en que deberían llegar los repuestos;
+ * `aviso_repuestos_at` la hace idempotente (cambiar la fecha la reinicia).
  *
  * AUTO-CÓDIGO: MANT-{AÑO}-{NUMERO_5} con contador que se reinicia por año.
  *
@@ -28,6 +36,9 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $asignacion_finalizada_id
  * @property int|null $asignacion_sustituta_id
  * @property EstadoMantenimiento $estado
+ * @property FaseMantenimiento $fase
+ * @property Carbon|null $fecha_estimada_repuestos
+ * @property Carbon|null $aviso_repuestos_at
  * @property string|null $notas
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -55,6 +66,9 @@ class MantenimientoMaquina extends Model
         'asignacion_finalizada_id',
         'asignacion_sustituta_id',
         'estado',
+        'fase',
+        'fecha_estimada_repuestos',
+        'aviso_repuestos_at',
         'notas',
     ];
 
@@ -64,9 +78,12 @@ class MantenimientoMaquina extends Model
     protected function casts(): array
     {
         return [
-            'estado'       => EstadoMantenimiento::class,
-            'fecha_inicio' => 'date',
-            'fecha_fin'    => 'date',
+            'estado'                   => EstadoMantenimiento::class,
+            'fase'                     => FaseMantenimiento::class,
+            'fecha_inicio'             => 'date',
+            'fecha_fin'                => 'date',
+            'fecha_estimada_repuestos' => 'date',
+            'aviso_repuestos_at'       => 'datetime',
         ];
     }
 
@@ -133,5 +150,15 @@ class MantenimientoMaquina extends Model
     public function asignacionSustituta(): BelongsTo
     {
         return $this->belongsTo(AsignacionMaquina::class, 'asignacion_sustituta_id');
+    }
+
+    /**
+     * Historial de diagnósticos y avances (fecha y hora en created_at).
+     *
+     * @return HasMany<BitacoraMantenimiento, $this>
+     */
+    public function bitacoras(): HasMany
+    {
+        return $this->hasMany(BitacoraMantenimiento::class, 'mantenimiento_maquina_id');
     }
 }

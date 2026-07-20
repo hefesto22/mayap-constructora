@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Maquinaria;
 
+use App\Filament\Resources\Mantenimientos\MantenimientoMaquinaResource;
 use App\Filament\Resources\Maquinas\MaquinaResource;
+use App\Models\MantenimientoMaquina;
 use App\Models\PlanMantenimiento;
 use App\Models\User;
 use App\Support\Roles;
@@ -13,8 +15,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Campanitas de mantenimiento preventivo — "a esta máquina ya le toca
- * el cambio de aceite".
+ * Campanitas de mantenimiento — preventivo ("ya le toca el cambio de
+ * aceite") y correctivo ("los repuestos deberían estar llegando").
  *
  * Destinatarios: gerencia, maquinaria y recepción (la comodín que
  * cubre cuando el titular no está — decisión Mauricio 2026-07-19).
@@ -64,11 +66,46 @@ final class NotificadorMantenimiento
         );
     }
 
+    /**
+     * "Los repuestos deberían estar llegando" — el día de la fecha
+     * estimada de recepción (o al detectar que ya pasó sin avisarse).
+     */
+    public function repuestosDeberianLlegar(MantenimientoMaquina $mantenimiento): void
+    {
+        $mantenimiento->loadMissing('maquina:id,codigo,nombre');
+
+        $estimada = $mantenimiento->fecha_estimada_repuestos;
+        $cuando = $estimada !== null && $estimada->isBefore(today())
+            ? 'deberían haber llegado el '.$estimada->format('d/m/Y')
+            : 'deberían llegar HOY';
+
+        $this->despachar(
+            Notification::make()
+                ->title('Repuestos por llegar')
+                ->body(
+                    "Los repuestos de {$mantenimiento->maquina->nombre} "
+                    ."({$mantenimiento->codigo}) {$cuando}. "
+                    .'Confirmar con el proveedor y continuar la reparación.'
+                )
+                ->icon('heroicon-o-shopping-cart')
+                ->iconColor('warning')
+                ->actions([$this->verMantenimiento($mantenimiento)]),
+        );
+    }
+
     private function verMaquina(PlanMantenimiento $plan): Action
     {
         return Action::make('ver')
             ->label('Ver máquina')
             ->url(MaquinaResource::getUrl('edit', ['record' => $plan->maquina]))
+            ->button();
+    }
+
+    private function verMantenimiento(MantenimientoMaquina $mantenimiento): Action
+    {
+        return Action::make('ver')
+            ->label('Ver mantenimiento')
+            ->url(MantenimientoMaquinaResource::getUrl('view', ['record' => $mantenimiento]))
             ->button();
     }
 

@@ -8,8 +8,8 @@ use App\Enums\EstadoMaquina;
 
 /**
  * Se lanza cuando una operación de mantenimiento es inválida: la máquina no
- * está operativa, no hay obra de la cual sustituir, o el mantenimiento ya no
- * está en proceso.
+ * está operativa, no hay obra de la cual sustituir, el mantenimiento ya no
+ * está en proceso, o el avance de fase viene incompleto.
  */
 final class MantenimientoInvalidoException extends MaquinariaException
 {
@@ -33,6 +33,21 @@ final class MantenimientoInvalidoException extends MaquinariaException
     {
         return new self(
             "El mantenimiento {$codigo} no está en proceso; no se puede finalizar de nuevo."
+        );
+    }
+
+    public static function noSePuedeAvanzar(string $codigo): self
+    {
+        return new self(
+            "El mantenimiento {$codigo} ya está finalizado; no se pueden registrar más avances."
+        );
+    }
+
+    public static function faltaFechaEstimada(string $codigo): self
+    {
+        return new self(
+            "La fase de compra de repuestos del mantenimiento {$codigo} necesita ".
+            'la fecha estimada de recepción de los repuestos.'
         );
     }
 }
