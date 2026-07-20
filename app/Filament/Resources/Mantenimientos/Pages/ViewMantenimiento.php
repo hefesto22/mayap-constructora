@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Mantenimientos\Pages;
 
+use App\Filament\Resources\Mantenimientos\Actions\AccionCambiarPrioridad;
 use App\Filament\Resources\Mantenimientos\Actions\AccionFinalizarMantenimiento;
 use App\Filament\Resources\Mantenimientos\Actions\AccionRegistrarAvance;
 use App\Filament\Resources\Mantenimientos\MantenimientoMaquinaResource;
@@ -17,6 +18,7 @@ class ViewMantenimiento extends ViewRecord
     {
         return [
             AccionRegistrarAvance::make(),
+            AccionCambiarPrioridad::make(),
             AccionFinalizarMantenimiento::make(),
         ];
     }

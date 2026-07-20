@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\EstadoMaquina;
+use App\Enums\ModalidadTrabajo;
 use App\Enums\TipoMaquina;
 use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\MaquinaFactory;
@@ -26,6 +27,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * que mueven los partes de trabajo (no se edita a mano). La `tarifa_hora` es
  * el costo por defecto; la asignación a obra puede pactar otra.
  *
+ * MODALIDAD DE TRABAJO (decisión Mauricio 2026-07-20): pesada por horas,
+ * pick-ups por kilometraje, volquetas por viajes, camiones por flete —
+ * el default que sugiere cada parte de trabajo. `tarifa_viaje` y
+ * `tarifa_km` completan el catálogo para cotizar rentas por esas unidades.
+ *
  * AUTO-CÓDIGO: MAQ-{NUMERO_5} global, generado en `creating` con
  * lockForUpdate (mismo patrón que Proveedor/Bodega).
  *
@@ -41,6 +47,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string|null $kilometraje_actual
  * @property string $tarifa_hora
  * @property string $jornada_horas
+ * @property ModalidadTrabajo $modalidad_trabajo
+ * @property string|null $tarifa_viaje
+ * @property string|null $tarifa_km
  * @property EstadoMaquina $estado
  * @property string|null $notas
  * @property bool $activo
@@ -61,6 +70,16 @@ class Maquina extends Model
 
     protected $table = 'maquinas';
 
+    /**
+     * Default en memoria (espejo del default de la DB) — misma lección
+     * que Compra.categoria (2026-07-20).
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'modalidad_trabajo' => 'horas',
+    ];
+
     /** @var list<string> */
     protected $fillable = [
         'codigo',
@@ -74,6 +93,9 @@ class Maquina extends Model
         'kilometraje_actual',
         'tarifa_hora',
         'jornada_horas',
+        'modalidad_trabajo',
+        'tarifa_viaje',
+        'tarifa_km',
         'estado',
         'notas',
         'activo',
@@ -87,11 +109,14 @@ class Maquina extends Model
         return [
             'tipo'               => TipoMaquina::class,
             'estado'             => EstadoMaquina::class,
+            'modalidad_trabajo'  => ModalidadTrabajo::class,
             'anio'               => 'integer',
             'horometro_actual'   => 'decimal:2',
             'kilometraje_actual' => 'decimal:2',
             'tarifa_hora'        => 'decimal:2',
             'jornada_horas'      => 'decimal:2',
+            'tarifa_viaje'       => 'decimal:2',
+            'tarifa_km'          => 'decimal:2',
             'activo'             => 'boolean',
         ];
     }
@@ -101,7 +126,8 @@ class Maquina extends Model
         return LogOptions::defaults()
             ->logOnly([
                 'codigo', 'nombre', 'tipo', 'marca', 'modelo', 'anio', 'serie',
-                'horometro_actual', 'kilometraje_actual', 'tarifa_hora', 'jornada_horas', 'estado', 'activo',
+                'horometro_actual', 'kilometraje_actual', 'tarifa_hora', 'jornada_horas',
+                'modalidad_trabajo', 'tarifa_viaje', 'tarifa_km', 'estado', 'activo',
             ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()

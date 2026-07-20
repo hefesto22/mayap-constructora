@@ -232,7 +232,8 @@ test('finalizar sin superar lo pactado cobra exactamente lo cotizado', function 
 
     $resultado = app(FinalizarRentaService::class)->finalizar($proyecto);
 
-    expect($resultado['extra'])->toBe('0');
+    // El extra es dinero: siempre dos decimales, aunque sea cero.
+    expect($resultado['extra'])->toBe('0.00');
 
     $cuenta = CuentaPorCobrar::where('proyecto_id', $proyecto->id)->first();
     expect($cuenta->monto_original)->toBe('8740.00');

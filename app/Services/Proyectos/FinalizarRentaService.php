@@ -12,22 +12,24 @@ use App\Models\Proyecto;
 use App\Models\ProyectoLineaRenta;
 use App\Services\Cobranza\AjustarCuentaPorCobrarService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Finaliza una renta de maquinaria aplicando la regla de cobro pactada
- * con el cliente: SE COBRA LO COTIZADO COMO MÍNIMO; si las horas
- * reales de los partes superan las pactadas, EL EXTRA SE SUMA a la
- * cuenta por cobrar.
+ * con el cliente: SE COBRA LO COTIZADO COMO MÍNIMO; si lo real de los
+ * partes supera lo pactado, EL EXTRA SE SUMA a la cuenta por cobrar.
  *
- * Cálculo del extra, POR MÁQUINA (cada una tiene su tarifa):
+ * El cálculo del extra es POR MÁQUINA y POR DIMENSIÓN (decisión
+ * Mauricio 2026-07-20 — cada tipo trabaja distinto):
  *
- *   horas pactadas  = Σ líneas de esa máquina (días → horas por jornada)
- *   horas reales    = Σ partes de trabajo (horas + extra) de esa
- *                     máquina en este proyecto — el parte es la única
- *                     verdad de horas trabajadas
- *   extra           = max(0, reales − pactadas) × tarifa horaria de la
- *                     línea más reciente (por día → tarifa/jornada)
+ *   - horas (líneas por hora/día): horas pactadas equivalentes vs
+ *     horas reales de los partes (horas + extra), tarifa horaria de la
+ *     línea más reciente (por día → tarifa/jornada).
+ *   - viajes (líneas por viaje): viajes pactados vs viajes reales de
+ *     los partes en modalidad viajes, tarifa por viaje de la línea.
+ *   - km (líneas por kilómetro): km pactados vs km reales de los
+ *     partes en modalidad kilometraje, tarifa por km de la línea.
  *
  * Al total del extra se le aplica el ISV del proyecto (si aplica) y se
  * sube a la CxC vía AjustarCuentaPorCobrarService (bitácora incluida).
@@ -48,7 +50,7 @@ final class FinalizarRentaService
     ) {}
 
     /**
-     * @return array{proyecto: Proyecto, extra: numeric-string, detalle: list<array{maquina: string, pactadas: string, reales: string, extra: string}>}
+     * @return array{proyecto: Proyecto, extra: numeric-string, detalle: list<array{maquina: string, unidad: string, pactadas: string, reales: string, extra: string}>}
      */
     public function finalizar(Proyecto $proyecto, ?Carbon $fechaFinReal = null, ?int $userId = null): array
     {
@@ -74,10 +76,10 @@ final class FinalizarRentaService
     }
 
     /**
-     * Extra por máquina: horas reales de los partes vs pactadas en las
-     * líneas. Devuelve [total con ISV, detalle por máquina sin ISV].
+     * Extra por máquina y dimensión: lo real de los partes vs lo
+     * pactado en las líneas. Devuelve [total con ISV, detalle sin ISV].
      *
-     * @return array{0: numeric-string, 1: list<array{maquina: string, pactadas: string, reales: string, extra: string}>}
+     * @return array{0: numeric-string, 1: list<array{maquina: string, unidad: string, pactadas: string, reales: string, extra: string}>}
      */
     private function calcularExtra(Proyecto $proyecto): array
     {
@@ -85,38 +87,49 @@ final class FinalizarRentaService
 
         $porMaquina = $proyecto->lineasRenta->groupBy('maquina_id');
 
-        $extraTotal = '0';
+        // '0.00' y no '0': el extra es dinero y SIEMPRE viaja con dos
+        // decimales, aunque no haya nada que cobrar.
+        $extraTotal = '0.00';
         $detalle = [];
 
         foreach ($porMaquina as $maquinaId => $lineas) {
-            $maquina = $lineas->first()->maquina;
+            $primera = $lineas->first();
 
-            $pactadas = '0';
-
-            foreach ($lineas as $linea) {
-                $pactadas = bcadd($pactadas, $linea->horasPactadas(), self::SCALE);
+            if ($primera === null) {
+                continue;
             }
 
-            $reales = $this->horasRealesDeMaquina($proyecto->id, (int) $maquinaId);
+            $maquina = $primera->maquina;
 
-            $horasExtra = bccomp($reales, $pactadas, self::SCALE) > 0
-                ? bcsub($reales, $pactadas, self::SCALE)
-                : '0.00';
+            foreach ($lineas->groupBy(fn (ProyectoLineaRenta $l): string => $l->unidad->dimension()) as $dimension => $lineasDim) {
+                [$pactadas, $reales, $tarifa] = $this->pactadoRealYTarifa(
+                    (string) $dimension,
+                    $lineasDim,
+                    $proyecto->id,
+                    (int) $maquinaId,
+                );
 
-            $extraMaquina = '0.00';
+                $exceso = bccomp($reales, $pactadas, self::SCALE) > 0
+                    ? bcsub($reales, $pactadas, self::SCALE)
+                    : '0.00';
 
-            if (bccomp($horasExtra, '0', self::SCALE) > 0) {
-                $tarifaHora = $this->tarifaHorariaVigente($lineas->sortByDesc('id')->first());
-                $extraMaquina = bcadd(bcmul($horasExtra, $tarifaHora, 4), '0.005', self::SCALE);
-                $extraTotal = bcadd($extraTotal, $extraMaquina, self::SCALE);
+                $extraMaquina = '0.00';
+
+                if (bccomp($exceso, '0', self::SCALE) > 0) {
+                    $extraMaquina = bcadd(bcmul($exceso, $tarifa, 4), '0.005', self::SCALE);
+                    $extraTotal = bcadd($extraTotal, $extraMaquina, self::SCALE);
+                }
+
+                $ultimaLinea = $lineasDim->sortByDesc('id')->first();
+
+                $detalle[] = [
+                    'maquina'  => $maquina->nombre,
+                    'unidad'   => $ultimaLinea !== null ? $ultimaLinea->unidad->getLabel() : (string) $dimension,
+                    'pactadas' => $pactadas,
+                    'reales'   => $reales,
+                    'extra'    => $extraMaquina,
+                ];
             }
-
-            $detalle[] = [
-                'maquina'  => $maquina->nombre,
-                'pactadas' => $pactadas,
-                'reales'   => $reales,
-                'extra'    => $extraMaquina,
-            ];
         }
 
         // El extra es venta gravada igual que la renta: mismo ISV.
@@ -130,23 +143,67 @@ final class FinalizarRentaService
     }
 
     /**
-     * Horas reales (normales + extra) de una máquina en el proyecto,
-     * según sus partes de trabajo — la única verdad de horas.
+     * Pactado, real y tarifa unitaria de una dimensión (horas, viajes
+     * o km) para una máquina del proyecto.
+     *
+     * @param Collection<int, ProyectoLineaRenta> $lineasDim
+     *
+     * @return array{0: string, 1: string, 2: string}
      */
-    private function horasRealesDeMaquina(int $proyectoId, int $maquinaId): string
+    private function pactadoRealYTarifa(string $dimension, Collection $lineasDim, int $proyectoId, int $maquinaId): array
+    {
+        $ultima = $lineasDim->sortByDesc('id')->first();
+
+        if ($dimension === 'horas') {
+            $pactadas = '0';
+
+            foreach ($lineasDim as $linea) {
+                $pactadas = bcadd($pactadas, $linea->horasPactadas(), self::SCALE);
+            }
+
+            return [
+                $pactadas,
+                $this->realesDeMaquina($proyectoId, $maquinaId, 'horas'),
+                $ultima !== null ? $this->tarifaHorariaVigente($ultima) : '0.00',
+            ];
+        }
+
+        // Viajes y km: la cantidad pactada es directa (sin conversión) y
+        // la tarifa es el snapshot de la línea más reciente.
+        $pactadas = '0';
+
+        foreach ($lineasDim as $linea) {
+            $pactadas = bcadd($pactadas, (string) $linea->cantidad, self::SCALE);
+        }
+
+        return [
+            $pactadas,
+            $this->realesDeMaquina($proyectoId, $maquinaId, $dimension),
+            $ultima !== null ? (string) $ultima->tarifa_snapshot : '0.00',
+        ];
+    }
+
+    /**
+     * Lo REAL de una máquina en el proyecto según sus partes de
+     * trabajo — la única verdad: horas (horas + extra), viajes o km.
+     */
+    private function realesDeMaquina(int $proyectoId, int $maquinaId, string $dimension): string
     {
         $partes = ParteTrabajo::query()
             ->whereHas('asignacion', static function ($query) use ($proyectoId, $maquinaId): void {
                 $query->where('proyecto_id', $proyectoId)
                     ->where('maquina_id', $maquinaId);
             })
-            ->get(['horas', 'horas_extra']);
+            ->get(['horas', 'horas_extra', 'viajes', 'km_recorridos']);
 
         $total = '0';
 
         foreach ($partes as $parte) {
-            $total = bcadd($total, (string) $parte->horas, self::SCALE);
-            $total = bcadd($total, (string) $parte->horas_extra, self::SCALE);
+            $total = match ($dimension) {
+                'viajes' => bcadd($total, (string) ($parte->viajes ?? 0), self::SCALE),
+                'km'     => bcadd($total, (string) ($parte->km_recorridos ?? '0'), self::SCALE),
+                default  => bcadd(bcadd($total, (string) $parte->horas, self::SCALE), (string) $parte->horas_extra, self::SCALE),
+            };
         }
 
         return $total;
@@ -176,7 +233,7 @@ final class FinalizarRentaService
     /**
      * Sube el extra a la CxC de la renta con el detalle en bitácora.
      *
-     * @param list<array{maquina: string, pactadas: string, reales: string, extra: string}> $detalle
+     * @param list<array{maquina: string, unidad: string, pactadas: string, reales: string, extra: string}> $detalle
      */
     private function cobrarExtra(Proyecto $proyecto, string $extraTotal, array $detalle, ?int $userId): void
     {
@@ -192,7 +249,7 @@ final class FinalizarRentaService
         $this->ajustes->aumentar(
             $cuenta,
             $extraTotal,
-            'HORAS EXTRA AL FINALIZAR RENTA '.$proyecto->codigo,
+            'EXTRAS AL FINALIZAR RENTA '.$proyecto->codigo,
             $userId,
         );
 
@@ -204,6 +261,6 @@ final class FinalizarRentaService
                 'detalle'     => $detalle,
             ])
             ->event('extra_cobrado')
-            ->log("Renta {$proyecto->codigo}: extra de L {$extraTotal} por horas reales sobre lo pactado");
+            ->log("Renta {$proyecto->codigo}: extra de L {$extraTotal} por trabajo real sobre lo pactado");
     }
 }

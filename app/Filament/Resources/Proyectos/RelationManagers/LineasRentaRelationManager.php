@@ -31,8 +31,8 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Líneas de renta del proyecto (solo tipo renta_maquinaria): máquina ×
- * cantidad (horas o días) × tarifa, con SU fecha y hora de llegada.
- * El espejo liviano de la composición por renglones.
+ * cantidad (horas, días, viajes o kilómetros) × tarifa, con SU fecha y
+ * hora de llegada. El espejo liviano de la composición por renglones.
  *
  * Solo editable en Borrador. Después de aprobar, los cambios entran
  * por la acción "Extender renta" (líneas marcadas como extensión) —
@@ -160,7 +160,7 @@ class LineasRentaRelationManager extends RelationManager
             ])
             ->paginated([10, 25, 50])
             ->emptyStateHeading('Sin máquinas todavía')
-            ->emptyStateDescription('Agregá la máquina, sus horas o días, y qué día llega. La tarifa se sugiere sola del catálogo.');
+            ->emptyStateDescription('Agregá la máquina, su cantidad (horas, días, viajes o km) y qué día llega. La tarifa se sugiere sola del catálogo.');
     }
 
     /**
@@ -204,7 +204,7 @@ class LineasRentaRelationManager extends RelationManager
                     ->step(0.5)
                     ->minValue(0.5)
                     ->required()
-                    ->suffix(fn (Get $get): string => $get('unidad') === UnidadRenta::Dia->value ? 'días' : 'horas'),
+                    ->suffix(fn (Get $get): string => self::sufijoCantidad($get('unidad'))),
 
                 TextInput::make('tarifa')
                     ->label('Tarifa')
@@ -212,7 +212,7 @@ class LineasRentaRelationManager extends RelationManager
                     ->step(0.01)
                     ->minValue(0)
                     ->prefix('L')
-                    ->suffix(fn (Get $get): string => $get('unidad') === UnidadRenta::Dia->value ? 'por día' : 'por hora')
+                    ->suffix(fn (Get $get): string => self::sufijoTarifa($get('unidad')))
                     ->helperText('Se sugiere la del catálogo. Ajustable si se pactó otra.'),
 
                 DatePicker::make('fecha_llegada')
@@ -246,6 +246,32 @@ class LineasRentaRelationManager extends RelationManager
             ->after(function (): void {
                 $this->recalcular();
             });
+    }
+
+    /**
+     * Sufijo del campo cantidad según la unidad elegida.
+     */
+    private static function sufijoCantidad(mixed $unidad): string
+    {
+        return match (UnidadRenta::tryFrom((string) $unidad)) {
+            UnidadRenta::Dia       => 'días',
+            UnidadRenta::Viaje     => 'viajes',
+            UnidadRenta::Kilometro => 'km',
+            default                => 'horas',
+        };
+    }
+
+    /**
+     * Sufijo del campo tarifa según la unidad elegida.
+     */
+    private static function sufijoTarifa(mixed $unidad): string
+    {
+        return match (UnidadRenta::tryFrom((string) $unidad)) {
+            UnidadRenta::Dia       => 'por día',
+            UnidadRenta::Viaje     => 'por viaje',
+            UnidadRenta::Kilometro => 'por km',
+            default                => 'por hora',
+        };
     }
 
     private function sugerirTarifa(mixed $maquinaId, Get $get, Set $set): void

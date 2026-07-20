@@ -195,6 +195,7 @@ parameters:
               - app/Services/Maquinaria/AgendarMaquinaService.php
               - app/Services/Maquinaria/RegistrarDiaMaquinaService.php
               - tests/Feature/Maquinaria/RegistrarDiaMaquinaServiceTest.php
+              - tests/Feature/Maquinaria/ModalidadesParteTest.php
               - app/Enums/UnidadRenta.php
               - app/Models/ProyectoLineaRenta.php
               - app/Services/Cobranza/AjustarCuentaPorCobrarService.php
@@ -205,6 +206,7 @@ parameters:
               - app/Services/Maquinaria/RegistrarCambioMantenimientoService.php
               - app/Services/Reportes/GenerarReporteFiscalMensualService.php
               - app/Services/Reportes/GenerarReportePagosMensualService.php
+              - app/Services/Reportes/ResumenRentaService.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no

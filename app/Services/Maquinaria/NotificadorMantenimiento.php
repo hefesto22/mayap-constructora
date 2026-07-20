@@ -93,6 +93,29 @@ final class NotificadorMantenimiento
         );
     }
 
+    /**
+     * "Esta es la reparación más importante" — al cambiar la prioridad
+     * (decisión Mauricio 2026-07-20): el taller sabe cuál atacar primero.
+     */
+    public function prioridadCambiada(MantenimientoMaquina $mantenimiento, ?string $motivo = null): void
+    {
+        $mantenimiento->loadMissing('maquina:id,codigo,nombre');
+
+        $prioridad = $mantenimiento->prioridad;
+
+        $this->despachar(
+            Notification::make()
+                ->title("Prioridad de reparación: {$prioridad->getLabel()}")
+                ->body(
+                    "{$mantenimiento->maquina->nombre} ({$mantenimiento->codigo}) ahora es prioridad {$prioridad->getLabel()}."
+                    .($motivo !== null && $motivo !== '' ? " Motivo: {$motivo}" : '')
+                )
+                ->icon($prioridad->getIcon())
+                ->iconColor($prioridad->getColor())
+                ->actions([$this->verMantenimiento($mantenimiento)]),
+        );
+    }
+
     private function verMaquina(PlanMantenimiento $plan): Action
     {
         return Action::make('ver')

@@ -6,7 +6,8 @@ namespace App\Exceptions\Maquinaria;
 
 /**
  * Se lanza cuando un parte de trabajo es inválido: la asignación no está
- * activa, el horómetro retrocede, faltan horas, o hay horas extra sin motivo.
+ * activa, el horómetro retrocede, faltan horas, hay horas extra sin motivo,
+ * o falta el dato de la modalidad (km, viajes, actividad).
  */
 final class ParteInvalidoException extends MaquinariaException
 {
@@ -43,6 +44,29 @@ final class ParteInvalidoException extends MaquinariaException
     {
         return new self(
             "Se registraron {$horasExtra} horas extra. Debes indicar el motivo de las horas extra."
+        );
+    }
+
+    public static function kmInvalidos(?string $km): self
+    {
+        return new self(
+            'Un parte por kilometraje necesita los kilómetros recorridos (mayores a cero).'
+            .($km !== null ? " Recibido: {$km}." : '')
+        );
+    }
+
+    public static function viajesInvalidos(?int $viajes): self
+    {
+        return new self(
+            'Un parte por viajes necesita el número de viajes del día (mayor a cero).'
+            .($viajes !== null ? " Recibido: {$viajes}." : '')
+        );
+    }
+
+    public static function sinActividad(): self
+    {
+        return new self(
+            'Un parte de flete necesita la actividad realizada (ej: "FLETE DE CEMENTO A LA OBRA X").'
         );
     }
 }

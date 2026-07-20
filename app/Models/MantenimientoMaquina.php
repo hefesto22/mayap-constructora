@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\EstadoMantenimiento;
 use App\Enums\FaseMantenimiento;
+use App\Enums\PrioridadMantenimiento;
 use Database\Factories\MantenimientoMaquinaFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -36,6 +37,7 @@ use Illuminate\Support\Facades\DB;
  * @property int|null $asignacion_finalizada_id
  * @property int|null $asignacion_sustituta_id
  * @property EstadoMantenimiento $estado
+ * @property PrioridadMantenimiento $prioridad
  * @property FaseMantenimiento $fase
  * @property Carbon|null $fecha_estimada_repuestos
  * @property Carbon|null $aviso_repuestos_at
@@ -56,6 +58,18 @@ class MantenimientoMaquina extends Model
 
     protected $table = 'mantenimientos_maquina';
 
+    /**
+     * Defaults en memoria (espejo de los de la DB): un mantenimiento
+     * recién instanciado ya tiene fase y prioridad — misma lección que
+     * Compra.categoria (2026-07-20).
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'fase'      => 'diagnostico',
+        'prioridad' => 'normal',
+    ];
+
     /** @var list<string> */
     protected $fillable = [
         'codigo',
@@ -66,6 +80,7 @@ class MantenimientoMaquina extends Model
         'asignacion_finalizada_id',
         'asignacion_sustituta_id',
         'estado',
+        'prioridad',
         'fase',
         'fecha_estimada_repuestos',
         'aviso_repuestos_at',
@@ -79,6 +94,7 @@ class MantenimientoMaquina extends Model
     {
         return [
             'estado'                   => EstadoMantenimiento::class,
+            'prioridad'                => PrioridadMantenimiento::class,
             'fase'                     => FaseMantenimiento::class,
             'fecha_inicio'             => 'date',
             'fecha_fin'                => 'date',

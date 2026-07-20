@@ -85,6 +85,16 @@ class ViewProyecto extends ViewRecord
                 ruta: 'reportes.costo-obra',
             ),
 
+            // Excel gerencial de la renta: pactado vs real por máquina
+            // (decisión Mauricio 2026-07-20). Mismo permiso que costos.
+            Action::make('resumen_renta_excel')
+                ->label('Resumen Excel')
+                ->icon('heroicon-o-table-cells')
+                ->color('gray')
+                ->visible(fn (): bool => $this->proyecto()->esRenta()
+                    && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COSTOS_PROYECTO) ?? false))
+                ->url(fn (): string => route('reportes.resumen-renta-excel', $this->getRecord())),
+
             // Renta de maquinaria: aprobar (agenda + CxC) y extender.
             AccionesRenta::aprobar(),
             AccionesRenta::extender(),

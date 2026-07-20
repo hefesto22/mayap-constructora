@@ -297,7 +297,7 @@ final class AccionesEjecucion
                                 ? 'Horas reales sobre lo pactado: se sumó L '
                                     .number_format((float) $resultado['extra'], 2)
                                     .' a la cuenta por cobrar.'
-                                : 'Sin horas extra: se cobra lo cotizado.')
+                                : 'Sin extras: se cobra lo cotizado.')
                             ->send();
 
                         return;

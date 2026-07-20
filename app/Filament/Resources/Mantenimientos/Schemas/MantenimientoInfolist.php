@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Mantenimientos\Schemas;
 
 use App\Enums\EstadoMantenimiento;
 use App\Enums\FaseMantenimiento;
+use App\Enums\PrioridadMantenimiento;
 use App\Models\MantenimientoMaquina;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
@@ -37,6 +38,13 @@ class MantenimientoInfolist
                             ->color(fn (EstadoMantenimiento $state): string => $state->getColor())
                             ->icon(fn (EstadoMantenimiento $state): string => $state->getIcon())
                             ->formatStateUsing(fn (EstadoMantenimiento $state): string => $state->getLabel()),
+                        TextEntry::make('prioridad')
+                            ->label('Prioridad de reparación')
+                            ->badge()
+                            ->color(fn (PrioridadMantenimiento $state): string => $state->getColor())
+                            ->icon(fn (PrioridadMantenimiento $state): string => $state->getIcon())
+                            ->formatStateUsing(fn (PrioridadMantenimiento $state): string => $state->getLabel())
+                            ->visible(fn (MantenimientoMaquina $record): bool => $record->estado === EstadoMantenimiento::EnProceso),
                         TextEntry::make('fase')
                             ->label('Fase de la reparación')
                             ->badge()

@@ -25,6 +25,7 @@ use App\Http\Controllers\Reportes\CostoObraPdfController;
 use App\Http\Controllers\Reportes\CotizacionRentaImagenController;
 use App\Http\Controllers\Reportes\CotizacionRentaPdfController;
 use App\Http\Controllers\Reportes\ReciboPagoPdfController;
+use App\Http\Controllers\Reportes\ResumenRentaExcelController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -52,6 +53,10 @@ Route::middleware(['auth', 'throttle:pdfs'])
 
         Route::get('proyectos/{proyecto}/cotizacion-renta-imagen', CotizacionRentaImagenController::class)
             ->name('cotizacion-renta-imagen');
+
+        // Excel "pactado vs real" de la maquinaria rentada (gerencial).
+        Route::get('proyectos/{proyecto}/resumen-renta-excel', ResumenRentaExcelController::class)
+            ->name('resumen-renta-excel');
 
         // Recibos de pago de una planilla CERRADA (uno por página).
         Route::get('planillas/{planilla}/recibos', ReciboPagoPdfController::class)

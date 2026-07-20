@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\MetodoCapturaHoras;
+use App\Enums\ModalidadTrabajo;
 use Database\Factories\ParteTrabajoFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,8 +16,14 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Parte de trabajo — horas trabajadas de una máquina en una obra (vía su
- * asignación). Genera el cobro: horas × tarifa pactada, congelado al registrar.
+ * Parte de trabajo — el trabajo diario de una máquina en una obra (vía su
+ * asignación). Genera el costo: horas × tarifa pactada, congelado al registrar.
+ *
+ * MODALIDAD (decisión Mauricio 2026-07-20): además de las horas del día
+ * (siempre obligatorias — son el costo interno), el parte lleva el dato
+ * con el que la máquina trabaja/cobra: `km_recorridos` (pick-ups, suma
+ * al kilometraje de la máquina), `viajes` + origen → destino + material
+ * (volquetas), o `actividad` (fletes de camiones, texto libre).
  *
  * AUTO-CÓDIGO: PART-{AÑO}-{NUMERO_5} con contador que se reinicia por año,
  * generado en `creating` con lockForUpdate.
@@ -26,11 +33,18 @@ use Illuminate\Support\Facades\DB;
  * @property int $asignacion_maquina_id
  * @property Carbon $fecha
  * @property MetodoCapturaHoras $metodo_captura
+ * @property ModalidadTrabajo $modalidad
  * @property string|null $lectura_inicial
  * @property string|null $lectura_final
  * @property string $horas
  * @property string $horas_extra
  * @property string|null $motivo_horas_extra
+ * @property string|null $km_recorridos
+ * @property int|null $viajes
+ * @property string|null $viaje_origen
+ * @property string|null $viaje_destino
+ * @property string|null $viaje_material
+ * @property string|null $actividad
  * @property string $tarifa_hora_aplicada
  * @property string $costo_cache
  * @property string|null $operador
@@ -51,17 +65,34 @@ class ParteTrabajo extends Model
 
     protected $table = 'partes_trabajo';
 
+    /**
+     * Default en memoria (espejo del default de la DB) — misma lección
+     * que Compra.categoria (2026-07-20).
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'modalidad' => 'horas',
+    ];
+
     /** @var list<string> */
     protected $fillable = [
         'codigo',
         'asignacion_maquina_id',
         'fecha',
         'metodo_captura',
+        'modalidad',
         'lectura_inicial',
         'lectura_final',
         'horas',
         'horas_extra',
         'motivo_horas_extra',
+        'km_recorridos',
+        'viajes',
+        'viaje_origen',
+        'viaje_destino',
+        'viaje_material',
+        'actividad',
         'tarifa_hora_aplicada',
         'costo_cache',
         'operador',
@@ -76,11 +107,14 @@ class ParteTrabajo extends Model
     {
         return [
             'metodo_captura'       => MetodoCapturaHoras::class,
+            'modalidad'            => ModalidadTrabajo::class,
             'fecha'                => 'date',
             'lectura_inicial'      => 'decimal:2',
             'lectura_final'        => 'decimal:2',
             'horas'                => 'decimal:2',
             'horas_extra'          => 'decimal:2',
+            'km_recorridos'        => 'decimal:2',
+            'viajes'               => 'integer',
             'tarifa_hora_aplicada' => 'decimal:2',
             'costo_cache'          => 'decimal:2',
         ];

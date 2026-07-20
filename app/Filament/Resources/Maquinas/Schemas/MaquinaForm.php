@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Maquinas\Schemas;
 
+use App\Enums\ModalidadTrabajo;
 use App\Enums\TipoMaquina;
 use App\Models\Maquina;
 use Filament\Forms\Components\Select;
@@ -108,7 +109,7 @@ class MaquinaForm
                     ->minValue(0)
                     ->step('any')
                     ->suffix('km')
-                    ->helperText('Solo para unidades que se controlan por km (volquetas, camiones). Lectura manual: se actualiza aquí o al registrar un cambio de mantenimiento.'),
+                    ->helperText('Para unidades por km (pick-ups, volquetas). Lo suman los partes por kilometraje; también se ajusta aquí o al registrar mantenimiento.'),
 
                 TextInput::make('tarifa_hora')
                     ->label('Tarifa por hora (por defecto)')
@@ -128,6 +129,33 @@ class MaquinaForm
                     ->suffix('h')
                     ->required()
                     ->helperText('Horas normales por día. Por encima de esto, el parte exige motivo de horas extra.'),
+
+                // Cómo funciona esta unidad (decisión Mauricio 2026-07-20):
+                // pesada por horómetro, pick-ups por km, volquetas por
+                // viajes, camiones por flete. Default del parte de trabajo.
+                Select::make('modalidad_trabajo')
+                    ->label('Cómo trabaja esta máquina')
+                    ->options(ModalidadTrabajo::options())
+                    ->default(ModalidadTrabajo::Horas->value)
+                    ->required()
+                    ->native(false)
+                    ->helperText('El parte de trabajo sugiere esta modalidad (se puede cambiar por parte).'),
+
+                TextInput::make('tarifa_viaje')
+                    ->label('Tarifa por viaje (rentas)')
+                    ->numeric()
+                    ->minValue(0)
+                    ->step('any')
+                    ->prefix('L.')
+                    ->helperText('Solo si se renta por viaje (volquetas). Se sugiere al cotizar.'),
+
+                TextInput::make('tarifa_km')
+                    ->label('Tarifa por kilómetro (rentas)')
+                    ->numeric()
+                    ->minValue(0)
+                    ->step('any')
+                    ->prefix('L.')
+                    ->helperText('Solo si se renta por km (pick-ups, camiones). Se sugiere al cotizar.'),
             ])
             ->columns(2);
     }
