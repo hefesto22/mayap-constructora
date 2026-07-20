@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\DB;
  * y recalcula el estado (pendiente/parcial/pagada). Única puerta para mover
  * el saldo de una CxP.
  *
+ * `fotoComprobante` (decisión Mauricio 2026-07-20): la foto del comprobante
+ * de la transferencia — una por abono, ya convertida a WebP por el
+ * formulario. Se archiva en el reporte mensual de pagos y luego se purga.
+ *
  * Concurrencia: la cuenta se bloquea con lockForUpdate dentro de la
  * transacción, evitando que dos abonos simultáneos sobre-paguen el saldo.
  */
@@ -30,12 +34,13 @@ final class AbonarService
         ?string $referencia = null,
         ?int $userId = null,
         ?string $notas = null,
+        ?string $fotoComprobante = null,
     ): Abono {
         if (bccomp($monto, '0', self::SCALE) <= 0) {
             throw AbonoInvalidoException::montoNoPositivo($monto);
         }
 
-        return DB::transaction(function () use ($cuenta, $monto, $fecha, $metodo, $referencia, $userId, $notas): Abono {
+        return DB::transaction(function () use ($cuenta, $monto, $fecha, $metodo, $referencia, $userId, $notas, $fotoComprobante): Abono {
             // Bloquea la fila de la cuenta para evitar sobrepago concurrente.
             $cuentaBloqueada = CuentaPorPagar::query()
                 ->whereKey($cuenta->getKey())
@@ -54,6 +59,7 @@ final class AbonarService
                 'fecha'               => $fecha ?? now()->toDateString(),
                 'metodo'              => $metodo,
                 'referencia'          => $referencia,
+                'foto_comprobante'    => $fotoComprobante,
                 'user_id'             => $userId,
                 'notas'               => $notas,
             ]);

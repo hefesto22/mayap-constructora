@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\ReportesFiscales;
 
+use App\Enums\TipoReporteFiscal;
 use App\Filament\Resources\ReportesFiscales\Pages\ListReportesFiscales;
 use App\Models\ReporteFiscal;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
  * Reportes fiscales mensuales — el historial de PDFs de control: cada
- * mes con sus compras, sus fotos de factura archivadas y el botón de
+ * mes con su reporte de FACTURAS (compras + fotos archivadas) y su
+ * reporte de PAGOS (abonos a proveedores + comprobantes), y el botón de
  * descarga. Solo lectura: los reportes se generan solos (scheduler) o
  * con el botón de la cabecera; nunca se editan ni se borran.
  */
@@ -46,8 +49,18 @@ class ReporteFiscalResource extends Resource
                     ->weight('bold')
                     ->sortable(),
 
+                TextColumn::make('tipo')
+                    ->label('Tipo')
+                    ->badge()
+                    ->formatStateUsing(fn (TipoReporteFiscal $state): string => $state->getLabel())
+                    ->color(fn (TipoReporteFiscal $state): string => $state->getColor())
+                    ->sortable(),
+
                 TextColumn::make('compras_count')
-                    ->label('Compras')
+                    ->label('Registros')
+                    ->description(fn (ReporteFiscal $record): string => $record->tipo === TipoReporteFiscal::Pagos
+                        ? 'abonos'
+                        : 'compras')
                     ->alignEnd(),
 
                 TextColumn::make('fotos_count')
@@ -75,6 +88,11 @@ class ReporteFiscalResource extends Resource
                     ->sortable(),
             ])
             ->defaultSort('periodo', 'desc')
+            ->filters([
+                SelectFilter::make('tipo')
+                    ->label('Tipo')
+                    ->options(TipoReporteFiscal::options()),
+            ])
             ->recordActions([
                 Action::make('descargar')
                     ->label('Descargar PDF')
@@ -83,11 +101,11 @@ class ReporteFiscalResource extends Resource
                     ->visible(fn (ReporteFiscal $record): bool => $record->pdfSano())
                     ->action(fn (ReporteFiscal $record): BinaryFileResponse => response()->download(
                         $record->rutaAbsoluta(),
-                        'reporte-fiscal-'.$record->periodo->format('Y-m').'.pdf',
+                        basename($record->path),
                     )),
             ])
             ->emptyStateHeading('Aún no hay reportes fiscales')
-            ->emptyStateDescription('El día 1 de cada mes se genera solo el del mes anterior — o genera uno ahora con el botón de arriba.');
+            ->emptyStateDescription('El día 1 de cada mes se generan solos los del mes anterior (facturas y pagos) — o genera uno ahora con el botón de arriba.');
     }
 
     public static function getPages(): array

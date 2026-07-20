@@ -8,17 +8,25 @@ use App\Enums\EstadoCuentaPorPagar;
 use App\Exceptions\Compras\AbonoInvalidoException;
 use App\Models\CuentaPorPagar;
 use App\Services\Compras\AbonarService;
+use App\Support\ImageOptimizer;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * Acción "Abonar" sobre una cuenta por pagar. Construye el modal de captura
- * (monto, fecha, método, referencia, notas) y delega en AbonarService, que
- * es la única puerta que mueve el saldo. Se usa igual desde la tabla y desde
- * la página de vista — sin duplicar la lógica del formulario.
+ * (monto, fecha, método, referencia, foto del comprobante, notas) y delega
+ * en AbonarService, que es la única puerta que mueve el saldo. Se usa igual
+ * desde la tabla y desde la página de vista — sin duplicar la lógica.
+ *
+ * Foto del comprobante (decisión Mauricio 2026-07-20): UNA por abono,
+ * convertida a WebP al subirla. Se archiva en el reporte mensual de pagos
+ * y una semana después se libera del servidor (el PDF queda de respaldo).
  */
 final class AccionAbonar
 {
@@ -65,6 +73,21 @@ final class AccionAbonar
                     ->maxLength(100)
                     ->helperText('No. de cheque, transferencia o recibo (opcional).'),
 
+                FileUpload::make('foto_comprobante')
+                    ->label('Foto del comprobante')
+                    ->image()
+                    ->maxSize(10240)
+                    ->disk('public')
+                    ->imagePreviewHeight('160')
+                    ->openable()
+                    ->downloadable()
+                    ->saveUploadedFileUsing(fn (TemporaryUploadedFile $file): string => ImageOptimizer::toWebp(
+                        $file,
+                        'comprobantes/'.now()->format('Y-m'),
+                    ))
+                    ->deleteUploadedFileUsing(fn (string $file) => Storage::disk('public')->delete($file))
+                    ->helperText('La transferencia o depósito que respalda este abono. Se convierte a WebP, se archiva en el reporte mensual de pagos y luego se libera del servidor.'),
+
                 TextInput::make('notas')
                     ->label('Notas')
                     ->maxLength(255),
@@ -72,6 +95,8 @@ final class AccionAbonar
             ->action(function (CuentaPorPagar $record, array $data): void {
                 $userId = auth()->id();
                 $userId = is_numeric($userId) ? (int) $userId : null;
+
+                $foto = $data['foto_comprobante'] ?? null;
 
                 try {
                     app(AbonarService::class)->abonar(
@@ -82,6 +107,7 @@ final class AccionAbonar
                         referencia: $data['referencia'] ?? null,
                         userId: $userId,
                         notas: $data['notas'] ?? null,
+                        fotoComprobante: is_string($foto) && $foto !== '' ? $foto : null,
                     );
                 } catch (AbonoInvalidoException $e) {
                     Notification::make()

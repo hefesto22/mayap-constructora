@@ -26,6 +26,7 @@ class AbonoFactory extends Factory
             'fecha'               => now()->startOfDay(),
             'metodo'              => 'EFECTIVO',
             'referencia'          => null,
+            'foto_comprobante'    => null,
             'user_id'             => null,
             'notas'               => null,
         ];

@@ -53,7 +53,7 @@ test('la acción Abonar no se ofrece en cuentas ya pagadas', function (): void {
         'estado'         => EstadoCuentaPorPagar::Pagada,
     ]);
 
-    Livewire::test(ListCuentasPorPagar::class)
+    Livewire::test(ListCuentasPorPagar::class, ['activeTab' => 'todas'])
         ->assertTableActionHidden('abonar', $cuenta);
 });
 

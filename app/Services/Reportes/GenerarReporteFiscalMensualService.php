@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Reportes;
 
 use App\Enums\EstadoCompra;
+use App\Enums\TipoReporteFiscal;
 use App\Models\Compra;
 use App\Models\ReporteFiscal;
 use Carbon\CarbonInterface;
@@ -24,7 +25,7 @@ use RuntimeException;
  * incrusta comprimidas en el PDF sin depender de rutas del disco.
  *
  * Regenerable: correr dos veces el mismo período reemplaza el PDF y
- * actualiza la MISMA fila (updateOrCreate por periodo).
+ * actualiza la MISMA fila (updateOrCreate por tipo + periodo).
  */
 final class GenerarReporteFiscalMensualService
 {
@@ -55,7 +56,10 @@ final class GenerarReporteFiscalMensualService
         }
 
         $reporte = ReporteFiscal::query()->updateOrCreate(
-            ['periodo' => $periodo->toDateString()],
+            [
+                'tipo'    => TipoReporteFiscal::Facturas,
+                'periodo' => $periodo->toDateString(),
+            ],
             [
                 'path'            => $rutaRelativa,
                 'compras_count'   => $compras->count(),

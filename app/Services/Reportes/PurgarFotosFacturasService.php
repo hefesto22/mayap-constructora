@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\Reportes;
 
+use App\Enums\TipoReporteFiscal;
+use App\Models\Abono;
 use App\Models\Compra;
 use App\Models\ReporteFiscal;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Purga de fotos de facturas — el ahorro de espacio prometido: 7 días
- * después de generado el reporte fiscal mensual (DIAS_COLCHON), borra
- * del disco las fotos QUE QUEDARON DENTRO del PDF y limpia la columna
- * de cada compra. El PDF permanece como archivo permanente.
+ * Purga de fotos archivadas — el ahorro de espacio prometido: 7 días
+ * después de generado el reporte mensual (DIAS_COLCHON), borra del
+ * disco las fotos QUE QUEDARON DENTRO del PDF y limpia la columna del
+ * registro dueño. El PDF permanece como archivo permanente.
+ *
+ * Aplica a ambos tipos de reporte:
+ * - facturas: fotos de facturas → columna `fotos_factura` de compras.
+ * - pagos:    comprobantes de transferencia → `foto_comprobante` de abonos.
  *
  * Salvaguardas:
  *  - JAMÁS purga si el PDF no existe o está vacío (primero regenerar).
@@ -49,11 +55,12 @@ final class PurgarFotosFacturasService
             activity('compras')
                 ->performedOn($reporte)
                 ->withProperties([
+                    'tipo'           => $reporte->tipo->value,
                     'periodo'        => $reporte->periodo->format('Y-m'),
                     'fotos_borradas' => $borradas,
                 ])
                 ->event('fotos_facturas_purgadas')
-                ->log("Fotos del período {$reporte->periodo->format('Y-m')} liberadas del servidor");
+                ->log("Fotos del período {$reporte->periodo->format('Y-m')} ({$reporte->tipo->getLabel()}) liberadas del servidor");
 
             if ($borradas > 0) {
                 $this->notificador->fotosPurgadas($reporte, $borradas);
@@ -67,7 +74,8 @@ final class PurgarFotosFacturasService
 
     /**
      * Borra del disco las fotos archivadas en el PDF y las quita de la
-     * columna de cada compra del período (dejando las posteriores).
+     * columna de su dueño (compras o abonos, según el tipo de reporte),
+     * dejando intactas las subidas después.
      */
     private function borrarFotos(ReporteFiscal $reporte): int
     {
@@ -85,6 +93,22 @@ final class PurgarFotosFacturasService
             }
         }
 
+        match ($reporte->tipo) {
+            TipoReporteFiscal::Facturas => $this->limpiarFotosDeCompras($reporte, $incluidas),
+            TipoReporteFiscal::Pagos    => $this->limpiarFotosDeAbonos($incluidas),
+        };
+
+        return $borradas;
+    }
+
+    /**
+     * Quita las rutas archivadas de la columna de cada compra del
+     * período (dejando las fotos posteriores).
+     *
+     * @param array<int, string> $incluidas
+     */
+    private function limpiarFotosDeCompras(ReporteFiscal $reporte, array $incluidas): void
+    {
         $periodo = $reporte->periodo->toImmutable();
 
         Compra::query()
@@ -101,7 +125,18 @@ final class PurgarFotosFacturasService
                     'fotos_factura' => $restantes === [] ? null : $restantes,
                 ])->save();
             });
+    }
 
-        return $borradas;
+    /**
+     * Limpia el comprobante de los abonos cuya foto quedó archivada
+     * en el PDF (una foto por abono: la ruta identifica al dueño).
+     *
+     * @param array<int, string> $incluidas
+     */
+    private function limpiarFotosDeAbonos(array $incluidas): void
+    {
+        Abono::query()
+            ->whereIn('foto_comprobante', $incluidas)
+            ->update(['foto_comprobante' => null]);
     }
 }

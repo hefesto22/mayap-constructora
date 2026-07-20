@@ -6,13 +6,12 @@ namespace App\Filament\Resources\CuentasPorPagar\Tables;
 
 use App\Enums\EstadoCuentaPorPagar;
 use App\Filament\Resources\CuentasPorPagar\Actions\AccionAbonar;
+use App\Filament\Resources\CuentasPorPagar\Actions\AccionCambiarVencimiento;
 use App\Models\CuentaPorPagar;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 
 class CuentasPorPagarTable
 {
@@ -74,15 +73,13 @@ class CuentasPorPagarTable
                     ->relationship('proveedor', 'nombre')
                     ->searchable()
                     ->preload(),
-                Filter::make('vencidas')
-                    ->label('Solo vencidas con saldo')
-                    ->query(fn (Builder $query): Builder => $query
-                        ->where('saldo', '>', 0)
-                        ->whereDate('fecha_vencimiento', '<', now())),
+                // El filtro "solo vencidas" se retiró: las pestañas
+                // Vencidas / Por vencer (2026-07-20) cubren ese corte.
             ])
             ->recordActions([
                 ViewAction::make(),
                 AccionAbonar::make(),
+                AccionCambiarVencimiento::make(),
             ])
             ->paginated([25, 50, 100]);
     }

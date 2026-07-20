@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\TipoReporteFiscal;
 use Database\Factories\ReporteFiscalFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,17 +12,26 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Reporte fiscal mensual — el PDF permanente con todas las compras del
- * mes y las fotos de sus facturas. Nace del comando diario
- * `compras:ciclo-fiscal-mensual` (o del botón "Generar" en la pantalla
- * de Reportes fiscales) vía GenerarReporteFiscalMensualService.
+ * Reporte mensual de control — el PDF permanente de cada mes. Dos tipos
+ * conviven en la misma tabla (unique por tipo + período):
+ *
+ * - `facturas`: todas las compras del mes con las fotos de sus facturas.
+ * - `pagos`:    todos los abonos a proveedores del mes con las fotos de
+ *               sus comprobantes, y las compras saldadas ese mes.
+ *
+ * Nacen del comando diario `compras:ciclo-fiscal-mensual` (o del botón
+ * "Generar" en la pantalla de Reportes fiscales).
  *
  * El PDF vive en el disco `local` (storage/app, PRIVADO — no es público
  * como las fotos temporales) y se descarga desde el panel con permiso
  * de compras. `fotos_incluidas` son las rutas archivadas dentro del
  * PDF: la única lista que la purga tiene permitido borrar.
  *
+ * `compras_count` cuenta los registros archivados: compras en el tipo
+ * facturas, abonos en el tipo pagos (columna histórica reutilizada).
+ *
  * @property int $id
+ * @property TipoReporteFiscal $tipo
  * @property Carbon $periodo
  * @property string $path
  * @property int $compras_count
@@ -43,6 +53,7 @@ class ReporteFiscal extends Model
 
     /** @var list<string> */
     protected $fillable = [
+        'tipo',
         'periodo',
         'path',
         'compras_count',
@@ -57,6 +68,7 @@ class ReporteFiscal extends Model
     protected function casts(): array
     {
         return [
+            'tipo'              => TipoReporteFiscal::class,
             'periodo'           => 'date',
             'fotos_incluidas'   => 'array',
             'fotos_purgadas_at' => 'datetime',

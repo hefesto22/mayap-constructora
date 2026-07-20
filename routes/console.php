@@ -119,6 +119,15 @@ Schedule::command('cobranza:avisar-vencimientos')
     ->onOneServer()
     ->name('cobranza-avisos-vencimiento');
 
+// ─── Pagos: avisos de vencimiento a proveedores ────────────────────────
+// El espejo de la cobranza, pero de lo que DEBEMOS: campanita a
+// gerencia/recepción con las cuentas por pagar que vencen en 7 días,
+// 3 días, HOY o que ya vencieron impagas (escalones idempotentes).
+Schedule::command('pagos:avisar-vencimientos')
+    ->dailyAt('07:15')
+    ->onOneServer()
+    ->name('pagos-avisos-vencimiento');
+
 // ─── Maquinaria: mantenimiento preventivo ──────────────────────────────
 // Campanita a gerencia/maquinaria con los planes de mantenimiento
 // (aceite, puntas, cuchillas...) PRÓXIMOS (90% del intervalo de horas /
@@ -129,11 +138,21 @@ Schedule::command('maquinaria:avisar-mantenimientos')
     ->onOneServer()
     ->name('maquinaria-avisos-mantenimiento');
 
+// ─── Maquinaria: repuestos por llegar ──────────────────────────────────
+// Campanita a gerencia/maquinaria/recepción cuando la fecha estimada de
+// recepción de repuestos de un mantenimiento en proceso llegó (o pasó).
+// Idempotente: aviso_repuestos_at avisa UNA vez; cambiar la fecha
+// estimada lo reinicia y rearma la campanita.
+Schedule::command('maquinaria:avisar-repuestos')
+    ->dailyAt('07:05')
+    ->onOneServer()
+    ->name('maquinaria-avisos-repuestos');
+
 // ─── Compras: ciclo fiscal mensual ─────────────────────────────────────
-// Diario e idempotente: si el mes anterior aún no tiene reporte fiscal
-// (PDF con todas las compras + fotos de facturas) lo genera y avisa;
-// después purga las fotos de los reportes que ya cumplieron el colchón
-// de 7 días (solo con PDF sano). El PDF queda como archivo permanente.
+// Diario e idempotente: si al mes anterior le falta alguno de sus dos
+// reportes (facturas de compras / pagos a proveedores) lo genera y
+// avisa; después purga las fotos de los reportes que ya cumplieron el
+// colchón de 7 días (solo con PDF sano). Los PDF quedan permanentes.
 Schedule::command('compras:ciclo-fiscal-mensual')
     ->dailyAt('06:30')
     ->onOneServer()

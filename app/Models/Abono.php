@@ -13,12 +13,17 @@ use Illuminate\Support\Carbon;
 /**
  * Abono — pago parcial o total contra una cuenta por pagar.
  *
+ * `foto_comprobante` es la foto del comprobante de la transferencia
+ * (UNA por abono, WebP en el disco public). Es temporal: el reporte
+ * mensual de pagos la archiva en PDF y la purga la libera después.
+ *
  * @property int $id
  * @property int $cuenta_por_pagar_id
  * @property string $monto
  * @property Carbon $fecha
  * @property string|null $metodo
  * @property string|null $referencia
+ * @property string|null $foto_comprobante
  * @property int|null $user_id
  * @property string|null $notas
  * @property Carbon|null $created_at
@@ -39,6 +44,7 @@ class Abono extends Model
         'fecha',
         'metodo',
         'referencia',
+        'foto_comprobante',
         'user_id',
         'notas',
     ];
