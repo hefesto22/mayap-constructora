@@ -24,6 +24,7 @@ use App\Http\Controllers\Reportes\ComposicionProyectoPdfController;
 use App\Http\Controllers\Reportes\CostoObraPdfController;
 use App\Http\Controllers\Reportes\CotizacionRentaImagenController;
 use App\Http\Controllers\Reportes\CotizacionRentaPdfController;
+use App\Http\Controllers\Reportes\ReciboPagoPdfController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -51,4 +52,8 @@ Route::middleware(['auth', 'throttle:pdfs'])
 
         Route::get('proyectos/{proyecto}/cotizacion-renta-imagen', CotizacionRentaImagenController::class)
             ->name('cotizacion-renta-imagen');
+
+        // Recibos de pago de una planilla CERRADA (uno por página).
+        Route::get('planillas/{planilla}/recibos', ReciboPagoPdfController::class)
+            ->name('recibos-planilla');
     });

@@ -8,7 +8,8 @@ use App\Enums\EstadoPlanilla;
 
 /**
  * Se lanza al intentar cerrar o modificar una planilla que no está en
- * borrador, o cerrar una sin líneas.
+ * borrador, cerrar una sin líneas, o cuando las deducciones dejan a un
+ * empleado con neto negativo.
  */
 final class PlanillaNoEditableException extends PlanillaException
 {
@@ -23,5 +24,13 @@ final class PlanillaNoEditableException extends PlanillaException
     public static function sinLineas(string $codigo): self
     {
         return new self("La planilla {$codigo} no tiene líneas; no se puede cerrar.");
+    }
+
+    public static function deduccionesExcedenBruto(string $codigo, string $empleado): self
+    {
+        return new self(
+            "En la planilla {$codigo}, las retenciones y deducciones de {$empleado} ".
+            'superan su pago bruto: el neto quedaría negativo. Revisa los montos.'
+        );
     }
 }

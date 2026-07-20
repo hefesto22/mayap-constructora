@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Periodicidad;
 use App\Enums\TipoPago;
 use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\EmpleadoFactory;
@@ -29,6 +30,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string|null $identidad
  * @property string|null $cargo
  * @property TipoPago $tipo_pago
+ * @property Periodicidad $periodicidad_pago
  * @property string $tarifa_base
  * @property string|null $notas
  * @property bool $activo
@@ -54,6 +56,7 @@ class Empleado extends Model
         'identidad',
         'cargo',
         'tipo_pago',
+        'periodicidad_pago',
         'tarifa_base',
         'notas',
         'activo',
@@ -65,16 +68,17 @@ class Empleado extends Model
     protected function casts(): array
     {
         return [
-            'tipo_pago'   => TipoPago::class,
-            'tarifa_base' => 'decimal:2',
-            'activo'      => 'boolean',
+            'tipo_pago'         => TipoPago::class,
+            'periodicidad_pago' => Periodicidad::class,
+            'tarifa_base'       => 'decimal:2',
+            'activo'            => 'boolean',
         ];
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['codigo', 'nombre', 'identidad', 'cargo', 'tipo_pago', 'tarifa_base', 'activo'])
+            ->logOnly(['codigo', 'nombre', 'identidad', 'cargo', 'tipo_pago', 'periodicidad_pago', 'tarifa_base', 'activo'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => "Empleado {$eventName}");
@@ -152,5 +156,21 @@ class Empleado extends Model
     public function scopeActivos(Builder $query): Builder
     {
         return $query->where('activo', true);
+    }
+
+    /**
+     * Empleados de una frecuencia de pago (la planilla quincenal solo
+     * ofrece quincenales, etc.). Null → sin filtro.
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeDePeriodicidad(Builder $query, ?string $periodicidad): Builder
+    {
+        return $query->when(
+            $periodicidad !== null && $periodicidad !== '',
+            fn (Builder $q): Builder => $q->where('periodicidad_pago', $periodicidad),
+        );
     }
 }

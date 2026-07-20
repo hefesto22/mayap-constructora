@@ -25,6 +25,10 @@ use Illuminate\Support\Carbon;
  * @property string $tarifa_aplicada
  * @property string|null $descripcion
  * @property string $monto_bruto
+ * @property string|null $retencion_porcentaje
+ * @property string $retencion_monto
+ * @property string $deducciones
+ * @property string $monto_neto
  * @property string|null $notas
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -49,6 +53,10 @@ class PlanillaLinea extends Model
         'tarifa_aplicada',
         'descripcion',
         'monto_bruto',
+        'retencion_porcentaje',
+        'retencion_monto',
+        'deducciones',
+        'monto_neto',
         'notas',
     ];
 
@@ -58,10 +66,14 @@ class PlanillaLinea extends Model
     protected function casts(): array
     {
         return [
-            'tipo_pago'       => TipoPago::class,
-            'dias_trabajados' => 'decimal:2',
-            'tarifa_aplicada' => 'decimal:2',
-            'monto_bruto'     => 'decimal:2',
+            'tipo_pago'            => TipoPago::class,
+            'dias_trabajados'      => 'decimal:2',
+            'tarifa_aplicada'      => 'decimal:2',
+            'monto_bruto'          => 'decimal:2',
+            'retencion_porcentaje' => 'decimal:2',
+            'retencion_monto'      => 'decimal:2',
+            'deducciones'          => 'decimal:2',
+            'monto_neto'           => 'decimal:2',
         ];
     }
 

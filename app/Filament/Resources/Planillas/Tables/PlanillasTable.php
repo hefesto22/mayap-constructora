@@ -94,6 +94,16 @@ class PlanillasTable
                             ->success()
                             ->send();
                     }),
+                // Recibos de pago (pedido del cliente 2026-07-20): un PDF
+                // con el recibo de CADA empleado del período, uno por
+                // página, listo para imprimir y firmar. Solo cerradas.
+                Action::make('recibos')
+                    ->label('Recibos')
+                    ->icon('heroicon-o-printer')
+                    ->color('gray')
+                    ->visible(fn (Planilla $record): bool => $record->estado === EstadoPlanilla::Cerrada
+                        && (auth()->user()?->can('View:Planilla') ?? false))
+                    ->url(fn (Planilla $record): string => route('reportes.recibos-planilla', $record), shouldOpenInNewTab: true),
             ])
             ->paginated([25, 50, 100]);
     }

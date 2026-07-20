@@ -13,11 +13,18 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Procesa una planilla: recalcula el monto bruto de cada línea según el tipo
- * de pago del empleado y el total de la planilla, y la cierra.
+ * de pago del empleado, las retenciones y el neto, y el total de la planilla.
  *
- *   - jornal:  monto = días trabajados × tarifa aplicada
- *   - salario: monto = tarifa aplicada (fija del período)
- *   - destajo: monto = el capturado por tarea (no se recalcula)
+ *   - jornal:     bruto = días trabajados × tarifa aplicada
+ *   - salario:    bruto = tarifa aplicada (fija del período)
+ *   - destajo:    bruto = el capturado por tarea (no se recalcula)
+ *   - honorarios: bruto = tarifa aplicada, con RETENCIÓN (12.5% sugerido)
+ *
+ *   neto = bruto − retención − deducciones (adelantos, etc.)
+ *
+ * El COSTO de mano de obra de las obras es el BRUTO (lo que cuesta el
+ * trabajo); la retención es plata que se aparta para el fisco, no un menor
+ * costo. El total_cache de la planilla sigue siendo la suma de brutos.
  *
  * Una planilla cerrada cuenta en el costo de mano de obra de cada obra. El
  * cierre es la puerta que confirma el pago; en borrador no impacta costos.
@@ -32,19 +39,34 @@ final class ProcesarPlanillaService
      */
     public function recalcular(Planilla $planilla): void
     {
-        $planilla->loadMissing('lineas');
+        $planilla->loadMissing('lineas.empleado:id,nombre');
 
         $total = '0';
 
         foreach ($planilla->lineas as $linea) {
-            $monto = $this->montoDeLinea($linea);
+            $bruto = $this->montoDeLinea($linea);
+            $porcentaje = $this->porcentajeRetencion($linea);
+            $retencion = $porcentaje === null
+                ? '0.00'
+                : bcdiv(bcmul($bruto, $porcentaje, 4), '100', self::SCALE);
+            $deducciones = (string) ($linea->deducciones ?? '0');
+            $neto = bcsub(bcsub($bruto, $retencion, self::SCALE), $deducciones, self::SCALE);
 
-            if ($monto !== (string) $linea->monto_bruto) {
-                $linea->monto_bruto = $monto;
-                $linea->save();
+            if (bccomp($neto, '0', self::SCALE) < 0) {
+                throw PlanillaNoEditableException::deduccionesExcedenBruto(
+                    $planilla->codigo,
+                    $linea->empleado->nombre,
+                );
             }
 
-            $total = bcadd($total, $monto, self::SCALE);
+            $linea->forceFill([
+                'monto_bruto'          => $bruto,
+                'retencion_porcentaje' => $porcentaje,
+                'retencion_monto'      => $retencion,
+                'monto_neto'           => $neto,
+            ])->save();
+
+            $total = bcadd($total, $bruto, self::SCALE);
         }
 
         $planilla->total_cache = $total;
@@ -80,10 +102,24 @@ final class ProcesarPlanillaService
     private function montoDeLinea(PlanillaLinea $linea): string
     {
         return match ($linea->tipo_pago) {
-            TipoPago::Jornal  => bcmul((string) ($linea->dias_trabajados ?? '0'), (string) $linea->tarifa_aplicada, self::SCALE),
-            TipoPago::Salario => (string) $linea->tarifa_aplicada,
+            TipoPago::Jornal => bcmul((string) ($linea->dias_trabajados ?? '0'), (string) $linea->tarifa_aplicada, self::SCALE),
+            TipoPago::Salario,
+            TipoPago::Honorarios => (string) $linea->tarifa_aplicada,
             // Destajo: el monto lo captura el usuario por tarea; se respeta.
             TipoPago::Destajo => (string) $linea->monto_bruto,
         };
+    }
+
+    /**
+     * Porcentaje de retención de la línea: el capturado manda; si no hay
+     * y el tipo lo sugiere (honorarios → 12.5%), se aplica el sugerido.
+     */
+    private function porcentajeRetencion(PlanillaLinea $linea): ?string
+    {
+        if ($linea->retencion_porcentaje !== null) {
+            return (string) $linea->retencion_porcentaje;
+        }
+
+        return $linea->tipo_pago->retencionSugerida();
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Empleados\Schemas;
 
+use App\Enums\Periodicidad;
 use App\Enums\TipoPago;
 use App\Models\Empleado;
 use Filament\Forms\Components\Select;
@@ -82,7 +83,20 @@ class EmpleadoForm
                     ->default(TipoPago::Jornal->value)
                     ->required()
                     ->live()
-                    ->native(false),
+                    ->native(false)
+                    ->helperText(fn (Get $get): ?string => $get('tipo_pago') === TipoPago::Honorarios->value
+                        ? 'Profesional por servicios: el recibo le retiene el 12.5% de ISR (editable por línea).'
+                        : null),
+
+                // Decisión Mauricio 2026-07-20: cada empleado tiene SU
+                // frecuencia — la planilla solo ofrece a los suyos.
+                Select::make('periodicidad_pago')
+                    ->label('Frecuencia de pago')
+                    ->options(Periodicidad::options())
+                    ->default(Periodicidad::Quincenal->value)
+                    ->required()
+                    ->native(false)
+                    ->helperText('Este empleado solo aparecerá en planillas de esta frecuencia.'),
 
                 TextInput::make('tarifa_base')
                     ->label(fn (Get $get): string => match ($get('tipo_pago')) {

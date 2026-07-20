@@ -52,9 +52,13 @@ class PlanillaForm
                 Select::make('periodicidad')
                     ->label('Periodicidad')
                     ->options(Periodicidad::options())
-                    ->default(Periodicidad::Semanal->value)
+                    ->default(Periodicidad::Quincenal->value)
                     ->required()
-                    ->native(false),
+                    ->live()
+                    ->native(false)
+                    // Decisión Mauricio 2026-07-20: cada empleado tiene SU
+                    // frecuencia — la planilla solo ofrece a los suyos.
+                    ->helperText('Al agregar personal, solo se ofrecen los empleados de esta frecuencia de pago.'),
 
                 DatePicker::make('fecha_inicio')
                     ->label('Desde')
@@ -78,7 +82,7 @@ class PlanillaForm
             ->icon('heroicon-o-users')
             ->schema([
                 Section::make('Líneas de pago')
-                    ->description('Un renglón por empleado. El monto se calcula al guardar según el tipo de pago.')
+                    ->description('Un renglón por empleado. Monto, retención y neto se calculan al guardar según el tipo de pago.')
                     ->schema([
                         Repeater::make('lineas')
                             ->relationship()
@@ -97,8 +101,11 @@ class PlanillaForm
 
                                 Select::make('empleado_id')
                                     ->label('Empleado')
-                                    ->options(fn (): array => Empleado::query()
+                                    // Solo empleados de la frecuencia de ESTA
+                                    // planilla (quincenal → quincenales...).
+                                    ->options(fn (Get $get): array => Empleado::query()
                                         ->activos()
+                                        ->dePeriodicidad((string) $get('../../periodicidad'))
                                         ->orderBy('nombre')
                                         ->get()
                                         ->mapWithKeys(fn (Empleado $e): array => [
@@ -118,6 +125,7 @@ class PlanillaForm
                                         if ($empleado instanceof Empleado) {
                                             $set('tipo_pago', $empleado->tipo_pago->value);
                                             $set('tarifa_aplicada', (string) $empleado->tarifa_base);
+                                            $set('retencion_porcentaje', $empleado->tipo_pago->retencionSugerida());
                                         }
                                     })
                                     ->columnSpan(2),
@@ -138,7 +146,11 @@ class PlanillaForm
                                     ->visible(fn (Get $get): bool => $get('tipo_pago') === TipoPago::Jornal->value),
 
                                 TextInput::make('tarifa_aplicada')
-                                    ->label(fn (Get $get): string => $get('tipo_pago') === TipoPago::Salario->value ? 'Salario' : 'Tarifa/día')
+                                    ->label(fn (Get $get): string => match ($get('tipo_pago')) {
+                                        TipoPago::Salario->value    => 'Salario',
+                                        TipoPago::Honorarios->value => 'Honorarios del período',
+                                        default                     => 'Tarifa/día',
+                                    })
                                     ->numeric()
                                     ->minValue(0)
                                     ->step('any')
@@ -153,6 +165,27 @@ class PlanillaForm
                                     ->prefix('L.')
                                     ->default(0)
                                     ->visible(fn (Get $get): bool => $get('tipo_pago') === TipoPago::Destajo->value),
+
+                                // Retención (12.5% sugerido en honorarios,
+                                // editable — "una cosa así del 12.5%").
+                                TextInput::make('retencion_porcentaje')
+                                    ->label('Retención %')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->maxValue(100)
+                                    ->step('any')
+                                    ->suffix('%')
+                                    ->visible(fn (Get $get): bool => $get('tipo_pago') === TipoPago::Honorarios->value)
+                                    ->helperText('ISR sobre honorarios. Se resta del neto del recibo.'),
+
+                                TextInput::make('deducciones')
+                                    ->label('Deducciones')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->step('any')
+                                    ->prefix('L.')
+                                    ->default(0)
+                                    ->helperText('Adelantos u otros descuentos; se restan del neto.'),
 
                                 TextInput::make('descripcion')
                                     ->label('Descripción de la tarea')
