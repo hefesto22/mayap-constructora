@@ -230,7 +230,9 @@ class RolesInventarioSeeder extends Seeder
         // View:CapturaDelDia no registra jornadas desde el calendario.
         $encargado->givePermissionTo('View:CalendarioMaquinaria');
 
-        // Captura del día (planilla rápida de partes + combustible).
+        // Registrar jornadas (horas + combustible) DESDE EL CALENDARIO.
+        // El nombre viene de la antigua pantalla "Captura del día",
+        // retirada el 2026-07-20: todo se captura en el calendario.
         Permission::findOrCreate('View:CapturaDelDia', 'web');
         $maquinaria->givePermissionTo('View:CapturaDelDia');
         $gerencia->givePermissionTo('View:CapturaDelDia');

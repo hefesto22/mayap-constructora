@@ -27,8 +27,9 @@ use UnitEnum;
  * El encargado de obra lo ve en SOLO LECTURA y SOLO sus obras (decisión
  * Mauricio 2026-07-15): el filtro de obra se acota aquí y los eventos los
  * acota el widget; sin Create:AgendaMaquina no aparece el botón Agendar
- * ni el drag sobre días, y sin View:CapturaDelDia el click en eventos no
- * abre "Registrar jornada".
+ * ni el drag sobre días, y sin View:CapturaDelDia (permiso que quedó
+ * como "puede registrar jornadas") el click en eventos no abre
+ * "Registrar jornada".
  */
 class CalendarioMaquinaria extends Page
 {

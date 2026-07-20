@@ -11,8 +11,10 @@ use App\Models\ConsumoCombustible;
 use App\Models\ParteTrabajo;
 
 /**
- * Captura del día — el evento real del negocio en UN solo guardado:
+ * Registro de la jornada — el evento real del negocio en UN guardado:
  * "hoy la máquina X trabajó N horas en la obra Y y quemó L litros a P".
+ * Lo invocan las acciones del CALENDARIO (la pantalla "Captura del día"
+ * se retiró el 2026-07-20: el calendario es la única puerta de captura).
  *
  * Orquesta las puertas únicas existentes (RegistrarParteService para horas
  * y RegistrarConsumoCombustibleService para combustible): NO duplica sus
