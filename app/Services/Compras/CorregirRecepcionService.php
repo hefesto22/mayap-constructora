@@ -109,7 +109,7 @@ final readonly class CorregirRecepcionService
                 }
 
                 if (! $linea->verificada()) {
-                    throw CompraNoCorregibleException::lineaSinVerificar($compra->codigo, $linea->material->nombre);
+                    throw CompraNoCorregibleException::lineaSinVerificar($compra->codigo, $linea->nombreLinea());
                 }
 
                 if (! $this->puedeCorregir($corrector, $bloqueada->estado, $compra, $linea)) {
@@ -213,7 +213,7 @@ final readonly class CorregirRecepcionService
                 referencia: $compra,
             );
 
-            if ($linea->material->consumo_inmediato) {
+            if ($linea->material?->consumo_inmediato === true) {
                 $this->inventario->consumoObra(
                     materialId: $linea->material_id,
                     origen: $destino,
@@ -236,7 +236,7 @@ final readonly class CorregirRecepcionService
             // Consumo inmediato: la existencia quedó en cero (se consumió al
             // recibir) — reponer primero para poder retirar el valor, igual
             // que hace la anulación de compras.
-            if ($linea->material->consumo_inmediato) {
+            if ($linea->material?->consumo_inmediato === true) {
                 $this->inventario->ajustePositivo(
                     materialId: $linea->material_id,
                     destino: $destino,

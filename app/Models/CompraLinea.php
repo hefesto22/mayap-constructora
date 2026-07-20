@@ -14,13 +14,19 @@ use Illuminate\Support\Carbon;
  * Línea de una compra — un material con cantidad y costo unitario NETO (el que
  * capitaliza a inventario al confirmar la compra).
  *
+ * LÍNEA LIBRE (decisión Mauricio 2026-07-20): en las compras de taller/
+ * equipo/oficina no hay catálogo — `material_id` queda NULL y `descripcion`
+ * lleva el texto escrito a mano. Las líneas libres NO tocan inventario
+ * (gasto directo). CHECK en DB: material O descripción, al menos uno.
+ *
  * DESTINO POR LÍNEA: `bodega_id` XOR `proyecto_id` (a lo sumo uno, CHECK en
  * DB). Ambos null = la línea hereda el destino de la cabecera. Permite
  * compras mixtas: una factura con líneas a bodega y líneas directo a obra.
  *
  * @property int $id
  * @property int $compra_id
- * @property int $material_id
+ * @property int|null $material_id
+ * @property string|null $descripcion
  * @property int|null $bodega_id
  * @property int|null $proyecto_id
  * @property string $cantidad
@@ -33,7 +39,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Compra $compra
- * @property-read Material $material
+ * @property-read Material|null $material
  */
 class CompraLinea extends Model
 {
@@ -46,6 +52,7 @@ class CompraLinea extends Model
     protected $fillable = [
         'compra_id',
         'material_id',
+        'descripcion',
         'bodega_id',
         'proyecto_id',
         'cantidad',
@@ -98,6 +105,21 @@ class CompraLinea extends Model
     public function cantidadEfectiva(): string
     {
         return (string) ($this->cantidad_recibida ?? $this->cantidad);
+    }
+
+    /**
+     * Nombre para mostrar: el material del catálogo o, en líneas libres,
+     * la descripción escrita a mano. ÚNICA fuente para avisos y PDFs.
+     */
+    public function nombreLinea(): string
+    {
+        $material = $this->material;
+
+        if ($material !== null) {
+            return $material->nombre;
+        }
+
+        return (string) $this->descripcion;
     }
 
     // ─── Relaciones ────────────────────────────────────────────────

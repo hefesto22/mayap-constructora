@@ -23,6 +23,8 @@ use Illuminate\Support\Collection;
  *  - Verificada con DIFERENCIAS → recepción + gerencia (reclamo al
  *    proveedor pendiente).
  *  - Verificada completa (todo cuadró) → recepción (cierre del ciclo).
+ *  - Pedido que debería llegar HOY (compras libres con fecha estimada)
+ *    → recepción + gerencia.
  *
  * El actor nunca se auto-notifica. Best-effort: sin roles sembrados no
  * truena — la compra sigue su curso.
@@ -58,6 +60,49 @@ final class NotificadorCompras
         }
     }
 
+    /**
+     * Pedido LIBRE registrado (taller/equipo/oficina): aquí no hay
+     * bodeguero que cuente bultos — se avisa a la oficina que el pedido
+     * quedó en camino, con su fecha estimada si la hay.
+     */
+    public function pedidoLibreRegistrado(Compra $compra, ?int $actorId = null): void
+    {
+        $compra->loadMissing('lineas', 'proveedor:id,nombre');
+
+        $estimada = $compra->fecha_estimada_llegada;
+
+        $this->enviar(
+            destinatarios: $this->usuariosConRol(Roles::RECEPCION, Roles::GERENCIA),
+            compra: $compra,
+            titulo: 'Pedido registrado — en espera de llegada',
+            detalle: $this->resumenLineas($compra->lineas)
+                .($estimada !== null ? ' — llegada estimada: '.$estimada->format('d/m/Y') : ''),
+            actorId: $actorId,
+        );
+    }
+
+    /**
+     * "El pedido debería estar llegando" — el día de la fecha estimada
+     * (o al detectar que ya pasó sin recibirse).
+     */
+    public function llegadaEstimada(Compra $compra): void
+    {
+        $compra->loadMissing('proveedor:id,nombre');
+
+        $estimada = $compra->fecha_estimada_llegada;
+        $cuando = $estimada !== null && $estimada->isBefore(today())
+            ? 'debería haber llegado el '.$estimada->format('d/m/Y')
+            : 'debería llegar HOY';
+
+        $this->enviar(
+            destinatarios: $this->usuariosConRol(Roles::RECEPCION, Roles::GERENCIA),
+            compra: $compra,
+            titulo: 'Pedido por llegar',
+            detalle: "el pedido {$cuando}. Al recibirlo, usa \"Marcar recibida\".",
+            actorId: null,
+        );
+    }
+
     public function verificadaConDiferencias(Compra $compra, ?int $actorId = null): void
     {
         $this->enviar(
@@ -66,7 +111,7 @@ final class NotificadorCompras
             titulo: 'Recepción con DIFERENCIAS — reclamo al proveedor',
             detalle: $compra->lineas
                 ->filter(fn (CompraLinea $l): bool => $l->tieneDiferencia())
-                ->map(fn (CompraLinea $l): string => "{$l->material->nombre}: facturado {$l->cantidad}, recibido {$l->cantidad_recibida}")
+                ->map(fn (CompraLinea $l): string => "{$l->nombreLinea()}: facturado {$l->cantidad}, recibido {$l->cantidad_recibida}")
                 ->implode(' · '),
             actorId: $actorId,
         );
@@ -117,13 +162,14 @@ final class NotificadorCompras
 
     /**
      * "100 CEMENTO · 3 ARENA · 150 VAR#4" — el reporte de lo esperado.
+     * En líneas libres usa la descripción escrita a mano.
      *
      * @param Collection<int, CompraLinea> $lineas
      */
     private function resumenLineas(Collection $lineas): string
     {
         return $lineas
-            ->map(fn (CompraLinea $l): string => rtrim(rtrim((string) $l->cantidad, '0'), '.').' '.$l->material->nombre)
+            ->map(fn (CompraLinea $l): string => rtrim(rtrim((string) $l->cantidad, '0'), '.').' '.$l->nombreLinea())
             ->implode(' · ');
     }
 

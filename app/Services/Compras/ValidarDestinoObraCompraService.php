@@ -83,7 +83,7 @@ final readonly class ValidarDestinoObraCompraService
                 if ($presupuesto === null || bccomp($presupuesto->presupuestado, '0', 4) <= 0) {
                     throw CompraNoConfirmableException::materialNoPresupuestado(
                         $compra->codigo,
-                        $linea->material->nombre,
+                        $linea->nombreLinea(),
                         $obra->nombre,
                     );
                 }

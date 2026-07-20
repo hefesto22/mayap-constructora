@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Compras\Tables;
 
+use App\Enums\CategoriaCompra;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\TipoDocumentoFiscal;
@@ -14,8 +15,10 @@ use App\Models\CompraLinea;
 use App\Models\User;
 use App\Services\Compras\AnularCompraService;
 use App\Services\Compras\CompletarCompraService;
+use App\Services\Compras\ConfirmarCompraService;
 use App\Services\Compras\CorregirRecepcionService;
 use App\Services\Compras\MarcarPorRecibirService;
+use App\Services\Compras\SincronizarRepuestosMantenimientoService;
 use App\Services\Compras\VerificarRecepcionService;
 use App\Services\Reportes\ActaRecepcionPdfService;
 use App\Support\Cantidad;
@@ -50,6 +53,15 @@ class ComprasTable
                     ->searchable()
                     ->sortable()
                     ->limit(35),
+                // Categoría (2026-07-20): materiales vs compras libres
+                // (taller/equipo/oficina) — separa el control de gastos.
+                TextColumn::make('categoria')
+                    ->label('Categoría')
+                    ->badge()
+                    ->color(fn (CategoriaCompra $state): string => $state->getColor())
+                    ->icon(fn (CategoriaCompra $state): string => $state->getIcon())
+                    ->formatStateUsing(fn (CategoriaCompra $state): string => $state->getLabel())
+                    ->toggleable(),
                 TextColumn::make('bodega.codigo')
                     ->label('Bodega')
                     ->badge()
@@ -94,12 +106,28 @@ class ComprasTable
                     ->label('Fecha')
                     ->date('d/M/Y')
                     ->sortable(),
+                // Pedido en camino: en rojo si la fecha estimada ya pasó
+                // y la compra sigue sin recibirse.
+                TextColumn::make('fecha_estimada_llegada')
+                    ->label('Llega')
+                    ->date('d/M/Y')
+                    ->placeholder('—')
+                    ->color(fn (Compra $record): string => $record->estado === EstadoCompra::PorRecibir
+                        && $record->fecha_estimada_llegada !== null
+                        && $record->fecha_estimada_llegada->isPast()
+                            ? 'danger'
+                            : 'gray')
+                    ->toggleable()
+                    ->sortable(),
             ])
             ->defaultSort('codigo', 'desc')
             ->filters([
                 SelectFilter::make('estado')
                     ->label('Estado')
                     ->options(EstadoCompra::options()),
+                SelectFilter::make('categoria')
+                    ->label('Categoría')
+                    ->options(CategoriaCompra::options()),
                 SelectFilter::make('proveedor_id')
                     ->label('Proveedor')
                     ->relationship('proveedor', 'nombre')
@@ -141,6 +169,56 @@ class ComprasTable
                             ->success()
                             ->send();
                     }),
+                // Compras LIBRES (taller/equipo/oficina): sin conteo por
+                // línea — todo llegó y se confirma de una vez. Cubre las
+                // dos modalidades: mismo día (desde Borrador) y pedido
+                // (desde Por recibir, cuando el pedido llega).
+                Action::make('recibir_libre')
+                    ->label(fn (Compra $record): string => $record->estado === EstadoCompra::PorRecibir
+                        ? 'Marcar recibida'
+                        : 'Confirmar (recibida)')
+                    ->icon('heroicon-o-check-badge')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Confirmar la compra recibida')
+                    ->modalDescription('Todo llegó: la compra queda confirmada (a crédito genera su cuenta por pagar). Las compras libres no mueven inventario.')
+                    ->modalSubmitActionLabel('Confirmar')
+                    ->visible(fn (Compra $record): bool => $record->esLibre()
+                        && in_array($record->estado, [EstadoCompra::Borrador, EstadoCompra::PorRecibir], strict: true)
+                        && ($u = auth()->user()) instanceof User
+                        && Roles::compra($u))
+                    ->action(function (Compra $record): void {
+                        try {
+                            app(ConfirmarCompraService::class)->confirmar($record, self::userId());
+                        } catch (CompraException $e) {
+                            Notification::make()->title('No se pudo confirmar')->body($e->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        // Sella el conteo (todo llegó tal cual) y fija la
+                        // llegada REAL — la de hoy, no la de la factura.
+                        $record->refresh()->loadMissing('lineas');
+
+                        $record->lineas->each(fn (CompraLinea $l) => $l->forceFill([
+                            'cantidad_recibida' => $l->cantidad,
+                            'verificada_at'     => now(),
+                            'verificada_por'    => self::userId(),
+                        ])->save());
+
+                        $record->forceFill(['fecha_recepcion' => today()])->save();
+
+                        // Repuestos amarrados a una reparación: deja la
+                        // llegada anotada en la bitácora del mantenimiento.
+                        app(SincronizarRepuestosMantenimientoService::class)
+                            ->llegadaRegistrada($record, self::userId());
+
+                        Notification::make()
+                            ->title('Compra recibida y confirmada')
+                            ->body('Quedó en el control de gastos; si fue a crédito, la cuenta por pagar ya existe.')
+                            ->success()
+                            ->send();
+                    }),
                 Action::make('verificar_recepcion')
                     ->label('Verificar recepción')
                     ->icon('heroicon-o-clipboard-document-check')
@@ -148,7 +226,10 @@ class ComprasTable
                     ->visible(function (Compra $record): bool {
                         $user = auth()->user();
 
-                        return $record->estado === EstadoCompra::PorRecibir
+                        // Las compras libres no cuentan bultos: usan
+                        // "Marcar recibida".
+                        return ! $record->esLibre()
+                            && $record->estado === EstadoCompra::PorRecibir
                             && $user instanceof User
                             && $user->can(Permisos::VERIFICAR_RECEPCION_COMPRA)
                             && app(VerificarRecepcionService::class)->lineasPendientesPara($user, $record)->isNotEmpty();
@@ -165,7 +246,7 @@ class ComprasTable
                                 ->lineasPendientesPara($user, $record)
                                 ->map(fn (CompraLinea $l): array => [
                                     'linea_id' => $l->id,
-                                    'material' => $l->material->nombre,
+                                    'material' => $l->nombreLinea(),
                                     'esperado' => Cantidad::corta($l->cantidad),
                                     'recibido' => Cantidad::sinCeros((string) $l->cantidad),
                                 ])
@@ -244,7 +325,8 @@ class ComprasTable
                     ->visible(function (Compra $record): bool {
                         $user = auth()->user();
 
-                        return $user instanceof User
+                        return ! $record->esLibre()
+                            && $user instanceof User
                             && app(CorregirRecepcionService::class)->lineasCorregiblesPara($user, $record)->isNotEmpty();
                     })
                     ->modalHeading('Corregir el conteo de la recepción')
@@ -259,7 +341,7 @@ class ComprasTable
                                 ->lineasCorregiblesPara($user, $record)
                                 ->map(fn (CompraLinea $l): array => [
                                     'linea_id' => $l->id,
-                                    'material' => $l->material->nombre,
+                                    'material' => $l->nombreLinea(),
                                     'esperado' => Cantidad::corta($l->cantidad),
                                     'actual'   => Cantidad::corta($l->cantidad_recibida),
                                     'recibido' => Cantidad::sinCeros((string) $l->cantidad_recibida),

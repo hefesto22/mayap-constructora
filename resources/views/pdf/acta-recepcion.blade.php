@@ -108,8 +108,8 @@
                 @endphp
                 <tr @class(['diferencia' => $linea->tieneDiferencia()])>
                     <td>
-                        {{ $linea->material->nombre }}
-                        <div class="meta">{{ $linea->material->codigo }}</div>
+                        {{ $linea->nombreLinea() }}
+                        @if ($linea->material !== null)<div class="meta">{{ $linea->material->codigo }}</div>@endif
                     </td>
                     <td>
                         {{ $linea->proyecto_id !== null

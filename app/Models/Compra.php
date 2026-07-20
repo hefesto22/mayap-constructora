@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\CategoriaCompra;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\TipoDocumentoFiscal;
@@ -29,6 +30,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * inventario (vía RegistrarMovimientoService) que alimentan el promedio
  * ponderado. El avance de estado vive en el Service (ConfirmarCompra).
  *
+ * CATEGORÍAS (decisión Mauricio 2026-07-20): `materiales` es el flujo
+ * original (catálogo + inventario); `taller`, `equipo_construccion` y
+ * `oficina` son compras LIBRES — líneas escritas a mano, gasto directo,
+ * sin inventario. `fecha_estimada_llegada` + `aviso_llegada_at` dan el
+ * seguimiento de pedidos con días de espera; `mantenimiento_id` amarra
+ * una compra de repuestos a la reparación de la máquina.
+ *
  * AUTO-CÓDIGO: COM-{AÑO}-{NUMERO_5}, contador por año (patrón de Proyecto).
  *
  * @property int $id
@@ -36,9 +44,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int $proveedor_id
  * @property int $bodega_id
  * @property EstadoCompra $estado
+ * @property CategoriaCompra $categoria
  * @property CondicionPago $condicion_pago
+ * @property int|null $mantenimiento_id
  * @property Carbon $fecha
  * @property Carbon|null $fecha_recepcion
+ * @property Carbon|null $fecha_estimada_llegada
+ * @property Carbon|null $aviso_llegada_at
  * @property string|null $numero_factura
  * @property TipoDocumentoFiscal|null $tipo_documento_fiscal
  * @property array<int, string>|null $fotos_factura
@@ -56,6 +68,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon|null $deleted_at
  * @property-read Proveedor $proveedor
  * @property-read Bodega $bodega
+ * @property-read MantenimientoMaquina|null $mantenimiento
  */
 class Compra extends Model
 {
@@ -68,6 +81,17 @@ class Compra extends Model
 
     protected $table = 'compras';
 
+    /**
+     * Default en memoria (espejo del default de la DB): una compra recién
+     * instanciada ya es de materiales — los tests y seeders que no pasan
+     * categoría no revientan con null.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'categoria' => 'materiales',
+    ];
+
     /** @var list<string> */
     protected $fillable = [
         'codigo',
@@ -75,10 +99,14 @@ class Compra extends Model
         'bodega_id',
         'proyecto_id',
         'requisicion_id',
+        'mantenimiento_id',
         'estado',
+        'categoria',
         'condicion_pago',
         'fecha',
         'fecha_recepcion',
+        'fecha_estimada_llegada',
+        'aviso_llegada_at',
         'numero_factura',
         'tipo_documento_fiscal',
         'fotos_factura',
@@ -103,28 +131,31 @@ class Compra extends Model
     protected function casts(): array
     {
         return [
-            'estado'                => EstadoCompra::class,
-            'condicion_pago'        => CondicionPago::class,
-            'tipo_documento_fiscal' => TipoDocumentoFiscal::class,
-            'fotos_factura'         => 'array',
-            'fecha'                 => 'date',
-            'fecha_recepcion'       => 'date',
-            'anulada_at'            => 'datetime',
-            'completada_at'         => 'datetime',
-            'aplica_isv'            => 'boolean',
-            'isv_porcentaje'        => 'decimal:2',
-            'costo_envio'           => 'decimal:2',
-            'descuento'             => 'decimal:2',
-            'subtotal_cache'        => 'decimal:2',
-            'isv_cache'             => 'decimal:2',
-            'total_cache'           => 'decimal:2',
+            'estado'                 => EstadoCompra::class,
+            'categoria'              => CategoriaCompra::class,
+            'condicion_pago'         => CondicionPago::class,
+            'tipo_documento_fiscal'  => TipoDocumentoFiscal::class,
+            'fotos_factura'          => 'array',
+            'fecha'                  => 'date',
+            'fecha_recepcion'        => 'date',
+            'fecha_estimada_llegada' => 'date',
+            'aviso_llegada_at'       => 'datetime',
+            'anulada_at'             => 'datetime',
+            'completada_at'          => 'datetime',
+            'aplica_isv'             => 'boolean',
+            'isv_porcentaje'         => 'decimal:2',
+            'costo_envio'            => 'decimal:2',
+            'descuento'              => 'decimal:2',
+            'subtotal_cache'         => 'decimal:2',
+            'isv_cache'              => 'decimal:2',
+            'total_cache'            => 'decimal:2',
         ];
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['codigo', 'proveedor_id', 'bodega_id', 'estado', 'condicion_pago', 'fecha', 'numero_factura', 'tipo_documento_fiscal', 'total_cache'])
+            ->logOnly(['codigo', 'proveedor_id', 'bodega_id', 'estado', 'categoria', 'condicion_pago', 'fecha', 'numero_factura', 'tipo_documento_fiscal', 'total_cache'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => "Compra {$eventName}");
@@ -222,6 +253,26 @@ class Compra extends Model
     public function requisicion(): BelongsTo
     {
         return $this->belongsTo(Requisicion::class);
+    }
+
+    /**
+     * Mantenimiento de máquina al que pertenecen estos repuestos
+     * (vínculo opcional de las compras de taller).
+     *
+     * @return BelongsTo<MantenimientoMaquina, $this>
+     */
+    public function mantenimiento(): BelongsTo
+    {
+        return $this->belongsTo(MantenimientoMaquina::class, 'mantenimiento_id');
+    }
+
+    /**
+     * ¿Compra libre (taller/equipo/oficina)? Sus líneas son texto sin
+     * catálogo y NO tocan inventario.
+     */
+    public function esLibre(): bool
+    {
+        return $this->categoria->esLibre();
     }
 
     /**

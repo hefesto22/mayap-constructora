@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Compras\Schemas;
 
+use App\Enums\CategoriaCompra;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
+use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoProyecto;
 use App\Enums\TipoDocumentoFiscal;
 use App\Filament\Resources\Compras\Actions\AccionFotosFactura;
 use App\Models\Bodega;
 use App\Models\Compra;
 use App\Models\CompraLinea;
+use App\Models\MantenimientoMaquina;
 use App\Models\Material;
 use App\Models\Proveedor;
 use App\Models\Proyecto;
@@ -48,6 +51,7 @@ class CompraForm
                 ->tabs([
                     self::tabDatos(),
                     self::tabLineas(),
+                    self::tabLineasLibres(),
                     self::tabEstado(),
                 ]),
         ]);
@@ -141,6 +145,53 @@ class CompraForm
                     })
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record)),
 
+                // Categoría (decisión Mauricio 2026-07-20): materiales usa
+                // el catálogo e inventario; taller/equipo/oficina son
+                // compras LIBRES — líneas a mano, gasto directo.
+                Select::make('categoria')
+                    ->label('Categoría de la compra')
+                    ->options(CategoriaCompra::options())
+                    ->default(CategoriaCompra::Materiales->value)
+                    ->required()
+                    ->live()
+                    ->native(false)
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    // Al pasar a compra libre, el destino vuelve a bodega
+                    // (las libres no se entregan a obra).
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        if ($state !== CategoriaCompra::Materiales->value) {
+                            $set('destino_tipo', 'bodega');
+                            $set('proyecto_id', null);
+                        }
+                    })
+                    ->helperText('Materiales usa el catálogo y mueve inventario. Taller, equipo y oficina se escriben a mano (sin catálogo) y no tocan inventario.'),
+
+                // Vínculo opcional con la reparación de una máquina: el
+                // gasto queda trazable y la fecha estimada del pedido
+                // alimenta la del mantenimiento (bitácora incluida).
+                Select::make('mantenimiento_id')
+                    ->label('Mantenimiento de máquina (opcional)')
+                    ->options(fn (): array => MantenimientoMaquina::query()
+                        ->where('estado', EstadoMantenimiento::EnProceso)
+                        ->with('maquina:id,nombre')
+                        ->orderByDesc('id')
+                        ->get()
+                        ->mapWithKeys(fn (MantenimientoMaquina $m): array => [$m->id => "{$m->codigo} — {$m->maquina->nombre}"])
+                        ->all())
+                    ->searchable()
+                    ->visible(fn (callable $get): bool => $get('categoria') === CategoriaCompra::Taller->value)
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    ->helperText('Solo reparaciones en proceso. Amarra estos repuestos a la máquina.'),
+
+                // Pedidos con días de espera: ese día suena la campanita
+                // "el pedido debería llegar". Compra del mismo día: vacío.
+                DatePicker::make('fecha_estimada_llegada')
+                    ->label('Fecha estimada de llegada (pedidos)')
+                    ->native(false)
+                    ->visible(fn (callable $get): bool => $get('categoria') !== CategoriaCompra::Materiales->value)
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    ->helperText('Solo pedidos con espera: al Registrar queda "por recibir" y ese día avisa. Si se compró y recogió el mismo día, dejala vacía y usá "Confirmar (recibida)".'),
+
                 Radio::make('destino_tipo')
                     ->label('Entrega en')
                     ->options([
@@ -157,6 +208,9 @@ class CompraForm
                         }
                     })
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    // Las compras libres no eligen destino: no mueven
+                    // inventario — la bodega queda solo como referencia.
+                    ->visible(fn (callable $get): bool => $get('categoria') === CategoriaCompra::Materiales->value)
                     ->columnSpanFull(),
 
                 Select::make('bodega_id')
@@ -175,10 +229,14 @@ class CompraForm
                     })
                     ->searchable()
                     ->preload()
-                    ->visible(fn (callable $get): bool => $get('destino_tipo') !== 'obra')
-                    ->required(fn (callable $get): bool => $get('destino_tipo') !== 'obra')
+                    ->visible(fn (callable $get): bool => $get('destino_tipo') !== 'obra'
+                        || $get('categoria') !== CategoriaCompra::Materiales->value)
+                    ->required(fn (callable $get): bool => $get('destino_tipo') !== 'obra'
+                        || $get('categoria') !== CategoriaCompra::Materiales->value)
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    ->helperText('Bodega donde entra el stock al confirmar.'),
+                    ->helperText(fn (callable $get): string => $get('categoria') === CategoriaCompra::Materiales->value
+                        ? 'Bodega donde entra el stock al confirmar.'
+                        : 'Solo referencia administrativa: las compras libres no mueven inventario.'),
 
                 Select::make('proyecto_id')
                     ->label('Obra destino')
@@ -189,8 +247,10 @@ class CompraForm
                         ->orderBy('nombre'))
                     ->searchable()
                     ->preload()
-                    ->visible(fn (callable $get): bool => $get('destino_tipo') === 'obra')
-                    ->required(fn (callable $get): bool => $get('destino_tipo') === 'obra')
+                    ->visible(fn (callable $get): bool => $get('destino_tipo') === 'obra'
+                        && $get('categoria') === CategoriaCompra::Materiales->value)
+                    ->required(fn (callable $get): bool => $get('destino_tipo') === 'obra'
+                        && $get('categoria') === CategoriaCompra::Materiales->value)
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
                     ->helperText('El costo se imputa a esta obra al precio real de factura, sin pasar por bodega.'),
 
@@ -277,6 +337,7 @@ class CompraForm
     {
         return Tab::make('Materiales comprados')
             ->icon('heroicon-o-cube')
+            ->visible(fn (callable $get): bool => $get('categoria') === CategoriaCompra::Materiales->value)
             ->schema([
                 Repeater::make('lineas')
                     ->relationship()
@@ -422,6 +483,129 @@ class CompraForm
     }
 
     /**
+     * Líneas LIBRES (decisión Mauricio 2026-07-20): repuestos de taller,
+     * equipo y oficina no tienen catálogo — cada línea se escribe a mano
+     * (descripción + cantidad + precio) y es GASTO DIRECTO: nunca genera
+     * movimientos de inventario. Mismo binding a `lineas`; solo uno de
+     * los dos repeaters está visible (y dehidrata) según la categoría.
+     */
+    private static function tabLineasLibres(): Tab
+    {
+        return Tab::make('Detalle de la compra')
+            ->icon('heroicon-o-clipboard-document-list')
+            ->visible(fn (callable $get): bool => $get('categoria') !== CategoriaCompra::Materiales->value)
+            ->schema([
+                Repeater::make('lineas_libres')
+                    ->relationship('lineas')
+                    ->label('Líneas de la factura')
+                    ->addActionLabel('+ Agregar línea')
+                    ->reorderable(false)
+                    ->defaultItems(1)
+                    ->minItems(1)
+                    ->columnSpanFull()
+                    ->cloneable()
+                    ->table([
+                        TableColumn::make('Descripción (a mano)'),
+                        TableColumn::make('Cantidad')->width('110px'),
+                        TableColumn::make('Precio factura')->width('150px'),
+                        TableColumn::make('Costo neto')->width('140px'),
+                        TableColumn::make('Subtotal neto')->width('130px'),
+                        TableColumn::make('Exento')->width('80px'),
+                    ])
+                    ->compact()
+                    ->disabled(function (?Compra $record): bool {
+                        $estado = $record?->getAttribute('estado');
+
+                        return $estado instanceof EstadoCompra && ! $estado->permiteEditar();
+                    })
+                    // Sin catálogo ni destino: material y bodega/obra van
+                    // en NULL — la línea es gasto, no inventario.
+                    ->mutateRelationshipDataBeforeCreateUsing(fn (array $data): array => self::normalizarLineaLibre($data))
+                    ->mutateRelationshipDataBeforeSaveUsing(fn (array $data): array => self::normalizarLineaLibre($data))
+                    ->schema([
+                        TextInput::make('descripcion')
+                            ->hiddenLabel()
+                            ->required()
+                            ->maxLength(255)
+                            ->mayusculas()
+                            ->placeholder('FILTRO DE ACEITE 1R-0750'),
+
+                        TextInput::make('cantidad')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->required()
+                            ->minValue(0.0001)
+                            ->step('any')
+                            ->default(1)
+                            ->live(debounce: 500)
+                            ->afterStateUpdated(fn (Set $set, callable $get) => self::refrescarSubtotal($set, $get)),
+
+                        TextInput::make('precio_con_isv')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->minValue(0)
+                            ->step('any')
+                            ->prefix('L.')
+                            ->placeholder('Tal cual factura')
+                            ->dehydrated(false)
+                            ->live(debounce: 600)
+                            ->afterStateUpdated(fn (Set $set, callable $get) => self::aplicarPrecioFactura($set, $get)),
+
+                        TextInput::make('costo_unitario')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->required()
+                            ->minValue(0)
+                            ->prefix('L.')
+                            ->step('any')
+                            ->live(debounce: 500)
+                            ->afterStateUpdated(fn (Set $set, callable $get) => self::refrescarSubtotal($set, $get)),
+
+                        TextInput::make('subtotal_preview')
+                            ->hiddenLabel()
+                            ->prefix('L.')
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->afterStateHydrated(function (TextInput $component, callable $get): void {
+                                $cantidad = $get('cantidad');
+                                $costo = $get('costo_unitario');
+
+                                if (is_numeric($cantidad) && is_numeric($costo)) {
+                                    $component->state(number_format((float) $cantidad * (float) $costo, 2, '.', ''));
+                                }
+                            }),
+
+                        Toggle::make('exento')
+                            ->hiddenLabel()
+                            ->default(false)
+                            ->live()
+                            ->afterStateUpdated(fn (Set $set, callable $get) => self::aplicarPrecioFactura($set, $get)),
+                    ]),
+
+                Placeholder::make('totales_estimados_libres')
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->content(fn (callable $get): HtmlString => self::resumenEstimado($get, 'lineas_libres')),
+            ]);
+    }
+
+    /**
+     * La línea libre nunca lleva catálogo ni destino propio.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
+    private static function normalizarLineaLibre(array $data): array
+    {
+        $data['material_id'] = null;
+        $data['bodega_id'] = null;
+        $data['proyecto_id'] = null;
+
+        return $data;
+    }
+
+    /**
      * Validación INLINE del presupuesto: al combinar material + obra
      * destino, si la obra NO presupuesta ese material avisa al instante —
      * "se bloqueará al registrar" para quien no tiene el permiso de
@@ -525,9 +709,9 @@ class CompraForm
      * panel no compila clases Tailwind arbitrarias en HtmlStrings (lección
      * de los paneles de Ejecución/Costos).
      */
-    private static function resumenEstimado(callable $get): HtmlString
+    private static function resumenEstimado(callable $get, string $campo = 'lineas'): HtmlString
     {
-        $lineas = $get('lineas');
+        $lineas = $get($campo);
 
         $subtotal = 0.0;
         $gravado = 0.0;

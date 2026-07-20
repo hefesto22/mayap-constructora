@@ -148,6 +148,15 @@ Schedule::command('maquinaria:avisar-repuestos')
     ->onOneServer()
     ->name('maquinaria-avisos-repuestos');
 
+// ─── Compras: pedidos por llegar ───────────────────────────────────────
+// Campanita a recepción/gerencia cuando la fecha estimada de llegada de
+// un pedido "por recibir" se alcanzó (típico: repuestos del taller).
+// Idempotente: aviso_llegada_at avisa UNA vez; cambiar la fecha lo rearma.
+Schedule::command('compras:avisar-llegadas')
+    ->dailyAt('07:20')
+    ->onOneServer()
+    ->name('compras-avisos-llegadas');
+
 // ─── Compras: ciclo fiscal mensual ─────────────────────────────────────
 // Diario e idempotente: si al mes anterior le falta alguno de sus dos
 // reportes (facturas de compras / pagos a proveedores) lo genera y

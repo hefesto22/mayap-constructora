@@ -75,11 +75,11 @@ final readonly class VerificarRecepcionService
                 }
 
                 if ($linea->verificada()) {
-                    throw CompraNoVerificableException::lineaYaVerificada($compra->codigo, $linea->material->nombre);
+                    throw CompraNoVerificableException::lineaYaVerificada($compra->codigo, $linea->nombreLinea());
                 }
 
                 if (! $this->puedeVerificar($verificador, $compra, $linea)) {
-                    throw CompraNoVerificableException::sinAlcance($compra->codigo, $linea->material->nombre);
+                    throw CompraNoVerificableException::sinAlcance($compra->codigo, $linea->nombreLinea());
                 }
 
                 if (! is_numeric($cantidad) || bccomp((string) $cantidad, '0', self::SCALE_CANTIDAD) < 0) {

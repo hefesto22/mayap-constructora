@@ -17,6 +17,11 @@ use Illuminate\Support\Facades\DB;
  * VERIFICA lo recibido (G2). Aquí solo se congelan los totales de captura
  * y suena la campanita con el reporte de lo esperado: al bodeguero su
  * porción, al encargado de obra la suya.
+ *
+ * Compras LIBRES (taller/equipo/oficina, 2026-07-20): registrar = "el
+ * pedido quedó hecho, en espera de llegada". No hay conteo por destinos
+ * ni presupuesto de obra que validar; avisa a la oficina y, si viene
+ * amarrada a un mantenimiento, sincroniza su fecha de repuestos.
  */
 final readonly class MarcarPorRecibirService
 {
@@ -24,6 +29,7 @@ final readonly class MarcarPorRecibirService
         private ConfirmarCompraService $compras,
         private NotificadorCompras $notificador,
         private ValidarDestinoObraCompraService $destinos,
+        private SincronizarRepuestosMantenimientoService $repuestos,
     ) {}
 
     public function registrar(Compra $compra, ?int $userId = null): void
@@ -40,7 +46,10 @@ final readonly class MarcarPorRecibirService
 
         // Destinos a obra: obra viva + material presupuestado (o permiso
         // de comprar fuera de presupuesto). Fail fast, antes de avisar.
-        $this->destinos->validar($compra, $userId !== null ? User::find($userId) : null);
+        // Las compras libres no tienen destinos de obra que validar.
+        if (! $compra->esLibre()) {
+            $this->destinos->validar($compra, $userId !== null ? User::find($userId) : null);
+        }
 
         DB::transaction(function () use ($compra, $userId): void {
             $bloqueada = Compra::query()
@@ -60,7 +69,12 @@ final readonly class MarcarPorRecibirService
             $compra->save();
 
             // Campanita DENTRO de la transacción: rollback = sin avisos.
-            $this->notificador->porRecibir($compra, $userId);
+            if ($compra->esLibre()) {
+                $this->notificador->pedidoLibreRegistrado($compra, $userId);
+                $this->repuestos->pedidoRegistrado($compra, $userId);
+            } else {
+                $this->notificador->porRecibir($compra, $userId);
+            }
         });
     }
 }

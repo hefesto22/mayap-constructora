@@ -128,6 +128,15 @@ final readonly class ConfirmarCompraService
             $compra->lineas->loadMissing('material:id,nombre,consumo_inmediato');
 
             foreach ($compra->lineas as $linea) {
+                // Línea LIBRE (repuestos/equipo/oficina, sin catálogo):
+                // gasto directo — ya sumó al total (y a la CxP), pero NO
+                // toca inventario ni presupuesto de obra.
+                $material = $linea->material;
+
+                if ($material === null) {
+                    continue;
+                }
+
                 $cantidadFacturada = (string) $linea->cantidad;
                 $valorEfectivo = bcadd((string) $linea->subtotal, $ajustes[$linea->id] ?? '0', self::SCALE_INTERNO);
 
@@ -145,10 +154,10 @@ final readonly class ConfirmarCompraService
 
                 // Material de consumo inmediato (agua de pipa): no es
                 // almacenable — comprarlo A BODEGA es un error de captura.
-                if ($linea->material->consumo_inmediato && $destino->esBodega()) {
+                if ($material->consumo_inmediato && $destino->esBodega()) {
                     throw CompraNoConfirmableException::consumoInmediatoABodega(
                         $compra->codigo,
-                        $linea->material->nombre,
+                        $material->nombre,
                     );
                 }
 
@@ -160,7 +169,7 @@ final readonly class ConfirmarCompraService
                 // Entrada de stock real con costo efectivo (flete/descuento
                 // incluidos), al destino de la LÍNEA o al de la cabecera.
                 $this->inventario->entradaCompra(
-                    materialId: $linea->material_id,
+                    materialId: $material->id,
                     destino: $destino,
                     cantidad: $cantidadRecibida,
                     costoUnitario: $costoEfectivo,
@@ -172,9 +181,9 @@ final readonly class ConfirmarCompraService
                 // Consumo automático: el costo ya quedó imputado a la obra
                 // con la entrada; esto da de baja la existencia física para
                 // no acumular "stock fantasma" de un consumible.
-                if ($linea->material->consumo_inmediato) {
+                if ($material->consumo_inmediato) {
                     $this->inventario->consumoObra(
-                        materialId: $linea->material_id,
+                        materialId: $material->id,
                         origen: $destino,
                         cantidad: $cantidadRecibida,
                         motivo: 'Consumo inmediato al recibir (material no almacenable).',
