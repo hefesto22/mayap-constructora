@@ -15,9 +15,9 @@ use Throwable;
 
 /**
  * "Enviar cotización por WhatsApp" — el envío DIRECTO (decisión
- * Mauricio 2026-07-19): el sistema genera la imagen de la cotización
- * y se la manda al cliente vía Evolution API, sin abrir pestañas ni
- * adjuntar a mano.
+ * Mauricio 2026-07-19; desde 2026-07-22 va el PDF formal, no la
+ * imagen): el sistema genera el PDF de la cotización y se lo manda
+ * al cliente vía Evolution API, sin abrir pestañas ni adjuntar a mano.
  *
  * Solo aparece con WHATSAPP_ENABLED=true y el cliente con teléfono;
  * el flujo wa.me sigue disponible como respaldo manual.
@@ -57,7 +57,7 @@ final class AccionEnviarCotizacionWhatsApp
 
                 $numero = EnviarWhatsAppService::normalizarTelefono($cliente->telefono) ?? '—';
 
-                return "Se genera la imagen de {$record->codigo} y se envía al "
+                return "Se genera el PDF de {$record->codigo} y se envía al "
                     ."{$numero} ({$cliente->nombre}) desde el número de la empresa, "
                     .'con el mensaje de cortesía y el total. El envío queda en la bitácora.';
             })
@@ -83,9 +83,9 @@ final class AccionEnviarCotizacionWhatsApp
                 $userId = is_numeric($userId) ? (int) $userId : null;
 
                 try {
-                    $whatsapp->enviarImagen(
+                    $whatsapp->enviarDocumento(
                         telefono: (string) $cliente->telefono,
-                        rutaAbsoluta: $cotizacion->generarImagen($record),
+                        rutaAbsoluta: $cotizacion->generarPdf($record),
                         caption: $cotizacion->mensajeCotizacion($record),
                         userId: $userId,
                     );
@@ -112,7 +112,7 @@ final class AccionEnviarCotizacionWhatsApp
                 Notification::make()
                     ->success()
                     ->title('Cotización enviada')
-                    ->body("Al cliente {$cliente->nombre} le llegó la imagen de {$record->codigo} por WhatsApp.")
+                    ->body("Al cliente {$cliente->nombre} le llegó el PDF de {$record->codigo} por WhatsApp.")
                     ->send();
             });
     }

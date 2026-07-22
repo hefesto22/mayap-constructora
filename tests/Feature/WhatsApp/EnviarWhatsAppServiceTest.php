@@ -96,3 +96,20 @@ test('un teléfono inservible se rechaza antes de tocar la API', function (): vo
 
     Http::assertNothingSent();
 });
+
+test('enviar documento manda el PDF en base64 con su caption', function (): void {
+    Http::fake(['evolution.test/*' => Http::response([], 201)]);
+
+    $ruta = sys_get_temp_dir().'/cotizacion-test.pdf';
+    file_put_contents($ruta, 'PDF-FALSO');
+
+    $this->service->enviarDocumento('9999-8888', $ruta, 'Cotización PROY-2026-00006');
+
+    Http::assertSent(function (Request $request): bool {
+        return $request->url() === 'http://evolution.test/message/sendMedia/mayap'
+            && $request['mediatype'] === 'document'
+            && $request['mimetype'] === 'application/pdf'
+            && $request['media'] === base64_encode('PDF-FALSO')
+            && $request['fileName'] === 'cotizacion-test.pdf';
+    });
+});

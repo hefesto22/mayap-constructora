@@ -81,6 +81,37 @@ final class EnviarWhatsAppService
     }
 
     /**
+     * Envía un DOCUMENTO (la cotización en PDF) con su texto al pie
+     * (decisión Mauricio 2026-07-22: al cliente le llega el PDF formal,
+     * no una imagen).
+     */
+    public function enviarDocumento(string $telefono, string $rutaAbsoluta, string $caption, ?int $userId = null): void
+    {
+        $numero = self::normalizarTelefono($telefono);
+
+        if ($numero === null) {
+            throw WhatsAppException::sinTelefono($telefono);
+        }
+
+        $contenido = @file_get_contents($rutaAbsoluta);
+
+        if ($contenido === false) {
+            throw new RuntimeException("No se pudo leer el documento a enviar: {$rutaAbsoluta}");
+        }
+
+        $this->post('/message/sendMedia/', [
+            'number'    => $numero,
+            'mediatype' => 'document',
+            'mimetype'  => 'application/pdf',
+            'fileName'  => basename($rutaAbsoluta),
+            'media'     => base64_encode($contenido),
+            'caption'   => $caption,
+        ]);
+
+        $this->bitacora('documento', $numero, $caption, $userId);
+    }
+
+    /**
      * Teléfono → formato internacional de WhatsApp. Se limpia a
      * dígitos; 8 dígitos = número hondureño → se antepone 504.
      * Null si no hay nada usable.

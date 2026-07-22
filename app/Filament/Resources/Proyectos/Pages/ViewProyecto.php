@@ -41,15 +41,9 @@ class ViewProyecto extends ViewRecord
                     ruta: 'reportes.cotizacion-renta',
                 ),
 
-                Action::make('cotizacion_imagen')
-                    ->label('Descargar imagen (WhatsApp)')
-                    ->icon('heroicon-o-photo')
-                    ->visible(fn (): bool => auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false)
-                    ->url(fn (): string => route('reportes.cotizacion-renta-imagen', $this->getRecord())),
-
                 // Respaldo manual: abre el chat con mensaje prellenado y se
-                // adjunta la imagen descargada (WhatsApp no permite adjuntar
-                // automático por enlace).
+                // adjunta el PDF descargado desde "Ver PDF" (WhatsApp no
+                // permite adjuntar automático por enlace).
                 Action::make('whatsapp_cliente')
                     ->label('Abrir chat del cliente')
                     ->icon('heroicon-o-chat-bubble-left-right')
