@@ -14,9 +14,10 @@ use Filament\Support\Contracts\HasLabel;
  *
  *   Revisión/diagnóstico → Sin repuestos → Compra de repuestos → Reparación
  *
- * El orden es el camino típico pero NO es obligatorio: un taller puede
- * saltar de diagnóstico directo a reparación si había repuestos. La fase
- * "Finalizado" no existe aquí — la cubre EstadoMantenimiento.
+ * Las fases solo AVANZAN (decisión Mauricio 2026-07-22): un taller puede
+ * saltar de diagnóstico directo a reparación si había repuestos, pero no
+ * regresar — la historia no se reescribe, para eso está la bitácora. La
+ * fase "Finalizado" no existe aquí — la cubre EstadoMantenimiento.
  *
  * Cada cambio de fase deja constancia en la bitácora del mantenimiento
  * (fecha, hora, quién y detalle).
@@ -65,6 +66,33 @@ enum FaseMantenimiento: string implements HasColor, HasIcon, HasLabel
     public function esperaRepuestos(): bool
     {
         return $this === self::SinRepuestos || $this === self::CompraRepuestos;
+    }
+
+    /**
+     * La posición en el camino de la reparación: las fases solo avanzan.
+     */
+    public function orden(): int
+    {
+        return match ($this) {
+            self::Diagnostico     => 0,
+            self::SinRepuestos    => 1,
+            self::CompraRepuestos => 2,
+            self::Reparacion      => 3,
+        };
+    }
+
+    /**
+     * Las opciones válidas DESDE una fase: la actual y las que siguen
+     * (quedarse es válido; regresar no).
+     *
+     * @return array<string, string>
+     */
+    public static function opcionesDesde(self $actual): array
+    {
+        return collect(self::cases())
+            ->filter(static fn (self $caso): bool => $caso->orden() >= $actual->orden())
+            ->mapWithKeys(static fn (self $caso): array => [$caso->value => $caso->getLabel()])
+            ->all();
     }
 
     /**

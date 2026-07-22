@@ -18,8 +18,10 @@ use App\Models\Maquina;
  *  - SIN sustituta: se cancelan todos y se reporta el detalle, para
  *    reagendar cuando salga del taller (o gestionar un alquiler).
  *
- * Incluye el agendado del MISMO día de la avería: si alcanzó a trabajar
- * horas, esa realidad ya vive en el parte (verde) — el plan azul sobra.
+ * Incluye el agendado del MISMO día de la avería SOLO si nadie confirmó
+ * la llegada: un agendado con llegada confirmada es un HECHO, no un plan
+ * — se queda como constancia (su ciclo se cierra con la salida/avería y
+ * las horas reales viven en el parte).
  */
 final class ReagendarPorMantenimientoService
 {
@@ -32,6 +34,8 @@ final class ReagendarPorMantenimientoService
             ->with('proyecto:id,nombre')
             ->where('maquina_id', $maquina->id)
             ->whereDate('fecha', '>=', $desdeFecha)
+            // La llegada confirmada es historia, no agenda: no se toca.
+            ->whereNull('llegada_confirmada_at')
             ->orderBy('fecha')
             ->lockForUpdate()
             ->get();

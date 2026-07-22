@@ -19,6 +19,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -61,116 +62,128 @@ class AgendaMaquinaResource extends Resource
     public static function camposAgendar(): array
     {
         return [
-            Select::make('maquina_ids')
-                ->label('Máquinas')
-                ->multiple()
-                // Reactivo a las fechas: las máquinas en taller durante el
-                // rango aparecen DESHABILITADAS con la razón en el label —
-                // el conflicto se ve antes de agendar, no en la notificación.
-                // Las que ya tienen compromisos en el rango lo MUESTRAN
-                // ("ese día 08:00–16:00 en X") pero siguen seleccionables:
-                // pueden caber en otro horario del mismo día.
-                ->options(function (Get $get): array {
-                    $bloqueos = self::bloqueosPorMantenimiento($get('fechas'));
-                    $compromisos = self::compromisosPorAgenda($get('fechas'));
-
-                    return Maquina::query()
-                        ->whereNot('estado', EstadoMaquina::Baja)
-                        ->orderBy('nombre')
-                        ->get(['id', 'nombre'])
-                        ->mapWithKeys(fn (Maquina $maquina): array => [
-                            $maquina->id => match (true) {
-                                isset($bloqueos[$maquina->id])    => "{$maquina->nombre} — {$bloqueos[$maquina->id]}",
-                                isset($compromisos[$maquina->id]) => "{$maquina->nombre} — {$compromisos[$maquina->id]}",
-                                default                           => $maquina->nombre,
-                            },
-                        ])
-                        ->all();
-                })
-                ->disableOptionWhen(fn (mixed $value, Get $get): bool => array_key_exists(
-                    (int) $value,
-                    self::bloqueosPorMantenimiento($get('fechas')),
-                ))
-                ->searchable()
-                ->preload()
-                ->required()
-                ->live()
-                ->prefixIcon('heroicon-o-truck')
-                ->helperText('Selecciona una o varias — todas van a la misma obra. Las que están en taller aparecen deshabilitadas; las que ya tienen compromisos lo muestran junto al nombre.')
-                ->columnSpanFull(),
-
-            Select::make('proyecto_id')
-                ->label('Obra destino')
-                // Con UNA máquina y UN día elegidos: la obra donde ya está
-                // agendada ese día se deshabilita (misma máquina + misma
-                // obra + mismo día está prohibido — unique + service). Con
-                // varias máquinas no se puede deshabilitar (unas la tienen,
-                // otras no): ahí protege el service al guardar.
-                ->options(function (Get $get): array {
-                    $ocupadas = self::obrasYaAgendadas($get('fechas'), (array) $get('maquina_ids'));
-
-                    return Proyecto::query()
-                        ->whereIn('estado', [EstadoProyecto::EnEjecucion->value, EstadoProyecto::Pausada->value])
-                        ->orderBy('nombre')
-                        ->get(['id', 'nombre'])
-                        ->mapWithKeys(fn (Proyecto $proyecto): array => [
-                            $proyecto->id => isset($ocupadas[$proyecto->id])
-                                ? "{$proyecto->nombre} — {$ocupadas[$proyecto->id]['detalle']}"
-                                : $proyecto->nombre,
-                        ])
-                        ->all();
-                })
-                ->disableOptionWhen(function (mixed $value, Get $get): bool {
-                    $ocupadas = self::obrasYaAgendadas($get('fechas'), (array) $get('maquina_ids'));
-
-                    return (bool) ($ocupadas[(int) $value]['bloquear'] ?? false);
-                })
-                ->searchable()
-                ->preload()
-                ->required()
-                ->prefixIcon('heroicon-o-map-pin')
-                ->columnSpanFull(),
-
-            RangoFechas::make('fechas')
-                ->label('Fechas')
-                ->required()
-                ->rule('array')
-                ->live()
-                // Si el rango nuevo mete a una máquina ya seleccionada en
-                // su mantenimiento, se quita sola de la selección.
-                ->afterStateUpdated(function (mixed $state, Get $get, Set $set): void {
-                    $bloqueadas = array_keys(self::bloqueosPorMantenimiento($state));
-                    $seleccion = array_map(intval(...), (array) $get('maquina_ids'));
-
-                    $set('maquina_ids', array_values(array_diff($seleccion, $bloqueadas)));
-                })
-                ->columnSpanFull(),
-
-            Grid::make(2)
+            Fieldset::make('Máquinas y obra')
+                ->columns(1)
+                ->columnSpanFull()
                 ->schema([
-                    // Hora de LLEGADA a la obra: es la hora del aviso
-                    // "confirma la llegada". En 12 horas (AM/PM) — en la
-                    // constructora nadie habla en formato de 24. Las horas
-                    // trabajadas las dirá la jornada — aquí no se estima.
-                    Select::make('hora_entrada')
-                        ->label('Hora de llegada')
-                        ->options(self::opcionesHoraLlegada())
+                    Select::make('maquina_ids')
+                        ->label('Máquinas')
+                        ->multiple()
+                        ->placeholder('Elige las máquinas')
+                        // Reactivo a las fechas: las máquinas en taller durante el
+                        // rango aparecen DESHABILITADAS con la razón en el label —
+                        // el conflicto se ve antes de agendar, no en la notificación.
+                        // Las que ya tienen compromisos en el rango lo MUESTRAN
+                        // ("ese día 08:00–16:00 en X") pero siguen seleccionables:
+                        // pueden caber en otro horario del mismo día.
+                        ->options(function (Get $get): array {
+                            $bloqueos = self::bloqueosPorMantenimiento($get('fechas'));
+                            $compromisos = self::compromisosPorAgenda($get('fechas'));
+
+                            return Maquina::query()
+                                ->whereNot('estado', EstadoMaquina::Baja)
+                                ->orderBy('nombre')
+                                ->get(['id', 'nombre'])
+                                ->mapWithKeys(fn (Maquina $maquina): array => [
+                                    $maquina->id => match (true) {
+                                        isset($bloqueos[$maquina->id])    => "{$maquina->nombre} — {$bloqueos[$maquina->id]}",
+                                        isset($compromisos[$maquina->id]) => "{$maquina->nombre} — {$compromisos[$maquina->id]}",
+                                        default                           => $maquina->nombre,
+                                    },
+                                ])
+                                ->all();
+                        })
+                        ->disableOptionWhen(fn (mixed $value, Get $get): bool => array_key_exists(
+                            (int) $value,
+                            self::bloqueosPorMantenimiento($get('fechas')),
+                        ))
                         ->searchable()
-                        ->prefixIcon('heroicon-o-clock')
+                        ->preload()
                         ->required()
-                        ->helperText('A esta hora llegará el aviso de "confirma la llegada".'),
+                        ->live()
+                        ->prefixIcon('heroicon-o-truck')
+                        ->helperText('Todas van a la misma obra. Las que están en taller salen deshabilitadas; las que ya tienen compromisos lo muestran junto al nombre.')
+                        ->columnSpanFull(),
 
-                    Toggle::make('excluir_domingos')
-                        ->label('Excluir domingos')
-                        ->default(true)
-                        ->inline(false)
-                        ->visible(function (Get $get): bool {
-                            $fechas = $get('fechas');
+                    Select::make('proyecto_id')
+                        ->label('Obra destino')
+                        ->placeholder('Elige la obra')
+                        // Con UNA máquina y UN día elegidos: la obra donde ya está
+                        // agendada ese día se deshabilita (misma máquina + misma
+                        // obra + mismo día está prohibido — unique + service). Con
+                        // varias máquinas no se puede deshabilitar (unas la tienen,
+                        // otras no): ahí protege el service al guardar.
+                        ->options(function (Get $get): array {
+                            $ocupadas = self::obrasYaAgendadas($get('fechas'), (array) $get('maquina_ids'));
 
-                            return is_array($fechas) && count($fechas) >= 2 && $fechas[0] !== $fechas[1];
-                        }),
-                ])
-                ->columnSpanFull(),
+                            return Proyecto::query()
+                                ->whereIn('estado', [EstadoProyecto::EnEjecucion->value, EstadoProyecto::Pausada->value])
+                                ->orderBy('nombre')
+                                ->get(['id', 'nombre'])
+                                ->mapWithKeys(fn (Proyecto $proyecto): array => [
+                                    $proyecto->id => isset($ocupadas[$proyecto->id])
+                                        ? "{$proyecto->nombre} — {$ocupadas[$proyecto->id]['detalle']}"
+                                        : $proyecto->nombre,
+                                ])
+                                ->all();
+                        })
+                        ->disableOptionWhen(function (mixed $value, Get $get): bool {
+                            $ocupadas = self::obrasYaAgendadas($get('fechas'), (array) $get('maquina_ids'));
+
+                            return (bool) ($ocupadas[(int) $value]['bloquear'] ?? false);
+                        })
+                        ->searchable()
+                        ->preload()
+                        ->required()
+                        ->prefixIcon('heroicon-o-map-pin')
+                        ->columnSpanFull(),
+                ]),
+
+            Fieldset::make('Días y hora de llegada')
+                ->columns(1)
+                ->columnSpanFull()
+                ->schema([
+                    RangoFechas::make('fechas')
+                        ->label('Fechas')
+                        ->required()
+                        ->rule('array')
+                        ->live()
+                        // Si el rango nuevo mete a una máquina ya seleccionada en
+                        // su mantenimiento, se quita sola de la selección.
+                        ->afterStateUpdated(function (mixed $state, Get $get, Set $set): void {
+                            $bloqueadas = array_keys(self::bloqueosPorMantenimiento($state));
+                            $seleccion = array_map(intval(...), (array) $get('maquina_ids'));
+
+                            $set('maquina_ids', array_values(array_diff($seleccion, $bloqueadas)));
+                        })
+                        ->columnSpanFull(),
+
+                    Grid::make(2)
+                        ->schema([
+                            // Hora de LLEGADA a la obra: es la hora del aviso
+                            // "confirma la llegada". En 12 horas (AM/PM) — en la
+                            // constructora nadie habla en formato de 24. Las horas
+                            // trabajadas las dirá la jornada — aquí no se estima.
+                            Select::make('hora_entrada')
+                                ->label('Hora de llegada')
+                                ->options(self::opcionesHoraLlegada())
+                                ->searchable()
+                                ->prefixIcon('heroicon-o-clock')
+                                ->required()
+                                ->helperText('A esta hora llegará el aviso de "confirma la llegada".'),
+
+                            Toggle::make('excluir_domingos')
+                                ->label('Excluir domingos')
+                                ->default(true)
+                                ->inline(false)
+                                ->visible(function (Get $get): bool {
+                                    $fechas = $get('fechas');
+
+                                    return is_array($fechas) && count($fechas) >= 2 && $fechas[0] !== $fechas[1];
+                                }),
+                        ])
+                        ->columnSpanFull(),
+                ]),
 
             Textarea::make('notas')
                 ->label('Notas')

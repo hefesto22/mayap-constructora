@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Enums\DestinoAgendaFutura;
 use App\Enums\EstadoAsignacion;
 use App\Enums\EstadoMaquina;
 use App\Exceptions\Maquinaria\MaquinariaException;
@@ -242,16 +243,26 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             ? round($agendado->llegada_confirmada_at->diffInMinutes($hasta) / 30) / 2
             : 0.0;
 
+        // Para el aviso de avería: cuántos agendados PLAN (sin llegada
+        // confirmada) resolvería un mantenimiento desde ese día.
+        $agendadosFuturos = AgendaMaquina::query()
+            ->where('maquina_id', $agendado->maquina_id)
+            ->whereDate('fecha', '>=', $agendado->fecha->toDateString())
+            ->whereNull('llegada_confirmada_at')
+            ->count();
+
         return [
-            'agenda_id'       => $agendado->id,
-            'etiqueta'        => "{$agendado->maquina->nombre} → {$agendado->proyecto->nombre}",
-            'fecha'           => $agendado->fecha->toDateString(),
-            'llego'           => $agendado->llegada_confirmada_at?->format('g:i A'),
-            'salio'           => $agendado->salida_confirmada_at?->format('g:i A'),
-            'asignacion_id'   => $asignacionId,
-            'jornada_maquina' => $maquinaDatos?->jornada_horas !== null ? (string) $maquinaDatos->jornada_horas : null,
-            'tarifa_maquina'  => $maquinaDatos?->tarifa_hora !== null ? (string) $maquinaDatos->tarifa_hora : null,
-            'horas_sugeridas' => $horasSugeridas > 0 ? number_format($horasSugeridas, 1, '.', '') : null,
+            'agenda_id'         => $agendado->id,
+            'maquina_id'        => $agendado->maquina_id,
+            'agendados_futuros' => $agendadosFuturos,
+            'etiqueta'          => "{$agendado->maquina->nombre} → {$agendado->proyecto->nombre}",
+            'fecha'             => $agendado->fecha->toDateString(),
+            'llego'             => $agendado->llegada_confirmada_at?->format('g:i A'),
+            'salio'             => $agendado->salida_confirmada_at?->format('g:i A'),
+            'asignacion_id'     => $asignacionId,
+            'jornada_maquina'   => $maquinaDatos?->jornada_horas !== null ? (string) $maquinaDatos->jornada_horas : null,
+            'tarifa_maquina'    => $maquinaDatos?->tarifa_hora !== null ? (string) $maquinaDatos->tarifa_hora : null,
+            'horas_sugeridas'   => $horasSugeridas > 0 ? number_format($horasSugeridas, 1, '.', '') : null,
         ];
     }
 
@@ -267,6 +278,19 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             ->modalHeading('¿La máquina ya terminó aquí?')
             ->modalWidth('lg')
             ->modalSubmitActionLabel('Sí, ya terminó')
+            // El tercer camino del ciclo (decisión Mauricio 2026-07-22):
+            // la máquina no terminó — SE AVERIÓ. La salida se confirma
+            // igual (averiada o no, dejó la obra) y el modal de jornada
+            // abre con la avería ya encendida.
+            ->extraModalFooterActions(fn (array $arguments): array => [
+                Action::make('confirmarSalidaAveria')
+                    ->label('No terminó: se averió')
+                    ->color('danger')
+                    ->arguments($arguments)
+                    ->action(function (array $arguments): void {
+                        $this->confirmarSalidaYEncadenar($arguments, averia: true);
+                    }),
+            ])
             ->schema([
                 Placeholder::make('resumen')
                     ->hiddenLabel()
@@ -276,6 +300,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                         .'<br><span style="color:#6b7280;font-size:.85rem">'.e(Carbon::parse((string) $get('fecha'))->format('d/m/Y'))
                         .' · llegó '.e((string) $get('llego')).'</span>'
                         .'<br><span style="color:#6b7280;font-size:.85rem">Al confirmar, la máquina queda libre, se avisa a maquinaria y podrás registrar la jornada (horas y combustible).</span>'
+                        .'<br><span style="color:#6b7280;font-size:.85rem">¿Se averió y por eso ya no sigue? Usa el botón rojo "No terminó: se averió" — la salida se confirma igual y la avería se reporta junto con la jornada.</span>'
                         .'</div>'
                     )),
 
@@ -291,40 +316,59 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 'llego'     => $arguments['llego'] ?? '',
             ])
             ->action(function (array $data): void {
-                $agendado = AgendaMaquina::find((int) ($data['agenda_id'] ?? 0));
-                $user = auth()->user();
-
-                if ($agendado === null || ! $user instanceof User) {
-                    return;
-                }
-
-                try {
-                    $cerrado = app(ConfirmarLlegadaService::class)->confirmarSalida($agendado, $user);
-                } catch (MaquinariaException $e) {
-                    Notification::make()
-                        ->title('No se pudo confirmar la salida')
-                        ->body($e->getMessage())
-                        ->danger()
-                        ->send();
-
-                    return;
-                }
-
-                Notification::make()
-                    ->title('Salida confirmada — máquina libre')
-                    ->body(
-                        "{$cerrado->maquina->nombre} terminó en {$cerrado->proyecto->nombre} a las "
-                        .$cerrado->salida_confirmada_at?->format('g:i A')
-                        .'. Maquinaria ya recibió el aviso. Ahora registra la jornada.'
-                    )
-                    ->success()
-                    ->send();
-
-                $this->refreshRecords();
-
-                // PASO 2: el modal de jornada se abre solo.
-                $this->replaceMountedAction('registrarJornadaSalida', $this->argsRegistrarJornada($cerrado));
+                $this->confirmarSalidaYEncadenar($data, averia: false);
             });
+    }
+
+    /**
+     * Cierra la salida y encadena "Registrar jornada". Con $averia (el
+     * botón rojo "No terminó: se averió"), la salida se confirma IGUAL
+     * — averiada o no, la máquina dejó la obra — y el modal de jornada
+     * abre con "¿Se averió la máquina?" ya encendido.
+     *
+     * @param array<string, mixed> $datos
+     */
+    private function confirmarSalidaYEncadenar(array $datos, bool $averia): void
+    {
+        $agendado = AgendaMaquina::find((int) ($datos['agenda_id'] ?? 0));
+        $user = auth()->user();
+
+        if ($agendado === null || ! $user instanceof User) {
+            return;
+        }
+
+        try {
+            $cerrado = app(ConfirmarLlegadaService::class)->confirmarSalida($agendado, $user);
+        } catch (MaquinariaException $e) {
+            Notification::make()
+                ->title('No se pudo confirmar la salida')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title($averia ? 'Salida confirmada — ahora reporta la avería' : 'Salida confirmada — máquina libre')
+            ->body(
+                "{$cerrado->maquina->nombre} terminó en {$cerrado->proyecto->nombre} a las "
+                .$cerrado->salida_confirmada_at?->format('g:i A')
+                .($averia
+                    ? '. Registra las horas que alcanzó a trabajar y qué se averió.'
+                    : '. Maquinaria ya recibió el aviso. Ahora registra la jornada.')
+            )
+            ->success()
+            ->send();
+
+        $this->refreshRecords();
+
+        // PASO 2: el modal de jornada se abre solo (con la avería ya
+        // encendida si la salida fue por el botón rojo).
+        $this->replaceMountedAction('registrarJornadaSalida', [
+            ...$this->argsRegistrarJornada($cerrado),
+            'reportar_averia' => $averia,
+        ]);
     }
 
     /**
@@ -335,6 +379,13 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
      * libera al guardar — todo queda en la bitácora de la máquina y en
      * el historial del proyecto. "Ahora no" deja la salida confirmada;
      * el evento gris del calendario vuelve a ofrecer la jornada.
+     *
+     * ¿Y si no terminó porque SE AVERIÓ? (decisión Mauricio 2026-07-22):
+     * aquí mismo se reporta — con avería, las horas hasta la falla son
+     * OBLIGATORIAS (el costo del día cierra en el momento), y al guardar
+     * la máquina se va a mantenimiento con sustituta opcional. La
+     * asignación automática NO se libera en ese caso: la corta el
+     * MantenimientoService, y así la sustituta hereda la obra.
      */
     public function registrarJornadaSalidaAction(): Action
     {
@@ -362,6 +413,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                     )),
 
                 Hidden::make('agenda_id'),
+                Hidden::make('maquina_id'),
                 Hidden::make('etiqueta'),
                 Hidden::make('fecha'),
                 Hidden::make('llego'),
@@ -369,6 +421,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 Hidden::make('asignacion_id'),
                 Hidden::make('jornada_maquina'),
                 Hidden::make('tarifa_maquina'),
+                Hidden::make('agendados_futuros'),
 
                 Fieldset::make('Jornada del día')
                     ->schema([
@@ -380,7 +433,13 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                             ->suffix('h')
                             ->prefixIcon('heroicon-o-clock')
                             ->helperText('Sugerido: el tiempo que estuvo en la obra. Ajústalo a lo real.')
-                            ->live(debounce: 400),
+                            ->live(debounce: 400)
+                            // Con avería, el costo del día cierra AHORA:
+                            // las horas hasta la falla son obligatorias.
+                            ->required(fn (Get $get): bool => (bool) $get('reportar_averia'))
+                            ->validationMessages([
+                                'required' => 'Registra las horas que alcanzó a trabajar antes de la avería (0 si no arrancó).',
+                            ]),
 
                         TextInput::make('motivo_extra')
                             ->label('Motivo de horas extra')
@@ -415,21 +474,76 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
+
+                // ¿No terminó porque se averió? El mismo bloque que el
+                // modal de asignaciones: motivo, sustituta opcional y
+                // aviso de la agenda futura que se resolverá.
+                Fieldset::make('Avería')
+                    ->schema([
+                        Toggle::make('reportar_averia')
+                            ->label('¿Se averió la máquina?')
+                            ->live()
+                            ->inline(false),
+
+                        Textarea::make('averia_motivo')
+                            ->label('¿Qué se averió?')
+                            ->rows(2)
+                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia'))
+                            ->requiredIf('reportar_averia', true)
+                            ->helperText('La máquina pasa a mantenimiento y se avisa a maquinaria y gerencia.')
+                            ->columnSpanFull(),
+
+                        // La emergencia la decide quien reporta (decisión
+                        // Mauricio 2026-07-22): cancelar, sustituta, o
+                        // dejar la agenda EN PIE (reparación hoy / renta
+                        // externa). El service aplica lo elegido.
+                        Radio::make('destino_agenda')
+                            ->label('¿Qué hacemos con los días agendados que siguen?')
+                            ->options(DestinoAgendaFutura::options())
+                            ->descriptions(DestinoAgendaFutura::descripciones())
+                            ->default(DestinoAgendaFutura::Cancelar->value)
+                            ->live()
+                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia') && (int) $get('agendados_futuros') > 0)
+                            ->columnSpanFull(),
+
+                        Select::make('sustituta_id')
+                            ->label('Máquina sustituta')
+                            ->options(fn (Get $get) => Maquina::query()
+                                ->where('estado', EstadoMaquina::Disponible->value)
+                                ->whereKeyNot((int) $get('maquina_id'))
+                                ->orderBy('nombre')
+                                ->pluck('nombre', 'id'))
+                            ->searchable()
+                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia')
+                                && ((int) $get('agendados_futuros') === 0
+                                    || $get('destino_agenda') === DestinoAgendaFutura::Sustituta->value))
+                            ->required(fn (Get $get): bool => (bool) $get('reportar_averia')
+                                && (int) $get('agendados_futuros') > 0
+                                && $get('destino_agenda') === DestinoAgendaFutura::Sustituta->value)
+                            ->helperText('Toma su lugar en la obra y hereda los días agendados.'),
+                    ])
+                    ->columns(2),
             ])
             ->fillForm(fn (array $arguments): array => [
-                'agenda_id'       => $arguments['agenda_id'] ?? null,
-                'etiqueta'        => $arguments['etiqueta'] ?? '',
-                'fecha'           => $arguments['fecha'] ?? today()->toDateString(),
-                'llego'           => $arguments['llego'] ?? null,
-                'salio'           => $arguments['salio'] ?? null,
-                'asignacion_id'   => $arguments['asignacion_id'] ?? null,
-                'jornada_maquina' => $arguments['jornada_maquina'] ?? null,
-                'tarifa_maquina'  => $arguments['tarifa_maquina'] ?? null,
-                'horas'           => $arguments['horas_sugeridas'] ?? null,
-                'motivo_extra'    => null,
-                'litros'          => null,
-                'precio_litro'    => app(RegistrarDiaMaquinaService::class)->ultimoPrecioLitro(),
-                'operador'        => null,
+                'agenda_id'         => $arguments['agenda_id'] ?? null,
+                'maquina_id'        => $arguments['maquina_id'] ?? null,
+                'etiqueta'          => $arguments['etiqueta'] ?? '',
+                'fecha'             => $arguments['fecha'] ?? today()->toDateString(),
+                'llego'             => $arguments['llego'] ?? null,
+                'salio'             => $arguments['salio'] ?? null,
+                'asignacion_id'     => $arguments['asignacion_id'] ?? null,
+                'jornada_maquina'   => $arguments['jornada_maquina'] ?? null,
+                'tarifa_maquina'    => $arguments['tarifa_maquina'] ?? null,
+                'horas'             => $arguments['horas_sugeridas'] ?? null,
+                'motivo_extra'      => null,
+                'litros'            => null,
+                'precio_litro'      => app(RegistrarDiaMaquinaService::class)->ultimoPrecioLitro(),
+                'operador'          => null,
+                'reportar_averia'   => (bool) ($arguments['reportar_averia'] ?? false),
+                'averia_motivo'     => null,
+                'sustituta_id'      => null,
+                'destino_agenda'    => DestinoAgendaFutura::Cancelar->value,
+                'agendados_futuros' => $arguments['agendados_futuros'] ?? 0,
             ])
             ->action(function (array $data): void {
                 $agendado = AgendaMaquina::with(['maquina:id,nombre', 'proyecto:id,nombre'])
@@ -440,7 +554,9 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                     return;
                 }
 
-                if (! filled($data['horas'] ?? null) && ! filled($data['litros'] ?? null)) {
+                $quiereAveria = ($data['reportar_averia'] ?? false) && filled($data['averia_motivo'] ?? null);
+
+                if (! $quiereAveria && ! filled($data['horas'] ?? null) && ! filled($data['litros'] ?? null)) {
                     Notification::make()
                         ->title('Nada registrado')
                         ->body('Llena las horas trabajadas o los litros de combustible — o pulsa "Ahora no".')
@@ -498,9 +614,39 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                     $saltados = [...$saltados, ...$resultado['saltados']];
                 }
 
+                // Avería DESPUÉS de capturar la jornada (el parte entra
+                // antes de cortar la asignación) y ANTES de liberar la
+                // asignación automática: MantenimientoService la corta y
+                // así la sustituta hereda la obra y la agenda futura.
+                $averiaReportada = false;
+
+                if ($quiereAveria) {
+                    try {
+                        $destino = (int) ($data['agendados_futuros'] ?? 0) > 0 && filled($data['destino_agenda'] ?? null)
+                            ? DestinoAgendaFutura::from((string) $data['destino_agenda'])
+                            : null;
+
+                        $sustituta = ($destino === null || $destino === DestinoAgendaFutura::Sustituta) && filled($data['sustituta_id'] ?? null)
+                            ? Maquina::find((int) $data['sustituta_id'])
+                            : null;
+
+                        app(MantenimientoService::class)->enviarAMantenimiento(
+                            maquina: $agendado->maquina,
+                            motivo: (string) $data['averia_motivo'],
+                            sustituta: $sustituta,
+                            fecha: $agendado->fecha->toDateString(),
+                            destinoAgenda: $destino,
+                        );
+                        $averiaReportada = true;
+                    } catch (MaquinariaException $e) {
+                        $saltados[] = "Avería: {$e->getMessage()}";
+                    }
+                }
+
                 // La asignación automática fue solo para ESTA jornada:
                 // se finaliza de inmediato y la máquina vuelve a Disponible.
-                if ($asignacionAutomatica !== null) {
+                // Con avería reportada ya la finalizó el mantenimiento.
+                if ($asignacionAutomatica !== null && ! $averiaReportada) {
                     app(AsignarMaquinaService::class)->finalizar(
                         $asignacionAutomatica,
                         $agendado->fecha->toDateString(),
@@ -510,6 +656,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 $jornada = array_filter([
                     $partes > 0 ? "{$partes} parte(s) de horas" : null,
                     $consumos > 0 ? "{$consumos} consumo(s) de combustible" : null,
+                    $averiaReportada ? 'avería reportada (en mantenimiento)' : null,
                 ]);
 
                 if ($jornada === []) {
@@ -721,11 +868,13 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             ->where('estado', EstadoAsignacion::Activa->value)
             ->value('id');
 
-        // Para el aviso de avería: cuántos agendados (desde este día)
-        // resolvería un mantenimiento — transferidos o cancelados.
+        // Para el aviso de avería: cuántos agendados PLAN (sin llegada
+        // confirmada) resolvería un mantenimiento — transferidos o
+        // cancelados. Los confirmados son historia y no se tocan.
         $agendadosFuturos = AgendaMaquina::query()
             ->where('maquina_id', $maquinaId)
             ->whereDate('fecha', '>=', $fecha)
+            ->whereNull('llegada_confirmada_at')
             ->count();
 
         // La jornada estándar de la máquina: umbral del motivo de horas
@@ -841,26 +990,34 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                             ->helperText('Se envía a mantenimiento y su asignación activa se finaliza.')
                             ->columnSpanFull(),
 
+                        // La emergencia la decide quien reporta (decisión
+                        // Mauricio 2026-07-22): cancelar, sustituta, o
+                        // dejar la agenda EN PIE (reparación hoy / renta
+                        // externa). El service aplica lo elegido.
+                        Radio::make('destino_agenda')
+                            ->label('¿Qué hacemos con los días agendados que siguen?')
+                            ->options(DestinoAgendaFutura::options())
+                            ->descriptions(DestinoAgendaFutura::descripciones())
+                            ->default(DestinoAgendaFutura::Cancelar->value)
+                            ->live()
+                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia') && (int) $get('agendados_futuros') > 0)
+                            ->columnSpanFull(),
+
                         Select::make('sustituta_id')
-                            ->label('Máquina sustituta (opcional)')
+                            ->label('Máquina sustituta')
                             ->options(fn (Get $get) => Maquina::query()
                                 ->where('estado', EstadoMaquina::Disponible->value)
                                 ->whereKeyNot((int) $get('maquina_id'))
                                 ->orderBy('nombre')
                                 ->pluck('nombre', 'id'))
                             ->searchable()
-                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia'))
+                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia')
+                                && ((int) $get('agendados_futuros') === 0
+                                    || $get('destino_agenda') === DestinoAgendaFutura::Sustituta->value))
+                            ->required(fn (Get $get): bool => (bool) $get('reportar_averia')
+                                && (int) $get('agendados_futuros') > 0
+                                && $get('destino_agenda') === DestinoAgendaFutura::Sustituta->value)
                             ->helperText('Toma su lugar en la obra y hereda los días agendados.'),
-
-                        Placeholder::make('aviso_agenda')
-                            ->hiddenLabel()
-                            ->visible(fn (Get $get): bool => (bool) $get('reportar_averia') && (int) $get('agendados_futuros') > 0)
-                            ->content(fn (Get $get): HtmlString => new HtmlString(
-                                '<span style="color:#d97706;font-weight:600;font-size:.85rem">⚠ Esta máquina tiene '
-                                .e((string) $get('agendados_futuros'))
-                                .' día(s) agendado(s) a futuro: se transferirán a la sustituta, o se cancelarán si no eliges una (con aviso a gerencia).</span>'
-                            ))
-                            ->columnSpanFull(),
 
                         Hidden::make('agendados_futuros'),
                     ])
@@ -880,6 +1037,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 'reportar_averia'   => false,
                 'averia_motivo'     => null,
                 'sustituta_id'      => null,
+                'destino_agenda'    => DestinoAgendaFutura::Cancelar->value,
                 'agendados_futuros' => $arguments['agendados_futuros'] ?? 0,
             ])
             ->action(function (array $data): void {
@@ -930,10 +1088,13 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             try {
                 $maquina = Maquina::findOrFail((int) $data['maquina_id']);
 
-                // La sustituta toma su lugar en la obra Y hereda los días
-                // agendados; sin sustituta, los futuros se cancelan con
-                // aviso a maquinaria + gerencia (lo hace el service).
-                $sustituta = filled($data['sustituta_id'] ?? null)
+                // La emergencia decide el destino de la agenda futura;
+                // sin decisión (sin días futuros), aplica lo clásico.
+                $destino = (int) ($data['agendados_futuros'] ?? 0) > 0 && filled($data['destino_agenda'] ?? null)
+                    ? DestinoAgendaFutura::from((string) $data['destino_agenda'])
+                    : null;
+
+                $sustituta = ($destino === null || $destino === DestinoAgendaFutura::Sustituta) && filled($data['sustituta_id'] ?? null)
                     ? Maquina::find((int) $data['sustituta_id'])
                     : null;
 
@@ -942,6 +1103,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                     motivo: (string) $data['averia_motivo'],
                     sustituta: $sustituta,
                     fecha: $fecha,
+                    destinoAgenda: $destino,
                 );
                 $averiaReportada = true;
             } catch (MaquinariaException $e) {
@@ -1004,10 +1166,27 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
 
         [$inicio, $fin] = $this->calculateTimezoneOffset($start, $end, $allDay);
 
+        // FullCalendar manda el fin EXCLUSIVO en selecciones all-day.
+        $hasta = $fin?->subDay() ?? $inicio;
+
+        // El pasado no se agenda (misma regla del service, decisión
+        // Mauricio 2026-07-22): drag sobre días idos ni abre el modal,
+        // y un rango que arranca atrás se recorta a hoy.
+        if ($hasta->lt(today())) {
+            Notification::make()
+                ->title('El pasado no se agenda')
+                ->body('Esos días ya pasaron — lo trabajado vive en los partes de trabajo. Agenda de hoy en adelante.')
+                ->info()
+                ->send();
+
+            return;
+        }
+
+        $desde = $inicio->lt(today()) ? today() : $inicio;
+
         $this->mountAction('agendar', [
-            'desde' => $inicio->toDateString(),
-            // FullCalendar manda el fin EXCLUSIVO en selecciones all-day.
-            'hasta' => $fin?->subDay()->toDateString() ?? $inicio->toDateString(),
+            'desde' => $desde->toDateString(),
+            'hasta' => $hasta->toDateString(),
         ]);
     }
 

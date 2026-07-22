@@ -28,7 +28,7 @@ final class AgendarMaquinasAction
             ->label('Agendar máquinas')
             ->icon('heroicon-o-calendar-days')
             ->modalHeading('Agendar maquinaria')
-            ->modalDescription('Compromete una o varias máquinas a una obra por un rango de días. Las máquinas en taller durante esas fechas aparecen deshabilitadas en el listado.')
+            ->modalDescription('Compromete una o varias máquinas a una obra por un rango de días.')
             ->modalWidth('3xl')
             ->modalSubmitActionLabel('Agendar')
             ->visible(fn (): bool => auth()->user()?->can('Create:AgendaMaquina') ?? false)

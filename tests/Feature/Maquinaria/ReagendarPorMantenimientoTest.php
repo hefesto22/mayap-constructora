@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Enums\DestinoAgendaFutura;
 use App\Enums\EstadoAsignacion;
 use App\Enums\EstadoMaquina;
+use App\Exceptions\Maquinaria\MantenimientoInvalidoException;
 use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\Maquina;
@@ -17,6 +19,10 @@ use App\Services\Maquinaria\MantenimientoService;
 | Al enviar a mantenimiento: los agendados FUTUROS se transfieren a la
 | sustituta o se cancelan. El del mismo día no se toca (esa jornada se
 | resuelve con las horas que alcanzó a trabajar).
+|
+| Un agendado con LLEGADA CONFIRMADA es un hecho, no un plan: sobrevive
+| a la avería como constancia (decisión Mauricio 2026-07-22 — la avería
+| se reporta desde el ciclo del calendario y la historia del día queda).
 */
 
 beforeEach(function (): void {
@@ -83,4 +89,83 @@ test('CON sustituta: hereda los agendados futuros, excepto el día en que ya est
             ->where('proyecto_id', $obra->id)
             ->where('estado', EstadoAsignacion::Activa->value)
             ->exists())->toBeTrue();
+});
+
+test('el agendado de HOY con llegada y salida confirmadas SOBREVIVE a la avería: es constancia, no plan', function (): void {
+    [$maquina, $obra] = averiaAgendaBase();
+
+    // El ciclo del día ya corrió: llegó a las 7 y salió (averiada) a las 11.
+    $hoy = AgendaMaquina::where('maquina_id', $maquina->id)
+        ->whereDate('fecha', today())
+        ->firstOrFail();
+    $hoy->update([
+        'llegada_confirmada_at' => today()->setTime(7, 0),
+        'salida_confirmada_at'  => today()->setTime(11, 0),
+    ]);
+
+    $this->servicio->enviarAMantenimiento($maquina, 'SE QUEBRO EL BRAZO HIDRAULICO');
+
+    // La constancia de hoy queda; los 3 futuros (plan) se cancelan.
+    expect(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(1)
+        ->and($hoy->refresh()->llegada_confirmada_at)->not->toBeNull()
+        ->and($maquina->refresh()->estado)->toBe(EstadoMaquina::Mantenimiento);
+});
+
+test('CON sustituta: los agendados con llegada confirmada NO se transfieren — solo hereda el plan', function (): void {
+    [$maquina, $obra] = averiaAgendaBase();
+    $sustituta = Maquina::factory()->create(['nombre' => 'RETRO JD 310', 'estado' => EstadoMaquina::Disponible]);
+
+    AgendaMaquina::where('maquina_id', $maquina->id)
+        ->whereDate('fecha', today())
+        ->firstOrFail()
+        ->update([
+            'llegada_confirmada_at' => today()->setTime(7, 0),
+            'salida_confirmada_at'  => today()->setTime(11, 0),
+        ]);
+
+    $this->servicio->enviarAMantenimiento($maquina, 'FUGA DE ACEITE', sustituta: $sustituta);
+
+    // La averiada conserva SU día confirmado; la sustituta hereda los 3 futuros.
+    expect(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(1)
+        ->and(AgendaMaquina::where('maquina_id', $sustituta->id)->count())->toBe(3);
+});
+
+test('EMERGENCIA "se repara hoy": la agenda futura queda EN PIE', function (): void {
+    [$maquina, $obra] = averiaAgendaBase();
+
+    $this->servicio->enviarAMantenimiento(
+        $maquina,
+        'SE REVENTO UNA MANGUERA',
+        destinoAgenda: DestinoAgendaFutura::ReparacionHoy,
+    );
+
+    // Los 4 agendados (hoy + 3 futuros) siguen tal cual; la máquina, en taller.
+    expect(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(4)
+        ->and(AgendaMaquina::where('maquina_id', $maquina->id)->whereNotNull('notas')->count())->toBe(0)
+        ->and($maquina->refresh()->estado)->toBe(EstadoMaquina::Mantenimiento);
+});
+
+test('EMERGENCIA "renta externa": la agenda queda EN PIE y cada día anotado', function (): void {
+    [$maquina, $obra] = averiaAgendaBase();
+
+    $this->servicio->enviarAMantenimiento(
+        $maquina,
+        'SE FUNDIO EL MOTOR',
+        destinoAgenda: DestinoAgendaFutura::RentaExterna,
+    );
+
+    $agendados = AgendaMaquina::where('maquina_id', $maquina->id)->get();
+
+    expect($agendados)->toHaveCount(4)
+        ->and($agendados->every(fn (AgendaMaquina $a): bool => str_contains((string) $a->notas, 'SE CUBRE CON RENTA EXTERNA')))->toBeTrue();
+});
+
+test('destino sustituta SIN sustituta elegida se rechaza', function (): void {
+    [$maquina] = averiaAgendaBase();
+
+    expect(fn () => $this->servicio->enviarAMantenimiento(
+        $maquina,
+        'FALLA ELECTRICA',
+        destinoAgenda: DestinoAgendaFutura::Sustituta,
+    ))->toThrow(MantenimientoInvalidoException::class, 'sustituta');
 });

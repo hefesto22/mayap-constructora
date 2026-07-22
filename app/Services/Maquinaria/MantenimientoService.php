@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Maquinaria;
 
+use App\Enums\DestinoAgendaFutura;
 use App\Enums\EstadoAsignacion;
 use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoMaquina;
 use App\Exceptions\Maquinaria\MantenimientoInvalidoException;
+use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\BitacoraMantenimiento;
 use App\Models\MantenimientoMaquina;
@@ -17,6 +19,7 @@ use App\Support\Roles;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Gestiona las averías y reparaciones de las máquinas.
@@ -28,6 +31,9 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class MantenimientoService
 {
+    /** La marca en las notas de un agendado que cubrirá una renta externa. */
+    private const string NOTA_RENTA_EXTERNA = 'SE CUBRE CON RENTA EXTERNA';
+
     public function __construct(
         private AsignarMaquinaService $asignador,
         private ReagendarPorMantenimientoService $reagendador,
@@ -43,8 +49,9 @@ final readonly class MantenimientoService
         ?Maquina $sustituta = null,
         ?string $fecha = null,
         ?string $notas = null,
+        ?DestinoAgendaFutura $destinoAgenda = null,
     ): MantenimientoMaquina {
-        return DB::transaction(function () use ($maquina, $motivo, $sustituta, $fecha, $notas): MantenimientoMaquina {
+        return DB::transaction(function () use ($maquina, $motivo, $sustituta, $fecha, $notas, $destinoAgenda): MantenimientoMaquina {
             $maquinaBloqueada = Maquina::query()
                 ->whereKey($maquina->getKey())
                 ->lockForUpdate()
@@ -59,6 +66,22 @@ final readonly class MantenimientoService
             }
 
             $fechaInicio = $fecha ?? now()->toDateString();
+
+            // Qué pasa con los agendados FUTUROS lo decide quien reporta
+            // (decisión Mauricio 2026-07-22). Sin decisión explícita: con
+            // sustituta se transfieren, sin ella se cancelan (lo clásico).
+            $destino = $destinoAgenda
+                ?? ($sustituta !== null ? DestinoAgendaFutura::Sustituta : DestinoAgendaFutura::Cancelar);
+
+            if ($destino === DestinoAgendaFutura::Sustituta && $sustituta === null) {
+                throw MantenimientoInvalidoException::faltaSustituta($maquinaBloqueada->codigo);
+            }
+
+            // Con la agenda EN PIE no hay a quién heredarla: la sustituta
+            // solo aplica cuando la agenda se transfiere.
+            if ($destino->quedaEnPie()) {
+                $sustituta = null;
+            }
 
             // Corta la asignación activa (si trabajaba al averiarse).
             $asignacionActiva = AsignacionMaquina::query()
@@ -109,12 +132,23 @@ final readonly class MantenimientoService
                 'notas'                    => $notas,
             ]);
 
-            // Los agendados FUTUROS quedan imposibles: transferirlos a la
-            // sustituta o cancelarlos, y avisar a quien gestiona el parque.
-            $agenda = $this->reagendador->resolver($maquinaBloqueada, $fechaInicio, $sustituta);
+            if ($destino->quedaEnPie()) {
+                // EMERGENCIA: la agenda queda EN PIE — la reparación sale
+                // hoy mismo, o una renta externa cubrirá los días.
+                $enPie = $this->dejarAgendaEnPie($maquinaBloqueada, $fechaInicio, $destino);
 
-            if ($agenda['transferidos'] > 0 || $agenda['cancelados'] > 0) {
-                $this->notificarAgendaResuelta($maquinaBloqueada, $agenda);
+                if ($enPie > 0) {
+                    $this->notificarAgendaEnPie($maquinaBloqueada, $destino, $enPie);
+                }
+            } else {
+                // Los agendados FUTUROS quedan imposibles: transferirlos a
+                // la sustituta o cancelarlos, con aviso a quien gestiona
+                // el parque.
+                $agenda = $this->reagendador->resolver($maquinaBloqueada, $fechaInicio, $sustituta);
+
+                if ($agenda['transferidos'] > 0 || $agenda['cancelados'] > 0) {
+                    $this->notificarAgendaResuelta($maquinaBloqueada, $agenda);
+                }
             }
 
             return $mantenimiento;
@@ -147,6 +181,64 @@ final readonly class MantenimientoService
 
         // whereHas en vez del scope role(): este NO explota si el rol aún
         // no existe (DB fresca de tests o seeds parciales).
+        User::query()
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::MAQUINARIA, Roles::GERENCIA]))
+            ->where('is_active', true)
+            ->get()
+            ->unique('id')
+            ->each(fn (User $user) => $user->notifyNow($notificacion->toDatabase()));
+    }
+
+    /**
+     * La agenda futura queda EN PIE (solo el PLAN: agendados sin llegada
+     * confirmada, de la fecha de la avería en adelante). Con renta
+     * externa, cada día queda anotado para que nadie lo tome por olvido.
+     *
+     * @return int Cuántos agendados quedaron en pie.
+     */
+    private function dejarAgendaEnPie(Maquina $maquina, string $desdeFecha, DestinoAgendaFutura $destino): int
+    {
+        $agendados = AgendaMaquina::query()
+            ->where('maquina_id', $maquina->id)
+            ->whereDate('fecha', '>=', $desdeFecha)
+            ->whereNull('llegada_confirmada_at')
+            ->lockForUpdate()
+            ->get();
+
+        if ($destino === DestinoAgendaFutura::RentaExterna) {
+            foreach ($agendados as $agendado) {
+                $agendado->update([
+                    'notas' => Str::limit(
+                        $agendado->notas === null
+                            ? self::NOTA_RENTA_EXTERNA
+                            : "{$agendado->notas} · ".self::NOTA_RENTA_EXTERNA,
+                        255,
+                        '',
+                    ),
+                ]);
+            }
+        }
+
+        return $agendados->count();
+    }
+
+    /**
+     * Campanita a maquinaria + gerencia: la agenda quedó EN PIE y hay un
+     * plan que ejecutar (esperar la reparación de hoy, o salir a rentar).
+     *
+     * notifyNow (síncrono): respeta la transacción del caller — rollback
+     * = sin avisos fantasma.
+     */
+    private function notificarAgendaEnPie(Maquina $maquina, DestinoAgendaFutura $destino, int $enPie): void
+    {
+        $notificacion = Notification::make()
+            ->title("{$maquina->nombre} a mantenimiento: {$enPie} agendado(s) EN PIE")
+            ->body($destino === DestinoAgendaFutura::RentaExterna
+                ? 'Se cubrirá con RENTA EXTERNA — gestionar el alquiler para que la obra no pare.'
+                : 'La reparación está prevista para HOY mismo. Si no sale del taller, decide: sustituta, renta externa o cancelar.')
+            ->warning()
+            ->persistent();
+
         User::query()
             ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::MAQUINARIA, Roles::GERENCIA]))
             ->where('is_active', true)

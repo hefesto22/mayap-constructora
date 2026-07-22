@@ -165,3 +165,32 @@ test('un mantenimiento en reparación ya no espera repuestos: sin aviso', functi
 
     expect(app(AvisarRepuestosService::class)->avisar())->toBe(0);
 });
+
+test('las fases solo avanzan: regresar a una anterior se rechaza', function (): void {
+    $mantenimiento = MantenimientoMaquina::factory()->create([
+        'fase'                     => FaseMantenimiento::CompraRepuestos,
+        'fecha_estimada_repuestos' => today()->addDays(3)->toDateString(),
+    ]);
+
+    expect(fn () => $this->service->avanzar(
+        mantenimiento: $mantenimiento,
+        fase: FaseMantenimiento::Diagnostico,
+        detalle: 'QUIERO VOLVER A REVISAR',
+    ))->toThrow(MantenimientoInvalidoException::class, 'solo avanzan');
+
+    // Ni fase movida ni bitácora fantasma.
+    expect($mantenimiento->refresh()->fase)->toBe(FaseMantenimiento::CompraRepuestos)
+        ->and($mantenimiento->bitacoras()->count())->toBe(0);
+});
+
+test('saltar fases hacia ADELANTE sigue permitido: diagnóstico directo a reparación', function (): void {
+    $mantenimiento = MantenimientoMaquina::factory()->create();
+
+    $this->service->avanzar(
+        mantenimiento: $mantenimiento,
+        fase: FaseMantenimiento::Reparacion,
+        detalle: 'HABÍA REPUESTOS EN BODEGA: DIRECTO A REPARAR',
+    );
+
+    expect($mantenimiento->refresh()->fase)->toBe(FaseMantenimiento::Reparacion);
+});

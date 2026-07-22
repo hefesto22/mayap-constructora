@@ -42,11 +42,13 @@ final class AccionRegistrarAvance
             ->schema([
                 Select::make('fase')
                     ->label('Fase de la reparación')
-                    ->options(FaseMantenimiento::options())
+                    // Solo la fase actual y las siguientes: las fases no
+                    // retroceden (el service aplica la misma regla).
+                    ->options(fn (MantenimientoMaquina $record): array => FaseMantenimiento::opcionesDesde($record->fase))
                     ->required()
                     ->live()
                     ->native(false)
-                    ->helperText('Puede quedarse en la misma fase: la entrada igual se guarda en el historial.'),
+                    ->helperText('Puede quedarse en la misma fase (la entrada igual va al historial). Regresar a una fase anterior no se puede.'),
 
                 Textarea::make('detalle')
                     ->label('Diagnóstico / detalle del avance')

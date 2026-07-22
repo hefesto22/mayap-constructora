@@ -18,7 +18,9 @@ use Illuminate\Support\Facades\DB;
  *
  * Reglas:
  *  - Solo mantenimientos EN PROCESO (los finalizados son historia).
- *  - La fase puede repetirse (dos diagnósticos seguidos = dos entradas).
+ *  - La fase puede repetirse (dos diagnósticos seguidos = dos entradas),
+ *    pero NUNCA retrocede (decisión Mauricio 2026-07-22): lo andado no
+ *    se desanda — la historia queda en la bitácora.
  *  - "Compra de repuestos" exige fecha estimada de recepción (si no la
  *    tenía ya); cambiar esa fecha REINICIA la campanita de llegada.
  */
@@ -43,6 +45,12 @@ final class RegistrarAvanceMantenimientoService
 
             if (! $bloqueado->estado->esEnProceso()) {
                 throw MantenimientoInvalidoException::noSePuedeAvanzar($bloqueado->codigo);
+            }
+
+            // Las fases solo avanzan: regresar reescribiría la historia
+            // (para eso está la bitácora).
+            if ($fase->orden() < $bloqueado->fase->orden()) {
+                throw MantenimientoInvalidoException::retrocesoDeFase($bloqueado->codigo, $bloqueado->fase, $fase);
             }
 
             // La compra de repuestos sin fecha estimada deja ciega la

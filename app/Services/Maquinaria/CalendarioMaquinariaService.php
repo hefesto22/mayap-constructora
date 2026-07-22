@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Maquinaria;
 
 use App\Enums\EstadoAsignacion;
+use App\Enums\EstadoMantenimiento;
 use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\MantenimientoMaquina;
@@ -25,8 +26,9 @@ use App\Models\MantenimientoMaquina;
  *  - Asignación con rango definido → barra teal (compromiso contractual);
  *    finalizada → gris. SIN fecha fin → solo un marcador el día de inicio
  *    ("desde dd/mm"), nunca una barra que pinte el mes completo.
- *  - Mantenimiento con rango → barra ámbar; SIN fecha fin → marcador de
- *    1 día "En mantenimiento desde dd/mm".
+ *  - Mantenimiento EN PROCESO con rango → barra ámbar; SIN fecha fin →
+ *    marcador de 1 día "En mantenimiento desde dd/mm". Lo FINALIZADO no
+ *    se pinta (compromisos, no historia — vive en Mantenimientos).
  *
  * Los colores son hex fijos (FullCalendar no conoce la paleta de Filament).
  * Las fechas de fin van +1 día: FullCalendar trata el `end` de eventos de
@@ -189,8 +191,11 @@ final class CalendarioMaquinariaService
     }
 
     /**
-     * Mantenimientos: rango definido = barra ámbar; abierto = marcador de
-     * 1 día "En mantenimiento desde dd/mm" (una reparación no pinta el mes).
+     * Mantenimientos EN PROCESO: rango definido = barra ámbar; abierto =
+     * marcador de 1 día "En mantenimiento desde dd/mm" (una reparación no
+     * pinta el mes). Los FINALIZADOS no se pintan (decisión Mauricio
+     * 2026-07-22): el calendario mira compromisos; la historia del taller
+     * vive en Mantenimientos.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -198,6 +203,7 @@ final class CalendarioMaquinariaService
     {
         return MantenimientoMaquina::query()
             ->with('maquina:id,codigo,nombre')
+            ->where('estado', EstadoMantenimiento::EnProceso)
             ->where('fecha_inicio', '<=', $hasta)
             ->where(fn ($q) => $q->whereNull('fecha_fin')->orWhere('fecha_fin', '>=', $desde))
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))

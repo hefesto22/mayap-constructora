@@ -322,3 +322,16 @@ test('la agenda marcada "NO llegó" ya no se pinta (la constancia vive en la bit
         today()->addDays(10)->toDateString(),
     ))->toHaveCount(0);
 });
+
+test('mantenimiento FINALIZADO no se pinta: el calendario mira compromisos, no historia', function (): void {
+    $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320D']);
+
+    MantenimientoMaquina::factory()->create([
+        'maquina_id'   => $maquina->id,
+        'fecha_inicio' => '2026-07-22',
+        'fecha_fin'    => '2026-07-22',
+        'estado'       => EstadoMantenimiento::Finalizado,
+    ]);
+
+    expect($this->servicio->eventos('2026-07-01', '2026-07-31'))->toHaveCount(0);
+});
