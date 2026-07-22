@@ -9,7 +9,6 @@ use App\Filament\Resources\Proyectos\Actions\AccionEnviarCotizacionWhatsApp;
 use App\Filament\Resources\Proyectos\Actions\AccionesRenta;
 use App\Filament\Resources\Proyectos\ProyectoResource;
 use App\Models\Proyecto;
-use App\Services\Reportes\CotizacionRentaService;
 use App\Support\Permisos;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -17,10 +16,10 @@ use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
 /**
- * Cabecera SIN ruido (decisión Mauricio 2026-07-19): UN botón principal
- * (el envío directo por WhatsApp, el caso del día a día) y las demás
- * salidas de la cotización agrupadas en el menú "Cotización" — nada de
- * cuatro botones sueltos para la misma cosa.
+ * Cabecera SIN ruido (decisión Mauricio 2026-07-19, afinada 2026-07-22):
+ * TODAS las salidas de la cotización viven en el menú "Cotización",
+ * envío directo por WhatsApp incluido. El wa.me manual se retiró: con
+ * el envío directo funcionando ya no hace falta.
  */
 class ViewProyecto extends ViewRecord
 {
@@ -29,30 +28,16 @@ class ViewProyecto extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // ── La acción estrella de las rentas: se la mando al cliente ──
-            AccionEnviarCotizacionWhatsApp::make(),
-
-            // ── Las demás salidas de la cotización, agrupadas ─────────────
+            // ── Todas las salidas de la cotización, en un solo menú ──────
             ActionGroup::make([
+                AccionEnviarCotizacionWhatsApp::make(),
+
                 $this->accionVerPdf(
                     nombre: 'cotizacion_pdf',
                     etiqueta: 'Ver PDF',
                     permiso: Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO,
                     ruta: 'reportes.cotizacion-renta',
                 ),
-
-                // Respaldo manual: abre el chat con mensaje prellenado y se
-                // adjunta el PDF descargado desde "Ver PDF" (WhatsApp no
-                // permite adjuntar automático por enlace).
-                Action::make('whatsapp_cliente')
-                    ->label('Abrir chat del cliente')
-                    ->icon('heroicon-o-chat-bubble-left-right')
-                    ->visible(fn (): bool => app(CotizacionRentaService::class)->linkWhatsApp($this->proyecto()) !== null
-                        && (auth()->user()?->can(Permisos::DESCARGAR_PDF_COMPOSICION_PROYECTO) ?? false))
-                    ->url(
-                        fn (): string => (string) app(CotizacionRentaService::class)->linkWhatsApp($this->proyecto()),
-                        shouldOpenInNewTab: true,
-                    ),
             ])
                 ->label('Cotización')
                 ->icon('heroicon-o-document-text')
