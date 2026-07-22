@@ -28,7 +28,8 @@ services:
     container_name: mayap_evolution
     restart: unless-stopped
     ports:
-      - "8081:8080"
+      # 127.0.0.1: en el VPS compartido el manager NO queda expuesto a internet.
+      - "127.0.0.1:8081:8080"
     environment:
       # Cambia esta llave por una larga y aleatoria (openssl rand -hex 24)
       # y usa LA MISMA en WHATSAPP_EVOLUTION_API_KEY del .env de Laravel.
@@ -61,7 +62,7 @@ services:
       POSTGRES_USER: evolution
       POSTGRES_PASSWORD: evolution
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - evolution_postgres_data:/var/lib/postgresql/data
 
@@ -71,7 +72,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - evolution_redis_data:/data
 

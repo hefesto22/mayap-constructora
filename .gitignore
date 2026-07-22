@@ -47,3 +47,4 @@ nbproject
 ehthumbs.db
 Desktop.ini
 .fuse_hidden*
+docker/evolution/.env
