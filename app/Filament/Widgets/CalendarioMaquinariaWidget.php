@@ -9,8 +9,10 @@ use App\Enums\EstadoAsignacion;
 use App\Enums\EstadoMaquina;
 use App\Exceptions\Maquinaria\MaquinariaException;
 use App\Filament\Actions\AgendarMaquinasAction;
+use App\Filament\Resources\Mantenimientos\MantenimientoMaquinaResource;
 use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
+use App\Models\MantenimientoMaquina;
 use App\Models\Maquina;
 use App\Models\Proyecto;
 use App\Models\User;
@@ -105,34 +107,126 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             return;
         }
 
-        if (! (auth()->user()?->can('View:CapturaDelDia') ?? false)) {
+        if (str_starts_with($id, 'asignacion-')) {
+            $this->abrirAsignacion((int) substr($id, 11));
+
             return;
         }
 
-        if (str_starts_with($id, 'asignacion-')) {
-            $asignacion = AsignacionMaquina::with(['maquina:id,nombre', 'proyecto:id,nombre'])
-                ->find((int) substr($id, 11));
+        if (str_starts_with($id, 'mantenimiento-')) {
+            $this->abrirMantenimiento((int) substr($id, 14));
+        }
+    }
 
-            if ($asignacion === null || $asignacion->estado !== EstadoAsignacion::Activa) {
-                return;
-            }
+    /**
+     * Barra teal de asignación: lleva a registrar la jornada del día.
+     * Si quien pulsa no captura jornadas, o la asignación ya se cerró,
+     * se dice por qué en vez de tragarse el clic (decisión Mauricio
+     * 2026-08-07: en el cockpit del módulo un clic mudo se lee como
+     * pantalla rota).
+     */
+    private function abrirAsignacion(int $asignacionId): void
+    {
+        $asignacion = AsignacionMaquina::with(['maquina:id,nombre', 'proyecto:id,nombre'])
+            ->find($asignacionId);
 
-            $this->montarRegistrarDia(
-                maquinaId: $asignacion->maquina_id,
-                proyectoId: $asignacion->proyecto_id,
-                etiqueta: "{$asignacion->maquina->nombre} → {$asignacion->proyecto->nombre}",
-                fecha: today()->toDateString(),
-            );
+        if ($asignacion === null) {
+            return;
         }
 
-        // parte- / mantenimiento-: informativos, sin acción.
+        $etiqueta = "{$asignacion->maquina->nombre} → {$asignacion->proyecto->nombre}";
+
+        if (! (auth()->user()?->can('View:CapturaDelDia') ?? false)) {
+            $this->avisar(
+                'Aquí solo se consulta',
+                "{$etiqueta}: registrar las horas y el combustible del día le toca a maquinaria.",
+            );
+
+            return;
+        }
+
+        if ($asignacion->estado !== EstadoAsignacion::Activa) {
+            $this->avisar(
+                'Esta asignación ya se cerró',
+                "{$etiqueta} terminó el "
+                .($asignacion->fecha_fin?->format('d/m/Y') ?? 'día registrado')
+                .'. La jornada solo se captura sobre asignaciones activas.',
+            );
+
+            return;
+        }
+
+        $this->montarRegistrarDia(
+            maquinaId: $asignacion->maquina_id,
+            proyectoId: $asignacion->proyecto_id,
+            etiqueta: $etiqueta,
+            fecha: today()->toDateString(),
+        );
+    }
+
+    /**
+     * Bloque ámbar de mantenimiento: no hay jornada que capturar, pero
+     * sí se explica en qué va la reparación y por qué esa máquina no se
+     * puede agendar — con enlace al expediente para quien pueda verlo.
+     */
+    private function abrirMantenimiento(int $mantenimientoId): void
+    {
+        $mantenimiento = MantenimientoMaquina::with('maquina:id,nombre')->find($mantenimientoId);
+
+        if ($mantenimiento === null) {
+            return;
+        }
+
+        $fin = $mantenimiento->fecha_fin;
+
+        $notificacion = Notification::make()
+            ->title("{$mantenimiento->codigo} · {$mantenimiento->maquina->nombre}")
+            ->icon('heroicon-o-wrench-screwdriver');
+
+        if ($fin === null) {
+            $notificacion
+                ->body('En el taller desde el '.$mantenimiento->fecha_inicio->format('d/m/Y')
+                    .' · fase: '.$mantenimiento->fase->getLabel()
+                    .' · prioridad: '.$mantenimiento->prioridad->getLabel()
+                    .'. Mientras la reparación siga abierta, esta máquina no se puede agendar ni asignar.')
+                ->warning();
+        } else {
+            $notificacion
+                ->body('Estuvo en el taller del '.$mantenimiento->fecha_inicio->format('d/m/Y')
+                    .' al '.$fin->format('d/m/Y').'. Ya volvió al parque.')
+                ->info();
+        }
+
+        if (auth()->user()?->can('View:MantenimientoMaquina') ?? false) {
+            $notificacion->actions([
+                Action::make('ver_reparacion')
+                    ->label('Ver la reparación')
+                    ->url(MantenimientoMaquinaResource::getUrl('view', ['record' => $mantenimiento]))
+                    ->button(),
+            ]);
+        }
+
+        $notificacion->send();
+    }
+
+    /**
+     * Aviso corto para los clics que no abren nada: el calendario nunca
+     * se queda callado.
+     */
+    private function avisar(string $titulo, string $cuerpo): void
+    {
+        Notification::make()
+            ->title($titulo)
+            ->body($cuerpo)
+            ->info()
+            ->send();
     }
 
     /**
      * El CICLO del día de un agendado, para cualquier rol con permiso
      * sobre esa obra: valida ANTES de abrir el modal para hablar claro —
-     * sin permiso (silencio), todavía no es el día (aviso), la máquina
-     * sigue en OTRA obra (aviso con el dato). Según el punto del ciclo:
+     * sin permiso (dice de quién es el paso), todavía no es el día
+     * (aviso), la máquina sigue en OTRA obra (aviso con el dato). Según el punto del ciclo:
      * AZUL "Confirmar llegada" → VIOLETA "¿Ya terminó aquí?" → al terminar
      * se abre "Registrar jornada". Cerrado el ciclo, el click vuelve a
      * ofrecer la jornada mientras no exista el parte (después, el verde
@@ -143,7 +237,20 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
         $user = auth()->user();
         $servicio = app(ConfirmarLlegadaService::class);
 
-        if (! $user instanceof User || ! $servicio->puedeConfirmar($agendado, $user)) {
+        if (! $user instanceof User) {
+            return;
+        }
+
+        // Recepción, bodeguero o el encargado de OTRA obra: el clic ya
+        // no se pierde — se dice de quién es el paso y por qué.
+        if (! $servicio->puedeConfirmar($agendado, $user)) {
+            $this->avisar(
+                'Esta llegada la marca quien está en el sitio',
+                "{$agendado->maquina->nombre} está agendada a {$agendado->proyecto->nombre} para el "
+                .$agendado->fecha->format('d/m/Y')
+                .'. La llegada y la salida las confirma el encargado de esa obra, maquinaria o gerencia.',
+            );
+
             return;
         }
 
