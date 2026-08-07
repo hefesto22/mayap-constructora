@@ -31,7 +31,11 @@ beforeEach(function (): void {
 
 /**
  * Renta con una retro por 1 DÍA (jornada 8h, L 7,600/día → L 950/hora)
- * y partes de trabajo por 10 horas reales: 2 de exceso.
+ * y un parte de 9 horas reales: 1 de exceso sobre la jornada.
+ *
+ * Así es como lo escribe RegistrarParteService: `horas` es el total del
+ * día (9) y `horas_extra` el excedente que ya está dentro (1). Lo real
+ * son 9, NO 10 — sumar las dos contaba el excedente por partida doble.
  */
 function rentaConPartes(): Proyecto
 {
@@ -73,17 +77,17 @@ test('el resumen compara pactado vs real por máquina con el extra facturable', 
 
     $fila = $resumen['filas'][0];
 
-    // 1 día × 8h de jornada = 8 pactadas; partes 9 + 1 = 10 reales.
+    // 1 día × 8h de jornada = 8 pactadas; el parte dice 9 reales.
     expect($fila['maquina'])->toContain('RETROEXCAVADORA JCB 3CX')
         ->and($fila['unidad'])->toBe('Horas')
         ->and($fila['pactado_cant'])->toBe('8.00')
-        ->and($fila['real_cant'])->toBe('10.00')
-        ->and($fila['diferencia'])->toBe('2.00')
-        // Tarifa hora = 7,600 / 8 = 950 → extra = 2 × 950.
+        ->and($fila['real_cant'])->toBe('9.00')
+        ->and($fila['diferencia'])->toBe('1.00')
+        // Tarifa hora = 7,600 / 8 = 950 → extra = 1 × 950.
         ->and($fila['tarifa'])->toBe('950.00')
-        ->and($fila['extra'])->toBe('1900.00')
+        ->and($fila['extra'])->toBe('950.00')
         ->and($resumen['total_pactado'])->toBe('7600.00')
-        ->and($resumen['total_extra'])->toBe('1900.00');
+        ->and($resumen['total_extra'])->toBe('950.00');
 });
 
 test('trabajar menos de lo pactado no genera extra (el mínimo es lo cotizado)', function (): void {

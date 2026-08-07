@@ -122,7 +122,7 @@ final class ResumenRentaService
                 $query->where('proyecto_id', $proyectoId)
                     ->where('maquina_id', $maquinaId);
             })
-            ->get(['horas', 'horas_extra', 'viajes', 'km_recorridos']);
+            ->get(['horas', 'viajes', 'km_recorridos']);
 
         $total = '0.00';
 
@@ -130,7 +130,7 @@ final class ResumenRentaService
             $total = match ($dimension) {
                 'viajes' => bcadd($total, (string) ($parte->viajes ?? 0), self::SCALE),
                 'km'     => bcadd($total, (string) ($parte->km_recorridos ?? '0'), self::SCALE),
-                default  => bcadd(bcadd($total, (string) $parte->horas, self::SCALE), (string) $parte->horas_extra, self::SCALE),
+                default  => bcadd($total, (string) $parte->horas, self::SCALE),
             };
         }
 

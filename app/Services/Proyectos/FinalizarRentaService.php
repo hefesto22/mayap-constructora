@@ -185,7 +185,13 @@ final class FinalizarRentaService
 
     /**
      * Lo REAL de una máquina en el proyecto según sus partes de
-     * trabajo — la única verdad: horas (horas + extra), viajes o km.
+     * trabajo — la única verdad: horas, viajes o km.
+     *
+     * OJO con las horas: `horas` YA es el total del día. `horas_extra` no
+     * son horas adicionales, es el excedente sobre la jornada que ya está
+     * DENTRO de ese total (RegistrarParteService lo deriva restando la
+     * jornada). Sumar las dos contaba doble el excedente e inflaba el
+     * extra facturado al cliente — corregido el 2026-08-07.
      */
     private function realesDeMaquina(int $proyectoId, int $maquinaId, string $dimension): string
     {
@@ -194,7 +200,7 @@ final class FinalizarRentaService
                 $query->where('proyecto_id', $proyectoId)
                     ->where('maquina_id', $maquinaId);
             })
-            ->get(['horas', 'horas_extra', 'viajes', 'km_recorridos']);
+            ->get(['horas', 'viajes', 'km_recorridos']);
 
         $total = '0';
 
@@ -202,7 +208,7 @@ final class FinalizarRentaService
             $total = match ($dimension) {
                 'viajes' => bcadd($total, (string) ($parte->viajes ?? 0), self::SCALE),
                 'km'     => bcadd($total, (string) ($parte->km_recorridos ?? '0'), self::SCALE),
-                default  => bcadd(bcadd($total, (string) $parte->horas, self::SCALE), (string) $parte->horas_extra, self::SCALE),
+                default  => bcadd($total, (string) $parte->horas, self::SCALE),
             };
         }
 

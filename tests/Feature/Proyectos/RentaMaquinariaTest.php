@@ -13,6 +13,8 @@ use App\Models\Maquina;
 use App\Models\ParteTrabajo;
 use App\Models\Proyecto;
 use App\Services\Cobranza\CobrarService;
+use App\Services\Maquinaria\AsignarMaquinaService;
+use App\Services\Maquinaria\RegistrarParteService;
 use App\Services\Proyectos\AgregarLineaRentaService;
 use App\Services\Proyectos\AprobarRentaService;
 use App\Services\Proyectos\ExtenderRentaService;
@@ -165,6 +167,42 @@ test('extender una renta agrega línea de extensión, sube el total y la cuenta'
     $cuenta = CuentaPorCobrar::where('proyecto_id', $proyecto->id)->first();
     expect($cuenta->monto_original)->toBe('13110.00')
         ->and($cuenta->saldo)->toBe('13110.00');
+});
+
+test('el excedente sobre la jornada se cobra UNA vez, no dos', function (): void {
+    // Regresión del 2026-08-07. RegistrarParteService deriva las horas
+    // extra restando la jornada, así que un día de 10 h con jornada de 8
+    // se guarda como horas=10 y horas_extra=2 — el excedente vive DENTRO
+    // del total. Al comparar pactado contra real se sumaban las dos y el
+    // sistema leía 12 h: se le facturaban 4 h de extra al cliente en vez
+    // de 2. Este test registra el parte por la puerta real para que la
+    // derivación ocurra de verdad.
+    $proyecto = crearRentaConLinea();
+    $linea = $proyecto->lineasRenta->first();
+
+    app(AprobarRentaService::class)->aprobar($proyecto);
+    $proyecto->refresh();
+
+    $asignacion = app(AsignarMaquinaService::class)->asignar(
+        $linea->maquina,
+        $proyecto->id,
+        tarifaPactada: '950',
+    );
+
+    $parte = app(RegistrarParteService::class)->registrarManual(
+        asignacion: $asignacion,
+        horas: '10',
+        motivoHorasExtra: 'EL CLIENTE PIDIO TERMINAR LA ZANJA',
+    );
+
+    // Así queda el parte: el total del día y su excedente, no 10 + 2 = 12.
+    expect($parte->horas)->toBe('10.00')
+        ->and($parte->horas_extra)->toBe('2.00');
+
+    $resultado = app(FinalizarRentaService::class)->finalizar($proyecto);
+
+    // Pactadas 8, reales 10 → 2 h × L 950 = 1,900 + ISV 15% = 2,185.
+    expect($resultado['extra'])->toBe('2185.00');
 });
 
 test('extender exige un estado vivo', function (): void {

@@ -67,9 +67,6 @@
                     </thead>
                     <tbody>
                         @foreach ($asignaciones as $a)
-                            @php
-                                $horas = bcadd((string) ($a->horas_total ?? 0), (string) ($a->horas_extra_total ?? 0), 2);
-                            @endphp
                             <tr>
                                 <td>{{ $a->codigo }}</td>
                                 <td>{{ $a->proyecto->nombre }}</td>
@@ -80,7 +77,7 @@
                                     </span>
                                 </td>
                                 <td class="num">{{ $lps($a->tarifa_hora_pactada) }}</td>
-                                <td class="num">{{ \App\Support\Cantidad::corta($horas) }}</td>
+                                <td class="num">{{ \App\Support\Cantidad::corta((string) ($a->horas_total ?? 0)) }}</td>
                                 <td class="num">{{ $lps($a->ingresos_total ?? 0) }}</td>
                                 <td class="num">{{ $lps($a->combustible_total ?? 0) }}</td>
                             </tr>

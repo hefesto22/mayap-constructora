@@ -27,11 +27,11 @@ final class HojaDeVidaMaquinaService
         $partes = $this->partesDe($maquina);
 
         $ingresos = (string) $partes->sum('costo_cache');
-        $horas = bcadd(
-            (string) $this->partesDe($maquina)->sum('horas'),
-            (string) $this->partesDe($maquina)->sum('horas_extra'),
-            self::SCALE,
-        );
+
+        // `horas` YA es el total del día: las extra son el excedente sobre
+        // la jornada que vive DENTRO de ese total, no encima. Sumarlas
+        // aparte inflaba las horas de la máquina (corregido 2026-08-07).
+        $horas = (string) $this->partesDe($maquina)->sum('horas');
 
         $consumos = $this->consumosDe($maquina);
         $combustible = (string) $consumos->sum('costo_cache');
@@ -68,7 +68,6 @@ final class HojaDeVidaMaquinaService
             ->with('proyecto:id,codigo,nombre')
             ->withSum('partes as ingresos_total', 'costo_cache')
             ->withSum('partes as horas_total', 'horas')
-            ->withSum('partes as horas_extra_total', 'horas_extra')
             ->withSum('consumos as combustible_total', 'costo_cache')
             ->orderByDesc('fecha_inicio')
             ->get();
