@@ -305,4 +305,23 @@ class Maquina extends Model
     {
         return $query->where('estado', EstadoMaquina::Disponible->value);
     }
+
+    /**
+     * Máquinas que se pueden COMPROMETER a una obra: activas en el
+     * catálogo y no dadas de baja. ÚNICA puerta de los selectores de
+     * agendar, solicitar y elegir sustituta.
+     *
+     * Antes cada pantalla filtraba a su manera y tres de ellas miraban
+     * solo el estado "de baja" — que ningún flujo del sistema asigna —,
+     * así que la máquina apagada con el toggle "activa" seguía saliendo
+     * al agendar y al pedirla desde la obra (corregido 2026-08-07).
+     *
+     * @param Builder<self> $query
+     *
+     * @return Builder<self>
+     */
+    public function scopeAgendables(Builder $query): Builder
+    {
+        return $query->activas()->whereNot('estado', EstadoMaquina::Baja->value);
+    }
 }

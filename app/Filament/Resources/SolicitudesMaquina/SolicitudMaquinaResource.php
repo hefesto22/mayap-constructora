@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\SolicitudesMaquina;
 
-use App\Enums\EstadoMaquina;
 use App\Enums\EstadoProyecto;
 use App\Enums\EstadoSolicitudMaquina;
 use App\Enums\PrioridadSolicitud;
@@ -128,7 +127,7 @@ class SolicitudMaquinaResource extends Resource
                     $compromisos = AgendaMaquinaResource::compromisosPorAgenda($fechas);
 
                     return Maquina::query()
-                        ->whereNot('estado', EstadoMaquina::Baja)
+                        ->agendables()
                         // Ya agendada a ESTA obra en esas fechas: ni se
                         // muestra — pedirla otra vez no tiene sentido, ya
                         // la tienen.
@@ -315,7 +314,7 @@ class SolicitudMaquinaResource extends Resource
                     Select::make('maquina_id')
                         ->label('Máquina (puede ser otra)')
                         ->options(fn () => Maquina::query()
-                            ->whereNot('estado', EstadoMaquina::Baja)
+                            ->agendables()
                             ->orderBy('nombre')
                             ->pluck('nombre', 'id'))
                         ->default(fn (SolicitudMaquina $record): int => $record->maquina_id)

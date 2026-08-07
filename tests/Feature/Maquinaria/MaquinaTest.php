@@ -117,3 +117,25 @@ test('la máquina de baja es estado terminal y disponible permite asignarse', fu
         ->and(EstadoMaquina::Disponible->puedeTransicionarA(EstadoMaquina::Asignada))->toBeTrue()
         ->and(EstadoMaquina::Baja->puedeTransicionarA(EstadoMaquina::Disponible))->toBeFalse();
 });
+
+test('scope agendables excluye las inactivas y las de baja', function (): void {
+    // El toggle "activa" del catálogo promete que la máquina apagada deja
+    // de aparecer. Antes solo lo cumplían asignar y cotizar: agendar,
+    // solicitar desde la obra y elegir sustituta filtraban únicamente por
+    // el estado "de baja" — que ningún flujo del sistema asigna —, así que
+    // la máquina apagada seguía saliendo en las tres.
+    Maquina::factory()->count(2)->create();
+    Maquina::factory()->inactiva()->create();
+    Maquina::factory()->create(['estado' => EstadoMaquina::Baja->value]);
+
+    expect(Maquina::query()->agendables()->count())->toBe(2);
+});
+
+test('una máquina en mantenimiento sigue siendo agendable: la fecha decide', function (): void {
+    // Estar en el taller HOY no la saca del catálogo de agendables: quien
+    // valida el choque contra la reparación es AgendarMaquinaService con
+    // la fecha en la mano. Este scope solo saca lo que nunca debe salir.
+    Maquina::factory()->enMantenimiento()->create();
+
+    expect(Maquina::query()->agendables()->count())->toBe(1);
+});

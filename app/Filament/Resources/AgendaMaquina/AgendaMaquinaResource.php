@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\AgendaMaquina;
 
-use App\Enums\EstadoMaquina;
 use App\Enums\EstadoProyecto;
 use App\Filament\Forms\Components\RangoFechas;
 use App\Filament\Resources\AgendaMaquina\Pages\ManageAgendaMaquina;
@@ -81,7 +80,7 @@ class AgendaMaquinaResource extends Resource
                             $compromisos = self::compromisosPorAgenda($get('fechas'));
 
                             return Maquina::query()
-                                ->whereNot('estado', EstadoMaquina::Baja)
+                                ->agendables()
                                 ->orderBy('nombre')
                                 ->get(['id', 'nombre'])
                                 ->mapWithKeys(fn (Maquina $maquina): array => [
