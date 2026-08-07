@@ -22,6 +22,7 @@ use App\Services\Maquinaria\ConfirmarLlegadaService;
 use App\Services\Maquinaria\MantenimientoService;
 use App\Services\Maquinaria\MarcarNoLlegoAgendaService;
 use App\Services\Maquinaria\RegistrarDiaMaquinaService;
+use App\Support\Permisos;
 use App\Support\Roles;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -136,7 +137,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
 
         $etiqueta = "{$asignacion->maquina->nombre} → {$asignacion->proyecto->nombre}";
 
-        if (! (auth()->user()?->can('View:CapturaDelDia') ?? false)) {
+        if (! (auth()->user()?->can(Permisos::REGISTRAR_JORNADA_MAQUINA) ?? false)) {
             $this->avisar(
                 'Aquí solo se consulta',
                 "{$etiqueta}: registrar las horas y el combustible del día le toca a maquinaria.",
@@ -1010,7 +1011,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
             ->modalHeading('Registrar jornada')
             ->modalWidth('2xl')
             ->modalSubmitActionLabel('Guardar jornada')
-            ->visible(fn (): bool => auth()->user()?->can('View:CapturaDelDia') ?? false)
+            ->visible(fn (): bool => auth()->user()?->can(Permisos::REGISTRAR_JORNADA_MAQUINA) ?? false)
             ->schema([
                 Placeholder::make('resumen')
                     ->hiddenLabel()

@@ -227,16 +227,16 @@ class RolesInventarioSeeder extends Seeder
         // El encargado también lo ve — SOLO LECTURA y SOLO sus obras
         // (decisión Mauricio 2026-07-15): el alcance lo aplican la página
         // y el widget; sin Create:AgendaMaquina no puede agendar y sin
-        // View:CapturaDelDia no registra jornadas desde el calendario.
+        // RegistrarJornada:Maquina no registra jornadas desde el calendario.
         $encargado->givePermissionTo('View:CalendarioMaquinaria');
 
         // Registrar jornadas (horas + combustible) DESDE EL CALENDARIO.
-        // El nombre viene de la antigua pantalla "Captura del día",
-        // retirada el 2026-07-20: todo se captura en el calendario.
-        Permission::findOrCreate('View:CapturaDelDia', 'web');
-        $maquinaria->givePermissionTo('View:CapturaDelDia');
-        $gerencia->givePermissionTo('View:CapturaDelDia');
-        $recepcion->givePermissionTo('View:CapturaDelDia');
+        // Ya NO se crea aquí a mano: vive en Permisos::PERSONALIZADOS y lo
+        // crea el bucle de arriba, así que es administrable desde la
+        // pestaña Personalizados de la pantalla de Roles como los demás.
+        $maquinaria->givePermissionTo(Permisos::REGISTRAR_JORNADA_MAQUINA);
+        $gerencia->givePermissionTo(Permisos::REGISTRAR_JORNADA_MAQUINA);
+        $recepcion->givePermissionTo(Permisos::REGISTRAR_JORNADA_MAQUINA);
 
         // El super_admin sincronizó sus permisos ANTES de que estos custom
         // existieran (shield:super-admin en AdminUserSeeder) — asignarle

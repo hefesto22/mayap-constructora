@@ -107,6 +107,19 @@ final class Permisos
     /** Ver inventario de TODAS las bodegas (bypass de bodegas asignadas). */
     public const string VER_TODAS_LAS_BODEGAS = 'VerTodasLasBodegas:Bodega';
 
+    // ── Maquinaria — operación diaria ───────────────────────────────────
+    /**
+     * Registrar la jornada (horas + combustible) DESDE EL CALENDARIO.
+     *
+     * Se llamaba `View:CapturaDelDia` por la pantalla "Captura del día",
+     * retirada el 2026-07-20. Al borrarse la página, Shield dejó de
+     * generar su permiso y este quedó huérfano: no aparecía en ninguna
+     * pestaña de Roles y solo se podía mover tocando el seeder. Renombrado
+     * el 2026-08-07 (migración renombrar_permiso_captura_del_dia) para que
+     * diga lo que hace y viva acá, que es la única fuente.
+     */
+    public const string REGISTRAR_JORNADA_MAQUINA = 'RegistrarJornada:Maquina';
+
     /**
      * Estado de proyecto (valor del enum EstadoProyecto) → permiso que lo
      * hace visible. Consumido por ProyectoResource::estadosVisibles() para
@@ -187,6 +200,9 @@ final class Permisos
         'Inventario — Bodegas' => [
             self::VER_TODAS_LAS_BODEGAS => 'Ver todas las bodegas',
         ],
+        'Maquinaria — Operación diaria' => [
+            self::REGISTRAR_JORNADA_MAQUINA => 'Registrar la jornada (horas y combustible) desde el calendario',
+        ],
     ];
 
     /**
@@ -200,5 +216,6 @@ final class Permisos
         + self::PERSONALIZADOS_POR_MODULO['Proyectos — Reportes']
         + self::PERSONALIZADOS_POR_MODULO['Compras — Operaciones sensibles']
         + self::PERSONALIZADOS_POR_MODULO['Requisiciones — Flujo']
-        + self::PERSONALIZADOS_POR_MODULO['Inventario — Bodegas'];
+        + self::PERSONALIZADOS_POR_MODULO['Inventario — Bodegas']
+        + self::PERSONALIZADOS_POR_MODULO['Maquinaria — Operación diaria'];
 }
