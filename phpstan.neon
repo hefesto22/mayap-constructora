@@ -77,7 +77,9 @@ parameters:
         # $zona/$bodega se asignan al INICIO de run() (único entrypoint del
         # seeder) antes de cualquier uso — falso positivo del patrón seeder.
         - identifier: property.uninitialized
-          path: database/seeders/DemoSantaRosaSeeder.php
+          paths:
+              - database/seeders/DemoSantaRosaSeeder.php
+              - database/seeders/DemoMesOperacionSeeder.php
         # env() en seeders es válido (corren al setup, no en runtime cached).
         - identifier: larastan.noEnvCallsOutsideOfConfig
           path: database/seeders/*
@@ -157,6 +159,7 @@ parameters:
               - app/Services/Proyectos/CalcularAvanceProyectoService.php
               - app/Services/Proyectos/RegistrarAnticipoService.php
               - database/factories/ProyectoRenglonFactory.php
+              - database/seeders/DemoMesOperacionSeeder.php
               - app/Models/ProyectoRenglon.php
               - app/Models/Existencia.php
               - app/Services/Inventario/RegistrarMovimientoService.php
@@ -207,6 +210,7 @@ parameters:
               - app/Services/Reportes/GenerarReporteFiscalMensualService.php
               - app/Services/Reportes/GenerarReportePagosMensualService.php
               - app/Services/Reportes/ResumenRentaService.php
+              - app/Console/Commands/AuditarExtrasRenta.php
 
         # ── Acceso dinámico a record en closures de Filament Tables ────────
         # Las Tables de Filament tipan $record como Illuminate\...\Model (no
