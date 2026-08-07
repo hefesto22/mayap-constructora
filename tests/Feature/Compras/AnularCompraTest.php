@@ -250,8 +250,12 @@ test('bloquea la anulación si la requisición ya avanzó más allá de Despacha
 
     $this->confirmar->confirmar($compra);
 
+    // Compra directa: el material lo entregó el proveedor en la obra, así
+    // que el paso siguiente NO es "en tránsito" (no salió de bodega) sino
+    // la confirmación de recepción. El bloqueo de anulación es el mismo:
+    // más allá de Despachada el material ya se movió.
     app(TransicionarRequisicionService::class)
-        ->marcarEnTransito($requisicion->fresh());
+        ->recibir($requisicion->fresh());
 
     expect(fn () => $this->anular->anular($compra->fresh(), 'TARDE'))
         ->toThrow(CompraNoAnulableException::class, 'avanzó');

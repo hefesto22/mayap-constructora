@@ -19,6 +19,22 @@ final class CompraNoVerificableException extends CompraException
         );
     }
 
+    /**
+     * Verificar es lo que METE el stock a la obra y crea la cuenta por
+     * pagar. Hacerlo antes de que el proveedor entregue metería inventario
+     * fantasma y deuda por algo que no llegó (decisión Mauricio
+     * 2026-08-07). Si el proveedor se adelantó, recepción reprograma la
+     * llegada — queda el rastro de que la fecha se movió y por qué.
+     */
+    public static function llegadaEnElFuturo(string $codigo, string $fechaLlegada): self
+    {
+        return new self(
+            "La compra {$codigo} todavía no se puede verificar: el proveedor ".
+            "entrega el {$fechaLlegada}. Si el material ya llegó antes, pedile a ".
+            'recepción que reprograme la llegada y luego verificás lo que trajo.'
+        );
+    }
+
     public static function sinLineasCapturadas(string $codigo): self
     {
         return new self("No se capturó ninguna cantidad recibida para la compra {$codigo}.");

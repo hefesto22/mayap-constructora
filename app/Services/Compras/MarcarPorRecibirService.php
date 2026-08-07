@@ -8,6 +8,7 @@ use App\Enums\EstadoCompra;
 use App\Exceptions\Compras\CompraNoConfirmableException;
 use App\Models\Compra;
 use App\Models\User;
+use App\Services\Requisiciones\SeguimientoLlegadaRequisicionService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -31,6 +32,7 @@ final readonly class MarcarPorRecibirService
         private NotificadorCompras $notificador,
         private ValidarDestinoObraCompraService $destinos,
         private SincronizarRepuestosMantenimientoService $repuestos,
+        private SeguimientoLlegadaRequisicionService $seguimiento,
     ) {}
 
     public function registrar(Compra $compra, ?int $userId = null): void
@@ -43,6 +45,23 @@ final readonly class MarcarPorRecibirService
 
         if ($compra->lineas->isEmpty()) {
             throw CompraNoConfirmableException::sinLineas($compra->codigo);
+        }
+
+        // Entrega directa a obra que nace de una requisición: la fecha
+        // prometida por el proveedor es OBLIGATORIA. Es lo único que le
+        // permite a la obra saber cuándo estar pendiente — sin ella el
+        // encargado se entera el día que aparece el camión, o peor, no se
+        // entera del atraso (decisión Mauricio 2026-08-07).
+        if ($compra->esDirectaAObra()
+            && $compra->requisicion_id !== null
+            && $compra->fecha_estimada_llegada === null
+        ) {
+            $compra->loadMissing('requisicion');
+
+            throw CompraNoConfirmableException::sinFechaDeLlegadaParaObra(
+                $compra->codigo,
+                $compra->requisicion->codigo,
+            );
         }
 
         // Destinos a obra: obra viva + material presupuestado (o permiso
@@ -79,6 +98,11 @@ final readonly class MarcarPorRecibirService
             // Amarrada a una reparación: sincroniza la fecha de repuestos
             // del mantenimiento (no-op sin mantenimiento_id).
             $this->repuestos->pedidoRegistrado($compra, $userId);
+
+            // Entrega directa a obra: la requisición que espera ese
+            // material se entera de la fecha prometida, y el encargado
+            // recibe campanita + WhatsApp (no-op en los demás casos).
+            $this->seguimiento->programar($compra, $userId);
         });
     }
 }

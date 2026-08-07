@@ -25,6 +25,20 @@ final class CompraNoConfirmableException extends CompraException
         return new self("La compra {$codigo} no tiene líneas que confirmar.");
     }
 
+    /**
+     * Entrega directa a obra que viene de una requisición: la obra está
+     * esperando ese material y necesita saber QUÉ DÍA llega (decisión
+     * Mauricio 2026-08-07). Sin fecha prometida no se registra el pedido.
+     */
+    public static function sinFechaDeLlegadaParaObra(string $codigo, string $codigoRequisicion): self
+    {
+        return new self(
+            "La compra {$codigo} entrega directo en la obra de la requisición ".
+            "{$codigoRequisicion}: indicá la fecha estimada de llegada. Es lo que ".
+            'la obra necesita para estar pendiente de recibir el material.'
+        );
+    }
+
     public static function descuentoExcedeValor(string $codigo): self
     {
         return new self(

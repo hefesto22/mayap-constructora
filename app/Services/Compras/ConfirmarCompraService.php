@@ -12,6 +12,7 @@ use App\Exceptions\Compras\CompraNoConfirmableException;
 use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\CuentaPorPagar;
+use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Requisiciones\TransicionarRequisicionService;
@@ -241,16 +242,50 @@ final readonly class ConfirmarCompraService
                     ->all();
 
                 if ($compradoParaLaObra !== []
-                    && $compra->requisicion->estado->puedeTransicionarA(EstadoRequisicion::Despachada)) {
+                    && $compra->requisicion->puedeTransicionarA(EstadoRequisicion::Despachada)) {
                     $this->requisiciones->despacharPorCompraDirecta(
                         requisicion: $compra->requisicion,
                         compradoPorMaterial: $compradoParaLaObra,
                         codigoCompra: $compra->codigo,
                         userId: $userId,
                     );
+
+                    $this->autoRecibirSiLoContoLaObra($compra, $userId);
                 }
             }
         });
+    }
+
+    /**
+     * AUTO-RECEPCIÓN de la requisición (decisión Mauricio 2026-08-07, "B3").
+     *
+     * Si quien verificó la recepción de la compra es el encargado de ESA
+     * obra, el material ya se contó en el sitio contra la factura y con su
+     * firma: pedirle que lo cuente otra vez en la requisición el mismo día
+     * es doble trabajo. La requisición se recibe y concilia sola.
+     *
+     * Si lo verificó la oficina (gerencia/recepción con pase universal),
+     * NO se auto-recibe: nadie en la obra vio ese material todavía, y la
+     * confirmación del encargado es justo el control que faltaba —
+     * exactamente lo que pasó en REQ-2026-00005.
+     */
+    private function autoRecibirSiLoContoLaObra(Compra $compra, ?int $userId): void
+    {
+        if ($userId === null) {
+            return;
+        }
+
+        $verificador = User::find($userId);
+
+        if (! $verificador instanceof User) {
+            return;
+        }
+
+        $this->requisiciones->autoRecibirPorCompraDirecta(
+            requisicion: $compra->requisicion,
+            verificador: $verificador,
+            codigoCompra: $compra->codigo,
+        );
     }
 
     /**

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\EstadoCompra;
 use App\Enums\EstadoRequisicion;
+use App\Enums\OrigenDespacho;
 use App\Models\Concerns\HasUppercaseAttributes;
 use Database\Factories\RequisicionFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,9 +36,12 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $codigo
  * @property int $proyecto_id
  * @property EstadoRequisicion $estado
+ * @property OrigenDespacho|null $origen_despacho
  * @property int|null $solicitante_id
  * @property Carbon $fecha_solicitud
  * @property Carbon $fecha_necesaria
+ * @property Carbon|null $fecha_estimada_llegada
+ * @property Carbon|null $aviso_llegada_obra_at
  * @property string|null $notas
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -60,9 +65,11 @@ class Requisicion extends Model
         'codigo',
         'proyecto_id',
         'estado',
+        'origen_despacho',
         'solicitante_id',
         'fecha_solicitud',
         'fecha_necesaria',
+        'fecha_estimada_llegada',
         'notas',
     ];
 
@@ -72,16 +79,19 @@ class Requisicion extends Model
     protected function casts(): array
     {
         return [
-            'estado'          => EstadoRequisicion::class,
-            'fecha_solicitud' => 'date',
-            'fecha_necesaria' => 'date',
+            'estado'                 => EstadoRequisicion::class,
+            'origen_despacho'        => OrigenDespacho::class,
+            'fecha_solicitud'        => 'date',
+            'fecha_necesaria'        => 'date',
+            'fecha_estimada_llegada' => 'date',
+            'aviso_llegada_obra_at'  => 'datetime',
         ];
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['codigo', 'proyecto_id', 'estado', 'solicitante_id', 'fecha_necesaria', 'notas'])
+            ->logOnly(['codigo', 'proyecto_id', 'estado', 'origen_despacho', 'solicitante_id', 'fecha_necesaria', 'fecha_estimada_llegada', 'notas'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => "Requisición {$eventName}");
@@ -146,7 +156,103 @@ class Requisicion extends Model
         );
     }
 
+    // ─── Reglas de dominio ─────────────────────────────────────────
+
+    /**
+     * ¿La fecha necesaria ya venció? Vencida = estrictamente ANTES de hoy:
+     * si la fecha necesaria es HOY, todavía se puede atender a tiempo.
+     *
+     * Una Solicitada vencida NO se puede autorizar: primero se reprograma
+     * (TransicionarRequisicionService::reprogramar, con motivo en bitácora)
+     * o se rechaza.
+     */
+    public function fechaNecesariaVencida(): bool
+    {
+        return $this->fecha_necesaria->lt(today());
+    }
+
+    /**
+     * ¿El material lo entregó el proveedor directo en la obra? Es lo que
+     * decide si el flujo pasa por "En tránsito" o va derecho a la
+     * confirmación de recepción.
+     */
+    public function esDespachoDirecto(): bool
+    {
+        return $this->origen_despacho?->esCompraDirecta() === true;
+    }
+
+    /**
+     * Estados a los que ESTA requisición puede avanzar (el mapa del enum
+     * ya filtrado por su origen de despacho). Única puerta de consulta
+     * para la UI: ningún Resource debe reconstruir la regla.
+     *
+     * @return array<int, EstadoRequisicion>
+     */
+    public function transicionesPermitidas(): array
+    {
+        return $this->estado->transicionesPermitidas($this->origen_despacho);
+    }
+
+    public function puedeTransicionarA(EstadoRequisicion $destino): bool
+    {
+        return $this->estado->puedeTransicionarA($destino, $this->origen_despacho);
+    }
+
+    /**
+     * ¿Está esperando que llegue una compra? Es la ventana real de
+     * incertidumbre para la obra: pidió material, no había stock, y ahora
+     * depende de que el proveedor cumpla.
+     */
+    public function esperandoLlegada(): bool
+    {
+        return $this->estado === EstadoRequisicion::RequisicionCompra
+            && $this->fecha_estimada_llegada !== null;
+    }
+
+    /**
+     * ¿La llegada prometida cae DESPUÉS de la fecha en que la obra dijo
+     * necesitar el material? (el ámbar del semáforo).
+     */
+    public function llegaTarde(): bool
+    {
+        return $this->fecha_estimada_llegada !== null
+            && $this->fecha_estimada_llegada->gt($this->fecha_necesaria);
+    }
+
+    /**
+     * ¿Pasó la fecha prometida y el material sigue sin llegar? (el rojo).
+     */
+    public function llegadaVencida(): bool
+    {
+        return $this->estado === EstadoRequisicion::RequisicionCompra
+            && $this->fecha_estimada_llegada !== null
+            && $this->fecha_estimada_llegada->lt(today());
+    }
+
     // ─── Relaciones ────────────────────────────────────────────────
+
+    /**
+     * Compras hechas para cubrir esta requisición (compras.requisicion_id).
+     *
+     * @return HasMany<Compra, $this>
+     */
+    public function compras(): HasMany
+    {
+        return $this->hasMany(Compra::class);
+    }
+
+    /**
+     * La compra que todavía viene en camino para esta requisición (la más
+     * reciente en "por recibir"). Es de donde sale la fecha de llegada que
+     * ve la obra.
+     */
+    public function compraEnCamino(): ?Compra
+    {
+        return $this->compras()
+            ->where('estado', EstadoCompra::PorRecibir->value)
+            ->latest('id')
+            ->first();
+    }
 
     /**
      * @return BelongsTo<Proyecto, $this>

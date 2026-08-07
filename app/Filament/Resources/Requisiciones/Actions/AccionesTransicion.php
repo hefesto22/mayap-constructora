@@ -19,12 +19,14 @@ use App\Support\Roles;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Closure;
 use Filament\Actions\Action;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Carbon;
 
 /**
  * Acciones de transición de una requisición — cada una llama al
@@ -48,7 +50,10 @@ final class AccionesTransicion
             ->label('Autorizar')
             ->icon('heroicon-o-check-circle')
             ->color('info')
+            // Vencida NO se autoriza: primero Reprogramar (con motivo) o
+            // Rechazar. El Service repite el guard — esto es solo la UI.
             ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Solicitada
+                && ! $record->fechaNecesariaVencida()
                 && self::puede(Permisos::AUTORIZAR_REQUISICION))
             ->modalHeading('Autorizar requisición')
             ->modalSubmitActionLabel('Autorizar')
@@ -62,6 +67,50 @@ final class AccionesTransicion
                 );
 
                 Notification::make()->title('Requisición autorizada')->success()->send();
+            });
+    }
+
+    /**
+     * Solicitada con fecha necesaria VENCIDA → misma Solicitada con nueva
+     * fecha. No es una transición de estado: actualiza la fecha y deja el
+     * renglón Solicitada → Solicitada en la bitácora con el motivo. Sin
+     * esto, la requisición vencida queda sin salida (Autorizar se oculta).
+     */
+    public static function reprogramar(): Action
+    {
+        return Action::make('reprogramar')
+            ->label('Reprogramar')
+            ->icon('heroicon-o-calendar-days')
+            ->color('warning')
+            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Solicitada
+                && $record->fechaNecesariaVencida()
+                && self::puedeReprogramar($record))
+            ->modalHeading('Reprogramar fecha necesaria')
+            ->modalDescription(fn (Requisicion $record): string => 'La fecha necesaria ('
+                .$record->fecha_necesaria->format('d/m/Y')
+                .') ya venció sin atenderse. Para poder autorizarla, indicá la nueva fecha y el motivo — queda en la bitácora.')
+            ->modalSubmitActionLabel('Reprogramar')
+            ->schema([
+                DatePicker::make('fecha_necesaria')
+                    ->label('Nueva fecha necesaria')
+                    ->required()
+                    ->native(false)
+                    ->minDate(today()),
+                Textarea::make('motivo')
+                    ->label('Motivo de la reprogramación')
+                    ->required()
+                    ->rows(3)
+                    ->placeholder('¿Por qué no se atendió a tiempo y sigue haciendo falta?'),
+            ])
+            ->action(function (Requisicion $record, array $data): void {
+                app(TransicionarRequisicionService::class)->reprogramar(
+                    $record,
+                    Carbon::parse((string) $data['fecha_necesaria']),
+                    (string) $data['motivo'],
+                    self::userId(),
+                );
+
+                Notification::make()->title('Fecha necesaria reprogramada')->success()->send();
             });
     }
 
@@ -125,7 +174,12 @@ final class AccionesTransicion
     }
 
     /**
-     * Despachada → EnTransito.
+     * Despachada → EnTransito. SOLO en la vía bodega.
+     *
+     * En una compra directa a obra el material nunca salió de una bodega
+     * nuestra: no hay tramo que marcar. El botón se esconde y el Service
+     * repite el guard — bug de REQ-2026-00005: el botón se mostraba igual
+     * y alguien lo apretó un minuto después del despacho directo.
      */
     public static function marcarEnTransito(): Action
     {
@@ -135,6 +189,7 @@ final class AccionesTransicion
             ->color('info')
             ->requiresConfirmation()
             ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::Despachada
+                && ! $record->esDespachoDirecto()
                 && self::puede(Permisos::DESPACHAR_REQUISICION))
             ->action(function (Requisicion $record): void {
                 app(TransicionarRequisicionService::class)->marcarEnTransito($record, self::userId());
@@ -144,17 +199,40 @@ final class AccionesTransicion
     }
 
     /**
-     * EnTransito → Recibida. Captura cuánto llegó realmente por línea.
+     * → Recibida. Captura cuánto llegó realmente por línea.
+     *
+     * Dos puertas de entrada, distintas de verdad y no solo de nombre:
+     *
+     *  - VÍA BODEGA (desde EnTransito) → "Recibir": se cuenta contra lo que
+     *    despachó la bodega; un faltante es de bodega o del transporte.
+     *  - COMPRA DIRECTA (desde Despachada) → "Confirmar recepción": se
+     *    cuenta contra lo que trajo el proveedor; un faltante es un reclamo
+     *    al proveedor que pega en la cuenta por pagar.
+     *
+     * En compra directa este botón solo queda pendiente cuando la recepción
+     * de la compra la verificó la OFICINA: si la verificó el encargado de
+     * la obra, la requisición ya se recibió y concilió sola — no lo hacemos
+     * contar dos veces el mismo material el mismo día.
+     *
+     * La visibilidad la decide la máquina de estados (que ya conoce el
+     * origen), no una lista de estados escrita a mano acá.
      */
     public static function recibir(): Action
     {
         return Action::make('recibir')
-            ->label('Recibir')
+            ->label(fn (Requisicion $record): string => $record->esDespachoDirecto()
+                ? 'Confirmar recepción'
+                : 'Recibir')
             ->icon('heroicon-o-inbox-arrow-down')
             ->color('primary')
-            ->visible(fn (Requisicion $record): bool => $record->estado === EstadoRequisicion::EnTransito
+            ->visible(fn (Requisicion $record): bool => $record->puedeTransicionarA(EstadoRequisicion::Recibida)
                 && self::puedeRecibir($record))
-            ->modalHeading('Confirmar recepción en obra')
+            ->modalHeading(fn (Requisicion $record): string => $record->esDespachoDirecto()
+                ? 'Confirmar lo que entregó el proveedor'
+                : 'Confirmar recepción en obra')
+            ->modalDescription(fn (Requisicion $record): ?string => $record->esDespachoDirecto()
+                ? 'Contá lo que el proveedor dejó en la obra. Si falta algo, queda como discrepancia y compras le reclama.'
+                : null)
             ->modalSubmitActionLabel('Confirmar recepción')
             ->fillForm(self::prellenarLineas('cantidad_despachada'))
             ->schema([self::repeaterLineas('Recibido')])
@@ -215,6 +293,37 @@ final class AccionesTransicion
             ->url(fn (Requisicion $record): string => CompraResource::getUrl(
                 'create',
                 ['requisicion' => $record->id],
+            ));
+    }
+
+    /**
+     * Puente hacia la verificación de la compra (2026-08-07).
+     *
+     * Mientras la requisición espera una compra, lo que la obra tiene que
+     * hacer NO es "recibir la requisición" sino CONTAR lo que trajo el
+     * proveedor contra la factura — y esa acción vive en Compras. Sin este
+     * botón el encargado veía "llega hoy" en su listado y se quedaba
+     * esperando un botón que solo aparece DESPUÉS de esa verificación.
+     *
+     * No duplica el modal de verificación (única fuente: ComprasTable):
+     * solo abre el camino hacia él.
+     */
+    public static function verificarLlegada(): Action
+    {
+        return Action::make('verificar_llegada')
+            ->label('Verificar lo que llegó')
+            ->icon('heroicon-o-clipboard-document-check')
+            ->color('warning')
+            // Solo desde el día prometido: antes no hay nada que contar y
+            // el botón llevaría a una acción deshabilitada. La columna
+            // "Llega" ya le dice al encargado qué día esperar.
+            ->visible(fn (Requisicion $record): bool => $record->esperandoLlegada()
+                && $record->fecha_estimada_llegada?->gt(today()) !== true
+                && self::puede(Permisos::VERIFICAR_RECEPCION_COMPRA)
+                && self::alcanzaLaObra($record))
+            ->url(fn (Requisicion $record): string => CompraResource::getUrl(
+                'index',
+                ['tableSearch' => $record->compraEnCamino()->codigo ?? ''],
             ));
     }
 
@@ -371,6 +480,28 @@ final class AccionesTransicion
     }
 
     /**
+     * Reprograma: quien puede autorizar (decide si el pedido sigue vivo) y
+     * también el solicitante o el encargado de ESA obra — es su pedido y
+     * son quienes saben si el material todavía hace falta. Todo queda
+     * igual de trazado en la bitácora.
+     */
+    private static function puedeReprogramar(Requisicion $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        if ($user->can(Permisos::AUTORIZAR_REQUISICION)) {
+            return true;
+        }
+
+        return $record->solicitante_id === $user->id
+            || $record->proyecto->esEncargado($user);
+    }
+
+    /**
      * Recibe en obra: permiso "Recibir material en obra" + ALCANCE — solo
      * el encargado de ESA obra (quien está físicamente ahí). Gerencia y
      * admin son el respaldo universal.
@@ -388,6 +519,24 @@ final class AccionesTransicion
         }
 
         return $record->proyecto->esEncargado($user);
+    }
+
+    /**
+     * Verificar lo que llegó a la obra: el encargado de ESA obra, que es
+     * quien está físicamente ahí para contar los bultos. Gerencia y admin
+     * son el respaldo universal — mismo alcance que la verificación de la
+     * compra (AlcanceDestinoCompra), para no inventar una regla paralela.
+     */
+    private static function alcanzaLaObra(Requisicion $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        return $user->hasAnyRole([Roles::GERENCIA, Utils::getSuperAdminName()])
+            || $record->proyecto->esEncargado($user);
     }
 
     private static function userId(): ?int

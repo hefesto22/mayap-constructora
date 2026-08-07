@@ -188,12 +188,25 @@ class CompraForm
 
                 // Pedidos con días de espera: ese día suena la campanita
                 // "el pedido debería llegar". Compra del mismo día: vacío.
+                //
+                // OBLIGATORIA en la entrega directa a obra que nace de una
+                // requisición (decisión Mauricio 2026-08-07): del otro lado
+                // hay un encargado que pidió el material para una fecha y
+                // necesita saber qué día llega de verdad — sobre todo si
+                // se adelanta o se atrasa.
                 DatePicker::make('fecha_estimada_llegada')
-                    ->label('Fecha estimada de llegada (pedidos)')
+                    ->label(fn (callable $get): string => self::entregaDirectaDeRequisicion($get)
+                        ? 'Fecha de entrega prometida por el proveedor'
+                        : 'Fecha estimada de llegada (pedidos)')
                     ->native(false)
-                    ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::EquipoConstruccion, CategoriaCompra::Oficina))
+                    ->minDate(fn (?Compra $record): ?string => $record === null ? today()->toDateString() : null)
+                    ->visible(fn (callable $get): bool => self::entregaDirectaDeRequisicion($get)
+                        || self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::EquipoConstruccion, CategoriaCompra::Oficina))
+                    ->required(fn (callable $get): bool => self::entregaDirectaDeRequisicion($get))
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    ->helperText('Solo pedidos con espera: al Registrar queda "por recibir" y ese día avisa. Si se compró y recogió el mismo día, dejala vacía y usá "Confirmar (recibida)".'),
+                    ->helperText(fn (callable $get): string => self::entregaDirectaDeRequisicion($get)
+                        ? 'Obligatoria: es lo que le avisa a la obra qué día estar pendiente de recibir. Si después el proveedor la mueve, usá "Reprogramar llegada" — la obra se entera del adelanto o del atraso.'
+                        : 'Solo pedidos con espera: al Registrar queda "por recibir" y ese día avisa. Si se compró y recogió el mismo día, dejala vacía y usá "Confirmar (recibida)".'),
 
                 Radio::make('destino_tipo')
                     ->label('Entrega en')
@@ -712,6 +725,20 @@ class CompraForm
      * como enums CategoriaCompra al hidratar una compra guardada (cast
      * AsEnumCollection) — aquí se normaliza una sola vez.
      */
+    /**
+     * ¿Esta compra es la entrega directa a obra de una requisición?
+     *
+     * Es el caso en el que hay una obra esperando material: ahí la fecha
+     * de llegada deja de ser opcional (MarcarPorRecibirService repite el
+     * guard — esto es solo la UI).
+     */
+    private static function entregaDirectaDeRequisicion(callable $get): bool
+    {
+        return $get('destino_tipo') === 'obra'
+            && $get('requisicion_id') !== null
+            && self::incluye($get('categorias'), CategoriaCompra::Materiales);
+    }
+
     private static function incluye(mixed $estado, CategoriaCompra ...$buscadas): bool
     {
         if (! is_iterable($estado)) {

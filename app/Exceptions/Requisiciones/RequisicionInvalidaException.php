@@ -32,4 +32,49 @@ final class RequisicionInvalidaException extends RequisicionException
     {
         return new self("La requisición {$codigo} no tiene líneas que procesar.");
     }
+
+    public static function vencidaSinReprogramar(string $codigo, string $fechaNecesaria): self
+    {
+        return new self(
+            "La requisición {$codigo} no se puede autorizar: su fecha necesaria ".
+            "({$fechaNecesaria}) ya venció. Reprogramá la fecha (con motivo) o rechazala."
+        );
+    }
+
+    public static function soloSolicitadaSeReprograma(string $codigo, string $estado): self
+    {
+        return new self(
+            "La requisición {$codigo} no se puede reprogramar: está en estado ".
+            "\"{$estado}\" y solo una requisición Solicitada admite mover su fecha necesaria."
+        );
+    }
+
+    public static function fechaReprogramadaEnPasado(string $fecha): self
+    {
+        return new self(
+            "No se puede reprogramar hacia {$fecha}: la nueva fecha necesaria ".
+            'debe ser hoy o una fecha futura.'
+        );
+    }
+
+    public static function motivoReprogramacionRequerido(): self
+    {
+        return new self(
+            'Reprogramar la fecha necesaria requiere un motivo: queda en la '.
+            'bitácora de la requisición.'
+        );
+    }
+
+    /**
+     * El bug de REQ-2026-00005: el material lo entregó el proveedor en la
+     * obra y aun así alguien la marcó "en tránsito".
+     */
+    public static function transitoEnDespachoDirecto(string $codigo): self
+    {
+        return new self(
+            "La requisición {$codigo} no puede marcarse en tránsito: el material lo ".
+            'entregó el proveedor directo en la obra, no salió de ninguna bodega. '.
+            'Lo que falta es que la obra confirme la recepción.'
+        );
+    }
 }

@@ -34,8 +34,15 @@ class RequisicionesTable
                     ->label('Estado')
                     ->badge()
                     ->color(fn (EstadoRequisicion $state): string => $state->getColor())
-                    ->icon(fn (EstadoRequisicion $state): string => $state->getIcon())
-                    ->formatStateUsing(fn (EstadoRequisicion $state): string => $state->getLabel())
+                    ->icon(fn (EstadoRequisicion $state, Requisicion $record): string => self::esEntregaDelProveedor($record)
+                        ? 'heroicon-o-shopping-cart'
+                        : $state->getIcon())
+                    // "Despachada" en una compra directa confunde al
+                    // bodeguero: él no despachó nada, no hubo salida de
+                    // inventario suya. Mismo estado, etiqueta honesta.
+                    ->formatStateUsing(fn (EstadoRequisicion $state, Requisicion $record): string => self::esEntregaDelProveedor($record)
+                        ? 'Entregada por el proveedor'
+                        : $state->getLabel())
                     ->sortable(),
                 TextColumn::make('lineas_count')
                     ->label('Items')
@@ -46,8 +53,31 @@ class RequisicionesTable
                     ->label('Necesaria')
                     ->date('d/M/Y')
                     ->sortable()
-                    ->color(fn (Requisicion $record): string => $record->fecha_necesaria->isPast()
+                    // Vencida = ANTES de hoy (mismo criterio que el bloqueo
+                    // de Autorizar): la fecha de HOY aún no es un atraso.
+                    ->color(fn (Requisicion $record): string => $record->fechaNecesariaVencida()
                         && ! $record->estado->esTerminal() ? 'danger' : 'gray'),
+                // Semáforo de la entrega del proveedor (2026-08-07): la obra
+                // ve de un vistazo si su material llega a tiempo o no.
+                //   verde = llega antes o el mismo día que se necesitaba
+                //   ámbar = llega DESPUÉS de la fecha necesaria
+                //   rojo  = la fecha prometida ya pasó y sigue sin llegar
+                TextColumn::make('fecha_estimada_llegada')
+                    ->label('Llega')
+                    ->date('d/M/Y')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->color(fn (Requisicion $record): string => match (true) {
+                        $record->llegadaVencida() => 'danger',
+                        $record->llegaTarde()     => 'warning',
+                        default                   => 'success',
+                    })
+                    ->tooltip(fn (Requisicion $record): ?string => match (true) {
+                        $record->llegadaVencida()   => 'El proveedor no ha entregado: la fecha prometida ya pasó.',
+                        $record->llegaTarde()       => 'Llega DESPUÉS de la fecha en que se necesitaba en obra.',
+                        $record->esperandoLlegada() => 'Fecha de entrega prometida por el proveedor. Si el material llega antes, avisale a recepción para que reprograme la llegada.',
+                        default                     => null,
+                    }),
                 TextColumn::make('solicitante.name')
                     ->label('Solicitante')
                     ->placeholder('—')
@@ -74,7 +104,9 @@ class RequisicionesTable
                 EditAction::make()
                     ->visible(fn (Requisicion $record): bool => $record->estado->permiteEditarLineas()),
                 AccionesTransicion::autorizar(),
+                AccionesTransicion::reprogramar(),
                 AccionesTransicion::registrarEntrada(),
+                AccionesTransicion::verificarLlegada(),
                 AccionesTransicion::despachar(),
                 AccionesTransicion::marcarEnTransito(),
                 AccionesTransicion::recibir(),
@@ -83,5 +115,15 @@ class RequisicionesTable
             ])
             ->paginated([25, 50, 100])
             ->poll('60s');
+    }
+
+    /**
+     * ¿Esta requisición está "despachada" porque el proveedor la entregó
+     * directo en la obra? (no hubo salida de bodega).
+     */
+    private static function esEntregaDelProveedor(Requisicion $record): bool
+    {
+        return $record->estado === EstadoRequisicion::Despachada
+            && $record->esDespachoDirecto();
     }
 }

@@ -10,6 +10,7 @@ use App\Enums\EstadoCompra;
 use App\Enums\TipoDocumentoFiscal;
 use App\Exceptions\Compras\CompraException;
 use App\Filament\Resources\Compras\Actions\AccionFotosFactura;
+use App\Filament\Resources\Compras\Actions\AccionReprogramarLlegada;
 use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\User;
@@ -148,6 +149,7 @@ class ComprasTable
                 EditAction::make()
                     ->visible(fn (Compra $record): bool => $record->estado === EstadoCompra::Borrador),
                 AccionFotosFactura::make(),
+                AccionReprogramarLlegada::make(),
                 Action::make('registrar')
                     ->label('Registrar')
                     ->icon('heroicon-o-truck')
@@ -245,6 +247,15 @@ class ComprasTable
                             && $user->can(Permisos::VERIFICAR_RECEPCION_COMPRA)
                             && app(VerificarRecepcionService::class)->lineasPendientesPara($user, $record)->isNotEmpty();
                     })
+                    // Antes del día prometido el botón se VE pero no se
+                    // toca: esconderlo dejaría al encargado sin saber por
+                    // qué no puede recibir (mismo error que ya cometimos
+                    // con los domingos de la agenda).
+                    ->disabled(fn (Compra $record): bool => $record->fecha_estimada_llegada?->gt(today()) === true)
+                    ->tooltip(fn (Compra $record): ?string => $record->fecha_estimada_llegada?->gt(today()) === true
+                        ? 'El proveedor entrega el '.$record->fecha_estimada_llegada->format('d/m/Y')
+                            .'. Si ya llegó antes, pedile a recepción que reprograme la llegada.'
+                        : null)
                     ->modalHeading('Verificar lo recibido contra la factura')
                     ->modalDescription('Contá los bultos: viene prellenado con lo facturado — solo corregí lo que NO cuadre. Al quedar todo verificado, el stock entra con lo recibido.')
                     ->modalSubmitActionLabel('Guardar verificación')

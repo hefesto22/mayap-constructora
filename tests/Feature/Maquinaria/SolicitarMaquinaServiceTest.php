@@ -13,6 +13,7 @@ use App\Models\Proyecto;
 use App\Models\SolicitudMaquina;
 use App\Models\User;
 use App\Services\Maquinaria\SolicitarMaquinaService;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 
 /*
@@ -25,6 +26,13 @@ use Spatie\Permission\Models\Role;
 */
 
 beforeEach(function (): void {
+    // El calendario NO puede decidir si la suite pasa. Estos tests piden
+    // la máquina para "today()+2" y la agenda no programa domingos: cada
+    // VIERNES ese +2 caía en domingo y 4 tests se caían solos (detectado
+    // el 2026-08-07). Anclamos el reloj a un lunes y todas las fechas
+    // relativas del archivo caen en día hábil, corra el día que corra.
+    $this->travelTo(Carbon::parse('2026-08-10')); // lunes
+
     $this->servicio = app(SolicitarMaquinaService::class);
 });
 
@@ -270,4 +278,31 @@ test('la solicitud queda en el historial del proyecto (relaciones)', function ()
 
     expect($obra->solicitudesMaquina()->count())->toBe(1)
         ->and($obra->agendaMaquina()->count())->toBe(1);
+});
+
+test('pedir la máquina para un DOMINGO deja la solicitud pendiente y DICE por qué', function (): void {
+    Role::firstOrCreate(['name' => 'maquinaria', 'guard_name' => 'web']);
+
+    $encargado = User::factory()->create();
+    $obra = Proyecto::factory()->enEjecucion()->create();
+    $obra->encargados()->attach($encargado);
+    $maquina = Maquina::factory()->create(['nombre' => 'EXCAVADORA CAT 320D']);
+
+    $domingo = today()->next(Carbon::SUNDAY)->toDateString();
+
+    $solicitud = $this->servicio->crear(
+        proyectoId: $obra->id,
+        maquinaId: $maquina->id,
+        fechaDesde: $domingo,
+        horaLlegada: '07:00',
+        userId: $encargado->id,
+    );
+
+    // Pendiente está bien (trabajar domingo se autoriza, no se agenda
+    // solo). Lo que NO puede pasar es que quede sin explicación.
+    expect($solicitud->estado)->toBe(EstadoSolicitudMaquina::Pendiente)
+        ->and($solicitud->agenda_maquina_id)->toBeNull()
+        ->and($solicitud->motivo)->toContain('domingo')
+        ->and($solicitud->motivo)->not->toBe('')
+        ->and(AgendaMaquina::count())->toBe(0);
 });

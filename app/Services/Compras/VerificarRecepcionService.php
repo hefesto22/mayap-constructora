@@ -56,6 +56,17 @@ final readonly class VerificarRecepcionService
             throw CompraNoVerificableException::estadoInvalido($compra->codigo, $compra->estado);
         }
 
+        // Todavía no llegó el día prometido: no hay nada que contar. Sin
+        // este guard alguien podía "verificar" material inexistente y
+        // meterle stock a la obra y deuda al proveedor por adelantado.
+        // Las compras sin fecha estimada (mismo día) no entran acá.
+        if ($compra->fecha_estimada_llegada?->gt(today()) === true) {
+            throw CompraNoVerificableException::llegadaEnElFuturo(
+                $compra->codigo,
+                $compra->fecha_estimada_llegada->format('d/m/Y'),
+            );
+        }
+
         return DB::transaction(function () use ($compra, $recibidoPorLinea, $verificador): EstadoCompra {
             $bloqueada = Compra::query()
                 ->whereKey($compra->id)

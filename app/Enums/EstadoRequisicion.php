@@ -15,20 +15,27 @@ use Filament\Support\Contracts\HasLabel;
  * Workflow con responsable registrado en cada transición:
  *
  *   Solicitada ─(autoriza)─> Autorizada ─(hay stock)──> Despachada
- *       │                        │                          │
- *       │                        │(no hay stock)            ▼
- *       │(rechaza)               ▼                       EnTransito
- *       ▼                  RequisicionCompra                │
- *   Rechazada              (notifica admin)                 ▼
- *                                │                       Recibida
- *                                │(entra stock,             │
- *                                │ se despacha)        ┌────┴─────┐
- *                                ▼               (cuadra)      (no cuadra)
- *                            Despachada            ▼               ▼
- *                                                Cerrada       Discrepancia
+ *       │                        │                    (origen: bodega)
+ *       │                        │(no hay stock)            │
+ *       │(rechaza)               ▼                          ▼
+ *       ▼                  RequisicionCompra             EnTransito
+ *   Rechazada              (notifica compras)               │
+ *                                │                          ▼
+ *                                │(el proveedor entrega  Recibida
+ *                                │ directo en la obra)      │
+ *                                ▼                     ┌────┴─────┐
+ *                            Despachada ─────────► (cuadra)   (no cuadra)
+ *                     (origen: compra_directa)         ▼            ▼
+ *                      SIN pasar por tránsito       Cerrada    Discrepancia
  *
  * Reglas de negocio:
  *  - Solo `Solicitada` permite editar las líneas (cantidades, items).
+ *  - `EnTransito` SOLO existe en la vía bodega. Una compra directa a obra
+ *    no tiene tramo de tránsito nuestro: el material lo dejó el proveedor
+ *    en el sitio. Por eso `transicionesPermitidas()` recibe el
+ *    OrigenDespacho de la requisición (decisión Mauricio 2026-08-07, bug
+ *    de REQ-2026-00005: se despachó por compra directa y aun así el
+ *    sistema ofreció "Marcar en tránsito" — y alguien lo apretó).
  *  - `RequisicionCompra` es un estado INTERNO: la bodega no tenía stock,
  *    se notifica a Administración. Cuando el stock entra (vía
  *    RegistrarMovimientoService::entradaCompra) se puede Despachar.
@@ -101,17 +108,24 @@ enum EstadoRequisicion: string implements HasColor, HasIcon, HasLabel
     /**
      * Estados a los que se puede transicionar desde el actual.
      *
+     * El ÚNICO renglón que depende del origen es `Despachada`: por bodega
+     * sigue el tránsito; por compra directa el material ya está en la obra
+     * y lo único que falta es que la obra confirme la recepción. Sin origen
+     * (null) se asume la vía bodega — nunca nos saltamos un tránsito real.
+     *
      * @return array<int, self>
      */
-    public function transicionesPermitidas(): array
+    public function transicionesPermitidas(?OrigenDespacho $origen = null): array
     {
         return match ($this) {
             self::Solicitada        => [self::Autorizada, self::Rechazada],
             self::Autorizada        => [self::Despachada, self::RequisicionCompra, self::Rechazada],
             self::RequisicionCompra => [self::Despachada, self::Rechazada],
-            self::Despachada        => [self::EnTransito],
-            self::EnTransito        => [self::Recibida],
-            self::Recibida          => [self::Cerrada, self::Discrepancia],
+            self::Despachada        => $origen?->esCompraDirecta() === true
+                ? [self::Recibida]
+                : [self::EnTransito],
+            self::EnTransito => [self::Recibida],
+            self::Recibida   => [self::Cerrada, self::Discrepancia],
             // Terminales.
             self::Cerrada,
             self::Discrepancia,
@@ -122,9 +136,9 @@ enum EstadoRequisicion: string implements HasColor, HasIcon, HasLabel
     /**
      * ¿Se puede transicionar de este estado al dado?
      */
-    public function puedeTransicionarA(self $destino): bool
+    public function puedeTransicionarA(self $destino, ?OrigenDespacho $origen = null): bool
     {
-        return in_array($destino, $this->transicionesPermitidas(), strict: true);
+        return in_array($destino, $this->transicionesPermitidas($origen), strict: true);
     }
 
     /**

@@ -182,7 +182,9 @@ final class SolicitarMaquinaService
         if ($resultado['creados'] === 0) {
             return $this->marcarPendiente(
                 $solicitud,
-                implode(' ', array_slice($resultado['saltados'], 0, 2)),
+                $resultado['saltados'] !== []
+                    ? implode(' ', array_slice($resultado['saltados'], 0, 2))
+                    : $this->motivoSinDiasAgendables($fechaDesde, $fechaHasta),
                 $userId,
             );
         }
@@ -214,6 +216,29 @@ final class SolicitarMaquinaService
         $this->notificador->solicitudResuelta($solicitud, $userId);
 
         return $solicitud;
+    }
+
+    /**
+     * El lote no agendó NADA y tampoco reportó choques: el único caso que
+     * queda es que todos los días pedidos sean domingo — `agendarLote` los
+     * excluye por defecto y los salta en silencio.
+     *
+     * Sin esto la solicitud quedaba pendiente CON EL MOTIVO EN BLANCO: al
+     * rol maquinaria le sonaba una campanita sin explicación y el
+     * encargado no entendía por qué no le agendaron la máquina que pidió.
+     * La agenda sigue sin programar domingos sola (trabajar domingo es la
+     * excepción y se autoriza), pero ahora lo dice.
+     */
+    private function motivoSinDiasAgendables(string $fechaDesde, ?string $fechaHasta): string
+    {
+        $desde = Carbon::parse($fechaDesde);
+        $hasta = Carbon::parse($fechaHasta ?? $fechaDesde);
+
+        $cuando = $desde->isSameDay($hasta)
+            ? 'El '.$desde->format('d/m/Y').' es domingo'
+            : 'Del '.$desde->format('d/m/Y').' al '.$hasta->format('d/m/Y').' no hay ningún día hábil (solo domingos)';
+
+        return $cuando.': la agenda no programa domingos. Si se va a trabajar ese día, maquinaria la agenda a mano.';
     }
 
     private function marcarPendiente(SolicitudMaquina $solicitud, string $motivo, ?int $userId): SolicitudMaquina

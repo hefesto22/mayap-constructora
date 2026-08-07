@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace App\Services\Requisiciones;
 
 use App\Enums\EstadoRequisicion;
+use App\Enums\OrigenDespacho;
 use App\Exceptions\Inventario\StockInsuficienteException;
 use App\Exceptions\Requisiciones\RequisicionInvalidaException;
 use App\Exceptions\Requisiciones\TransicionInvalidaException;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
 use App\Models\RequisicionTransicion;
+use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -45,6 +48,11 @@ final readonly class TransicionarRequisicionService
      * (puede ser igual o menor a la solicitada, nunca mayor). Si no se
      * provee una línea, se autoriza la cantidad solicitada completa.
      *
+     * Si la fecha necesaria ya venció, NO se autoriza: primero hay que
+     * reprogramar (con motivo en bitácora) o rechazar — autorizar un
+     * pedido vencido "como si nada" despacharía material que quizá la
+     * obra ya resolvió por otro lado.
+     *
      * @param array<int, string> $cantidadesPorLinea requisicion_linea_id => cantidad
      */
     public function autorizar(
@@ -53,6 +61,13 @@ final readonly class TransicionarRequisicionService
         ?int $userId = null,
         ?string $nota = null,
     ): void {
+        if ($requisicion->fechaNecesariaVencida()) {
+            throw RequisicionInvalidaException::vencidaSinReprogramar(
+                $requisicion->codigo,
+                $requisicion->fecha_necesaria->format('d/m/Y'),
+            );
+        }
+
         $requisicion->loadMissing('lineas');
         $this->assertTieneLineas($requisicion);
 
@@ -109,6 +124,10 @@ final readonly class TransicionarRequisicionService
                     $linea->cantidad_despachada = $cantidad;
                     $linea->save();
                 }
+
+                // Salió de bodega: hay un tramo real de carretera que
+                // registrar, así que esta requisición SÍ pasa por tránsito.
+                $requisicion->origen_despacho = OrigenDespacho::Bodega;
 
                 $this->aplicarTransicion($requisicion, EstadoRequisicion::Despachada, $userId, $nota);
             });
@@ -177,12 +196,83 @@ final readonly class TransicionarRequisicionService
             $linea->save();
         }
 
+        // El material NO viajó desde una bodega nuestra: lo dejó el
+        // proveedor en el sitio. Marcar el origen es lo que cierra el
+        // camino a "En tránsito" (bug de REQ-2026-00005). Si alguna parte
+        // ya había salido de bodega, manda bodega: ese tramo sí existió.
+        if ($requisicion->origen_despacho !== OrigenDespacho::Bodega) {
+            $requisicion->origen_despacho = OrigenDespacho::CompraDirecta;
+        }
+
+        // La espera terminó: el material llegó. Se limpia el seguimiento
+        // de llegada para que el cron deje de perseguir esta requisición.
+        $requisicion->aviso_llegada_obra_at = null;
+        $requisicion->fecha_estimada_llegada = null;
+
         $this->aplicarTransicion(
             $requisicion,
             EstadoRequisicion::Despachada,
             $userId,
             "Despacho directo a obra por compra {$codigoCompra}.",
         );
+    }
+
+    /**
+     * AUTO-RECEPCIÓN de compra directa (decisión Mauricio 2026-08-07, "B3").
+     *
+     * Cuando quien verificó la recepción de la compra es el encargado de
+     * ESA obra, el material ya se contó en el sitio, contra la factura y
+     * con su firma (`verificada_por`). Pedirle que lo cuente OTRA VEZ en la
+     * requisición el mismo día es puro doble trabajo: la requisición se da
+     * por recibida sola y se concilia.
+     *
+     * NO aplica —y la obra sí tiene que confirmar a mano— cuando:
+     *  - quien verificó fue la oficina (gerencia/recepción con pase
+     *    universal): nadie en la obra vio ese material; o
+     *  - la compra no cubrió todo lo pendiente: llegó parcial y hay que
+     *    capturar cuánto llegó de verdad.
+     *
+     * Asume que el caller (ConfirmarCompraService) envuelve en transacción.
+     *
+     * @return bool ¿Se dio por recibida sola?
+     */
+    public function autoRecibirPorCompraDirecta(
+        Requisicion $requisicion,
+        User $verificador,
+        string $codigoCompra,
+    ): bool {
+        if ($requisicion->estado !== EstadoRequisicion::Despachada || ! $requisicion->esDespachoDirecto()) {
+            return false;
+        }
+
+        $requisicion->loadMissing('proyecto');
+
+        if (! $requisicion->proyecto->esEncargado($verificador)) {
+            return false;
+        }
+
+        if ($this->tienePendienteDeDespacho($requisicion)) {
+            return false;
+        }
+
+        $nota = "Recepción confirmada en obra al verificar la compra {$codigoCompra}.";
+
+        foreach ($requisicion->lineas as $linea) {
+            $linea->cantidad_recibida = (string) $linea->cantidad_despachada;
+            $linea->save();
+        }
+
+        $this->aplicarTransicion($requisicion, EstadoRequisicion::Recibida, $verificador->id, $nota);
+
+        // Misma puerta de siempre: la regla de "cuadra / no cuadra" vive en
+        // un solo lugar. Como lo recibido se tomó de lo despachado, cierra.
+        $this->conciliar(
+            $requisicion,
+            $verificador->id,
+            "Conciliada automáticamente: lo contado al verificar {$codigoCompra} cuadra con lo despachado.",
+        );
+
+        return true;
     }
 
     /**
@@ -221,6 +311,9 @@ final readonly class TransicionarRequisicionService
 
         $origen = $requisicion->estado;
         $requisicion->estado = EstadoRequisicion::RequisicionCompra;
+        // Se deshizo el despacho: el origen vuelve a estar sin decidir (la
+        // requisición puede terminar saliendo de bodega esta vez).
+        $requisicion->origen_despacho = null;
         $requisicion->save();
 
         RequisicionTransicion::create([
@@ -235,10 +328,18 @@ final readonly class TransicionarRequisicionService
     }
 
     /**
-     * Despachada → EnTransito. El material salió hacia la obra.
+     * Despachada → EnTransito. El material salió DE BODEGA hacia la obra.
+     *
+     * Solo existe en la vía bodega. En una compra directa el proveedor
+     * entregó en el sitio: no hay tramo que marcar, y el guard explícito
+     * da un mensaje claro en vez del genérico de transición inválida.
      */
     public function marcarEnTransito(Requisicion $requisicion, ?int $userId = null, ?string $nota = null): void
     {
+        if ($requisicion->esDespachoDirecto()) {
+            throw RequisicionInvalidaException::transitoEnDespachoDirecto($requisicion->codigo);
+        }
+
         DB::transaction(function () use ($requisicion, $userId, $nota): void {
             $this->aplicarTransicion($requisicion, EstadoRequisicion::EnTransito, $userId, $nota);
         });
@@ -303,6 +404,56 @@ final readonly class TransicionarRequisicionService
     }
 
     /**
+     * REPROGRAMA la fecha necesaria de una requisición Solicitada cuya
+     * fecha venció sin atenderse. No cambia el estado: deja un renglón
+     * Solicitada → Solicitada en la bitácora con el responsable, la fecha
+     * anterior, la nueva y el motivo (obligatorio).
+     *
+     * Es la única puerta para mover la fecha una vez vencida — el
+     * formulario de edición bloquea el campo en ese caso. No pasa por
+     * aplicarTransicion porque la máquina de estados solo modela avances
+     * (Solicitada → Solicitada sería inválida); la bitácora sí registra
+     * el evento, que es lo que importa para la trazabilidad.
+     */
+    public function reprogramar(
+        Requisicion $requisicion,
+        Carbon $nuevaFecha,
+        string $motivo,
+        ?int $userId = null,
+    ): void {
+        if ($requisicion->estado !== EstadoRequisicion::Solicitada) {
+            throw RequisicionInvalidaException::soloSolicitadaSeReprograma(
+                $requisicion->codigo,
+                $requisicion->estado->getLabel(),
+            );
+        }
+
+        if (trim($motivo) === '') {
+            throw RequisicionInvalidaException::motivoReprogramacionRequerido();
+        }
+
+        if ($nuevaFecha->lt(today())) {
+            throw RequisicionInvalidaException::fechaReprogramadaEnPasado($nuevaFecha->format('d/m/Y'));
+        }
+
+        DB::transaction(function () use ($requisicion, $nuevaFecha, $motivo, $userId): void {
+            $anterior = $requisicion->fecha_necesaria->format('d/m/Y');
+
+            $requisicion->fecha_necesaria = $nuevaFecha;
+            $requisicion->save();
+
+            RequisicionTransicion::create([
+                'requisicion_id' => $requisicion->id,
+                'estado_origen'  => EstadoRequisicion::Solicitada,
+                'estado_destino' => EstadoRequisicion::Solicitada,
+                'user_id'        => $userId,
+                'nota'           => "Fecha necesaria reprogramada: {$anterior} → "
+                    .$nuevaFecha->format('d/m/Y').". Motivo: {$motivo}",
+            ]);
+        });
+    }
+
+    /**
      * Rechaza la requisición desde un estado temprano (Solicitada,
      * Autorizada o RequisicionCompra).
      */
@@ -326,7 +477,9 @@ final readonly class TransicionarRequisicionService
     ): void {
         $origen = $requisicion->estado;
 
-        if (! $origen->puedeTransicionarA($destino)) {
+        // El mapa se consulta CON el origen del despacho: es lo que impide
+        // que una compra directa se vaya por "En tránsito".
+        if (! $requisicion->puedeTransicionarA($destino)) {
             throw new TransicionInvalidaException($requisicion->codigo, $origen, $destino);
         }
 
@@ -345,6 +498,28 @@ final readonly class TransicionarRequisicionService
         // transacción del caller: si la transición se revierte, las
         // notificaciones también (nunca avisa algo que no pasó).
         $this->notificador->transicion($requisicion, $destino, $userId);
+    }
+
+    /**
+     * ¿Queda algo por despachar? (autorizado − despachado > 0 en alguna
+     * línea). Lo consume la auto-recepción de compra directa: solo se da
+     * por recibida sola cuando la compra cubrió TODO — si vino parcial, la
+     * obra tiene que confirmar a mano lo que realmente llegó.
+     *
+     * Vive en el Service y no en el modelo por dos razones: el modelo solo
+     * persiste y consulta, y la aritmética bcmath de cantidades pertenece
+     * a esta capa — que es donde phpstan.neon documenta que estos strings
+     * salen de columnas NUMERIC con CHECK de no-negatividad.
+     */
+    private function tienePendienteDeDespacho(Requisicion $requisicion): bool
+    {
+        $requisicion->loadMissing('lineas');
+
+        return $requisicion->lineas->contains(function (RequisicionLinea $linea): bool {
+            $autorizada = (string) ($linea->cantidad_autorizada ?? $linea->cantidad_solicitada);
+
+            return bccomp($autorizada, (string) $linea->cantidad_despachada, self::SCALE_CANTIDAD) > 0;
+        });
     }
 
     private function validarCantidadAutorizada(string $autorizada, string $solicitada): void

@@ -183,10 +183,18 @@ test('la requisición enlazada ajusta su despacho con el conteo corregido', func
         'cantidad_autorizada' => '100.0000',
     ]);
 
+    // Entrega directa a obra desde una requisición: la fecha prometida por
+    // el proveedor es obligatoria — es lo que le avisa a la obra qué día
+    // estar pendiente de recibir (decisión Mauricio 2026-08-07).
     $compra = Compra::factory()
         ->directaAObra($obra)
         ->paraRequisicion($requisicion)
-        ->create(['aplica_isv' => false, 'isv_porcentaje' => 0]);
+        ->create([
+            'aplica_isv'     => false,
+            'isv_porcentaje' => 0,
+            // HOY: verificar antes del día prometido está bloqueado.
+            'fecha_estimada_llegada' => today(),
+        ]);
     $linea = CompraLinea::factory()->create([
         'compra_id' => $compra->id, 'material_id' => $cemento->id,
         'cantidad'  => 100, 'costo_unitario' => 220,

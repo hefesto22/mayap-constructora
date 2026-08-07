@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\EstadoRequisicion;
+use App\Enums\OrigenDespacho;
 
 /*
 |--------------------------------------------------------------------------
@@ -47,6 +48,29 @@ test('puedeTransicionarA rechaza saltos inválidos', function (): void {
     expect(EstadoRequisicion::Solicitada->puedeTransicionarA(EstadoRequisicion::Despachada))->toBeFalse()
         ->and(EstadoRequisicion::Despachada->puedeTransicionarA(EstadoRequisicion::Recibida))->toBeFalse()
         ->and(EstadoRequisicion::EnTransito->puedeTransicionarA(EstadoRequisicion::Recibida))->toBeTrue();
+});
+
+/*
+| El origen del despacho parte el final del flujo en dos (2026-08-07).
+*/
+
+test('despachada desde bodega sigue exigiendo el tránsito', function (): void {
+    expect(EstadoRequisicion::Despachada->transicionesPermitidas(OrigenDespacho::Bodega))
+        ->toBe([EstadoRequisicion::EnTransito]);
+});
+
+test('despachada por compra directa va derecho a Recibida, nunca a EnTransito', function (): void {
+    expect(EstadoRequisicion::Despachada->transicionesPermitidas(OrigenDespacho::CompraDirecta))
+        ->toBe([EstadoRequisicion::Recibida])
+        ->and(EstadoRequisicion::Despachada->puedeTransicionarA(EstadoRequisicion::EnTransito, OrigenDespacho::CompraDirecta))
+        ->toBeFalse()
+        ->and(EstadoRequisicion::Despachada->puedeTransicionarA(EstadoRequisicion::Recibida, OrigenDespacho::CompraDirecta))
+        ->toBeTrue();
+});
+
+test('sin origen se asume la vía bodega: nunca nos saltamos un tránsito real', function (): void {
+    expect(EstadoRequisicion::Despachada->transicionesPermitidas(null))
+        ->toBe([EstadoRequisicion::EnTransito]);
 });
 
 test('solo Solicitada permite editar líneas', function (): void {
