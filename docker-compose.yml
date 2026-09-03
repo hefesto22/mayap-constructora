@@ -22,6 +22,19 @@ services:
     image: postgres:16-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-constructora_mayap}_postgres
     restart: unless-stopped
+    # max_locks_per_transaction: el default (64) NO aguanta la suite en
+    # paralelo. Pest levanta 14 DBs (_test_1.._test_14) y cada worker corre
+    # migrate:fresh, o sea un DROP TABLE ... CASCADE de ~50 tablas con sus
+    # índices y FKs, todos a la vez: la lock table compartida se agota y
+    # revienta con "SQLSTATE[53200] out of shared memory". Subirlo cuesta
+    # unos pocos MB de shared memory. max_connections sube en proporción
+    # porque los 14 workers abren varias conexiones cada uno.
+    command:
+      - postgres
+      - -c
+      - max_locks_per_transaction=512
+      - -c
+      - max_connections=200
     environment:
       POSTGRES_DB: ${DB_DATABASE:-constructora_mayap}
       POSTGRES_USER: ${DB_USERNAME:-postgres}

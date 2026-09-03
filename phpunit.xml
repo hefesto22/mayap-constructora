@@ -42,9 +42,19 @@
         <env name="DB_CONNECTION" value="pgsql"/>
         <env name="DB_DATABASE" value="constructora_mayap_test"/>
         <env name="DB_HOST" value="127.0.0.1"/>
-        <env name="DB_PORT" value="5432"/>
+        <env name="DB_PORT" value="5445"/>
 
         <env name="MAIL_MAILER" value="array"/>
+
+        <!--
+            WhatsApp APAGADO en tests. Sin esto los tests leen el .env real
+            y, con el contenedor de Evolution arriba, mandan mensajes DE
+            VERDAD a los teléfonos que inventa la factory — que son números
+            hondureños válidos al azar (fake()->numerify('9#######')).
+            Los notificadores ya consultan habilitado() antes de enviar,
+            así que apagarlo no rompe nada: simplemente no sale nada.
+        -->
+        <env name="WHATSAPP_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="REDIS_CLIENT" value="predis"/>
