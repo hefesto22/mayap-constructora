@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Filament\Resources\Proyectos\Pages\EditProyecto;
 use App\Filament\Resources\Proyectos\RelationManagers\RenglonesRelationManager;
+use App\Filament\Resources\Proyectos\Support\OpcionesFicha;
 use App\Models\Cliente;
 use App\Models\Ficha;
 use App\Models\Proyecto;
@@ -60,4 +61,32 @@ test('el RelationManager renderiza en solo lectura cuando el proyecto no es borr
         'ownerRecord' => $proyecto,
         'pageClass'   => EditProyecto::class,
     ])->assertSuccessful();
+});
+
+/*
+|--------------------------------------------------------------------------
+| 2026-09-03 — no ofrecer fichas ya tomadas
+|--------------------------------------------------------------------------
+| En la carga masiva se podía elegir la MISMA ficha en varias filas (y
+| volver a elegir una que ya era renglón), duplicando líneas del
+| presupuesto. El selector ahora las excluye.
+*/
+
+test('OpcionesFicha: las fichas excluidas no se ofrecen', function (): void {
+    $otra = Ficha::factory()
+        ->enZona($this->zona)
+        ->conUnidad($this->unidad)
+        ->create(['precio_venta_cache' => '500.00']);
+
+    expect(OpcionesFicha::paraZona($this->zona->id))->toHaveCount(2);
+
+    expect(array_keys(OpcionesFicha::paraZona($this->zona->id, [$this->ficha->id])))
+        ->toBe([$otra->id]);
+
+    expect(OpcionesFicha::paraZona($this->zona->id, [$this->ficha->id, $otra->id]))
+        ->toBe([]);
+});
+
+test('OpcionesFicha: ids basura en la exclusión no rompen la consulta', function (): void {
+    expect(OpcionesFicha::paraZona($this->zona->id, [0, 0]))->toHaveCount(1);
 });

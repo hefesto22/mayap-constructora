@@ -14,21 +14,32 @@ use App\Models\Ficha;
  *
  * Reutilizado por el form de Composición y por la carga masiva, para no
  * duplicar la consulta ni el formato.
+ *
+ * 2026-09-03: acepta \$excluir para no ofrecer fichas ya tomadas — una ficha
+ * ya cargada como renglón (o ya elegida en otra fila del modal) desaparece
+ * del selector en vez de dejar que el usuario duplique el renglón.
  */
 final class OpcionesFicha
 {
     /**
+     * @param list<int> $excluir IDs de fichas que YA están tomadas y no se
+     *                           deben volver a ofrecer (renglones existentes
+     *                           del proyecto + filas ya elegidas en el modal).
+     *
      * @return array<int, string>
      */
-    public static function paraZona(?int $zonaId): array
+    public static function paraZona(?int $zonaId, array $excluir = []): array
     {
         if ($zonaId === null) {
             return [];
         }
 
+        $excluir = array_values(array_unique(array_filter($excluir, static fn (int $id): bool => $id > 0)));
+
         return Ficha::query()
             ->where('zona_id', $zonaId)
             ->where('activa', true)
+            ->when($excluir !== [], fn ($q) => $q->whereNotIn('id', $excluir))
             ->with('unidadMedida:id,codigo')
             ->orderBy('nombre')
             ->get()

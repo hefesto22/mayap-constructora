@@ -21,6 +21,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -158,7 +159,14 @@ class RenglonesRelationManager extends RelationManager
                     ->schema([
                         Select::make('ficha_id')
                             ->hiddenLabel()
-                            ->options(fn (): array => OpcionesFicha::paraZona($this->zonaId()))
+                            // live: al elegir una ficha desaparece de las OTRAS
+                            // filas del modal, así no se cargan dos renglones
+                            // iguales por descuido.
+                            ->live()
+                            ->options(fn (Get $get): array => OpcionesFicha::paraZona(
+                                $this->zonaId(),
+                                $this->fichasTomadas($get),
+                            ))
                             ->searchable()
                             ->required(),
                         TextInput::make('cantidad')
@@ -211,7 +219,10 @@ class RenglonesRelationManager extends RelationManager
             ->schema([
                 Select::make('ficha_id')
                     ->label('Ficha APU')
-                    ->options(fn (): array => OpcionesFicha::paraZona($this->zonaId()))
+                    ->options(fn (): array => OpcionesFicha::paraZona(
+                        $this->zonaId(),
+                        $this->fichasDelProyecto(),
+                    ))
                     ->searchable()
                     ->required(),
                 TextInput::make('cantidad')
@@ -239,6 +250,55 @@ class RenglonesRelationManager extends RelationManager
             ->after(function (): void {
                 $this->recalcular();
             });
+    }
+
+    /**
+     * Fichas que NO se deben volver a ofrecer en una fila del repeater:
+     * las que ya son renglón del proyecto + las elegidas en las OTRAS filas
+     * del mismo modal. La propia se conserva para que el select no pierda
+     * su valor al re-renderizar.
+     *
+     * @return list<int>
+     */
+    private function fichasTomadas(Get $get): array
+    {
+        $propia = self::aId($get('ficha_id'));
+
+        $enElModal = array_map(
+            static fn (mixed $fila): int => is_array($fila) ? self::aId($fila['ficha_id'] ?? null) : 0,
+            array_values((array) $get('../../fichas')),
+        );
+
+        return array_values(array_filter(
+            [...$this->fichasDelProyecto(), ...$enElModal],
+            static fn (int $id): bool => $id > 0 && $id !== $propia,
+        ));
+    }
+
+    /**
+     * IDs de las fichas que ya tienen renglón en este proyecto.
+     *
+     * @return list<int>
+     */
+    private function fichasDelProyecto(): array
+    {
+        $owner = $this->getOwnerRecord();
+
+        if (! $owner instanceof Proyecto) {
+            return [];
+        }
+
+        return array_values(
+            $owner->renglones()
+                ->pluck('ficha_id')
+                ->map(static fn (mixed $id): int => self::aId($id))
+                ->all()
+        );
+    }
+
+    private static function aId(mixed $valor): int
+    {
+        return is_numeric($valor) ? (int) $valor : 0;
     }
 
     private function zonaId(): ?int

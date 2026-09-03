@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Proyectos\Actions;
 
 use App\Enums\EstadoProyecto;
+use App\Enums\ModalidadTrabajo;
 use App\Enums\UnidadRenta;
 use App\Exceptions\Proyectos\ProyectoException;
 use App\Models\Maquina;
 use App\Models\Proyecto;
+use App\Models\ProyectoLineaRenta;
 use App\Services\Proyectos\AprobarRentaService;
 use App\Services\Proyectos\ExtenderRentaService;
 use App\Support\Permisos;
@@ -167,8 +169,13 @@ final class AccionesRenta
                 ->searchable()
                 ->required()
                 ->live()
-                ->afterStateUpdated(fn ($state, Get $get, Set $set) => self::sugerirTarifa($state, $get, $set)),
+                ->afterStateUpdated(fn ($state, Get $get, Set $set, ?Proyecto $record) => self::sugerirUnidadYTarifa($state, $get, $set, $record)),
 
+            // La unidad NO arranca fija en Hora (2026-08-16): al elegir
+            // la máquina se hereda la de su renta vigente. Arrancar
+            // siempre en "Hora" hacía que una extensión de volqueta se
+            // cobrara por horas — y encima abría una segunda dimensión
+            // de cobro para la misma máquina.
             ToggleButtons::make('unidad')
                 ->label('Se cobra por')
                 ->options(UnidadRenta::options())
@@ -181,10 +188,11 @@ final class AccionesRenta
             TextInput::make('cantidad')
                 ->label('Cantidad')
                 ->numeric()
-                ->step(0.5)
-                ->minValue(0.5)
+                // Medio viaje no existe.
+                ->step(fn (Get $get): float => self::unidadDe($get('unidad'))->esEntera() ? 1.0 : 0.5)
+                ->minValue(fn (Get $get): float => self::unidadDe($get('unidad'))->esEntera() ? 1.0 : 0.5)
                 ->required()
-                ->suffix(fn (Get $get): string => $get('unidad') === UnidadRenta::Dia->value ? 'días' : 'horas'),
+                ->suffix(fn (Get $get): string => self::unidadDe($get('unidad'))->sufijoCantidad()),
 
             TextInput::make('tarifa')
                 ->label('Tarifa')
@@ -192,7 +200,7 @@ final class AccionesRenta
                 ->step(0.01)
                 ->minValue(0)
                 ->prefix('L')
-                ->suffix(fn (Get $get): string => $get('unidad') === UnidadRenta::Dia->value ? 'por día' : 'por hora')
+                ->suffix(fn (Get $get): string => self::unidadDe($get('unidad'))->sufijoTarifa())
                 ->helperText('Se sugiere la del catálogo de la máquina. Ajustable si se pactó otra.'),
 
             DatePicker::make('fecha_llegada')
@@ -208,6 +216,64 @@ final class AccionesRenta
         ];
     }
 
+    /**
+     * La unidad del formulario, siempre como enum (Hora si viene vacía).
+     */
+    private static function unidadDe(mixed $unidad): UnidadRenta
+    {
+        return UnidadRenta::tryFrom((string) $unidad) ?? UnidadRenta::Hora;
+    }
+
+    /**
+     * Al elegir la máquina: hereda la unidad con que YA se le está
+     * cobrando en esta renta (o la modalidad de su catálogo si es la
+     * primera vez) y recién entonces sugiere la tarifa. Extender por
+     * una unidad distinta a la pactada abre una segunda dimensión de
+     * cobro para la misma máquina — eso se decide a mano, no por
+     * default del formulario.
+     */
+    private static function sugerirUnidadYTarifa(mixed $maquinaId, Get $get, Set $set, ?Proyecto $proyecto): void
+    {
+        if ($maquinaId === null || $maquinaId === '') {
+            return;
+        }
+
+        $vigente = $proyecto === null
+            ? null
+            : ProyectoLineaRenta::query()
+                ->where('proyecto_id', $proyecto->id)
+                ->where('maquina_id', (int) $maquinaId)
+                ->latest('id')
+                ->value('unidad');
+
+        $unidad = $vigente !== null
+            ? self::unidadDe($vigente)
+            : self::unidadSegunMaquina((int) $maquinaId);
+
+        $set('unidad', $unidad->value);
+
+        self::sugerirTarifa($maquinaId, $get, $set);
+    }
+
+    /**
+     * Sin renta previa de esa máquina: la unidad que sugiere su
+     * modalidad de trabajo (volqueta → viajes, pick-up → km).
+     */
+    private static function unidadSegunMaquina(int $maquinaId): UnidadRenta
+    {
+        $maquina = Maquina::find($maquinaId);
+
+        if (! $maquina instanceof Maquina) {
+            return UnidadRenta::Hora;
+        }
+
+        return match ($maquina->modalidad_trabajo) {
+            ModalidadTrabajo::Viajes      => UnidadRenta::Viaje,
+            ModalidadTrabajo::Kilometraje => UnidadRenta::Kilometro,
+            default                       => UnidadRenta::Hora,
+        };
+    }
+
     private static function sugerirTarifa(mixed $maquinaId, Get $get, Set $set): void
     {
         if ($maquinaId === null || $maquinaId === '') {
@@ -220,9 +286,7 @@ final class AccionesRenta
             return;
         }
 
-        $unidad = UnidadRenta::tryFrom((string) $get('unidad')) ?? UnidadRenta::Hora;
-
-        $set('tarifa', $unidad->tarifaSugerida($maquina));
+        $set('tarifa', self::unidadDe($get('unidad'))->tarifaSugerida($maquina));
     }
 
     /**

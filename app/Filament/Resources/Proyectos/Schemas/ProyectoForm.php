@@ -352,10 +352,21 @@ class ProyectoForm
                         );
                     }),
 
+                // Guard con ?-> (2026-09-03): en el mismo request Livewire en
+                // que Filament crea el proyecto, $record ya NO es null pero
+                // 'estado' todavía no está en memoria si la columna lo puso por
+                // default. Nunca asumir que el enum viene cargado.
+                //
+                // Solo en Borrador (2026-08-16): afterSave recalcula el
+                // total del proyecto, pero la CUENTA POR COBRAR ya
+                // emitida no se entera — apagar el ISV después de
+                // aprobar dejaba al cliente pagando un impuesto que la
+                // cotización ya no dice.
                 Toggle::make('aplica_isv')
                     ->label('Aplica ISV')
                     ->default(true)
                     ->live()
+                    ->disabled(fn (?Proyecto $record): bool => $record?->estado?->permiteEditar() === false)
                     ->onColor('success')
                     ->offColor('warning')
                     ->afterStateUpdated(function ($state, Set $set): void {
@@ -367,7 +378,9 @@ class ProyectoForm
                             $set('isv_porcentaje', 15);
                         }
                     })
-                    ->helperText('Desactiva para clientes exentos (gobierno, ONG, etc.).'),
+                    ->helperText(fn (?Proyecto $record): string => $record?->estado?->permiteEditar() === false
+                        ? 'Aprobada: el ISV ya viajó a la cuenta por cobrar y al PDF. Se ajusta desde la cuenta.'
+                        : 'Desactiva para clientes exentos (gobierno, ONG, etc.).'),
 
                 TextInput::make('isv_porcentaje')
                     ->label('ISV %')
@@ -378,7 +391,8 @@ class ProyectoForm
                     ->maxValue(100)
                     ->default(15.00)
                     ->suffix('%')
-                    ->disabled(fn (Get $get): bool => ! ($get('aplica_isv') ?? true))
+                    ->disabled(fn (Get $get, ?Proyecto $record): bool => ! ($get('aplica_isv') ?? true)
+                        || $record?->estado?->permiteEditar() === false)
                     ->dehydrated(),
 
                 TextInput::make('moneda')

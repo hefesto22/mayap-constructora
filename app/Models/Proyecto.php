@@ -103,14 +103,21 @@ class Proyecto extends Model
     use SoftDeletes;
 
     /**
-     * Default en memoria espejo del default de la DB: un Proyecto recién
-     * instanciado (factory, create sin tipo) ya sabe que es presupuestado
-     * sin necesidad de refresh — esRenta() nunca ve null.
+     * Defaults en memoria espejo de los defaults de la DB: un Proyecto recién
+     * instanciado (factory, create sin tipo/estado) ya sabe que es presupuestado
+     * y borrador sin necesidad de refresh — esRenta() nunca ve null.
+     *
+     * 2026-09-03: 'estado' se agregó por el 500 al crear. handleRecordCreation()
+     * de Filament hace `new Proyecto($data); $record->save();` y el formulario
+     * NO manda estado; Postgres ponía 'borrador' en la fila pero el modelo en
+     * memoria seguía sin el atributo, así que el re-render posterior del mismo
+     * request Livewire reventaba en $record->estado->permiteEditar() on null.
      *
      * @var array<string, mixed>
      */
     protected $attributes = [
-        'tipo' => 'presupuestado',
+        'tipo'   => 'presupuestado',
+        'estado' => 'borrador',
     ];
 
     /** @var list<string> */

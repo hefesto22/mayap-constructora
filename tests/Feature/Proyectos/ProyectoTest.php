@@ -248,3 +248,12 @@ test('soft delete preserva el código (no se reasigna a otro proyecto)', functio
 
     expect($nuevo->codigo)->toBe('PROY-2026-00002');
 });
+
+test('Proyecto: recién instanciado ya conoce tipo y estado sin tocar la DB', function (): void {
+    // Espejo en memoria de los defaults de la columna: sin esto, cualquier
+    // closure que haga $proyecto->estado->algo() revienta antes del refresh.
+    $proyecto = new Proyecto;
+
+    expect($proyecto->estado)->toBe(EstadoProyecto::Borrador)
+        ->and($proyecto->esRenta())->toBeFalse();
+});

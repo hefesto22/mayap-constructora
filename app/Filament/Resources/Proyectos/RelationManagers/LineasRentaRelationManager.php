@@ -253,12 +253,7 @@ class LineasRentaRelationManager extends RelationManager
      */
     private static function sufijoCantidad(mixed $unidad): string
     {
-        return match (UnidadRenta::tryFrom((string) $unidad)) {
-            UnidadRenta::Dia       => 'días',
-            UnidadRenta::Viaje     => 'viajes',
-            UnidadRenta::Kilometro => 'km',
-            default                => 'horas',
-        };
+        return (UnidadRenta::tryFrom((string) $unidad) ?? UnidadRenta::Hora)->sufijoCantidad();
     }
 
     /**
@@ -266,12 +261,7 @@ class LineasRentaRelationManager extends RelationManager
      */
     private static function sufijoTarifa(mixed $unidad): string
     {
-        return match (UnidadRenta::tryFrom((string) $unidad)) {
-            UnidadRenta::Dia       => 'por día',
-            UnidadRenta::Viaje     => 'por viaje',
-            UnidadRenta::Kilometro => 'por km',
-            default                => 'por hora',
-        };
+        return (UnidadRenta::tryFrom((string) $unidad) ?? UnidadRenta::Hora)->sufijoTarifa();
     }
 
     private function sugerirTarifa(mixed $maquinaId, Get $get, Set $set): void

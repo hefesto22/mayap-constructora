@@ -23,6 +23,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class ProyectosTable
 {
@@ -46,59 +47,68 @@ class ProyectosTable
     {
         return $table
             ->columns([
+                // Identidad en UNA columna: código arriba (mono, copiable) y
+                // la zona debajo. Antes eran dos columnas para dos datos que
+                // siempre se leen juntos.
                 TextColumn::make('codigo')
                     ->label('Código')
                     ->searchable()
                     ->sortable()
                     ->copyable()
-                    ->fontFamily('mono'),
+                    ->fontFamily('mono')
+                    ->description(fn (Proyecto $record): string => $record->zona->codigo),
 
-                TextColumn::make('zona.codigo')
-                    ->label('Zona')
-                    ->badge()
-                    ->color('gray'),
-
+                // Sin icono y con label corto: el color del badge ya distingue
+                // presupuesto (azul) de renta (ámbar) sin gritar.
                 TextColumn::make('tipo')
                     ->label('Tipo')
                     ->badge()
                     ->color(fn (TipoProyecto $state): string => $state->getColor())
-                    ->icon(fn (TipoProyecto $state): string => $state->getIcon())
-                    ->formatStateUsing(fn (TipoProyecto $state): string => $state->getLabel())
+                    ->formatStateUsing(fn (TipoProyecto $state): string => $state === TipoProyecto::RentaMaquinaria
+                        ? 'Renta'
+                        : 'Presupuesto')
                     ->sortable(),
 
-                TextColumn::make('cliente.nombre')
-                    ->label('Cliente')
-                    ->searchable()
-                    ->sortable()
-                    ->wrap()
-                    ->limit(40),
-
+                // Obra + cliente juntos: es la pregunta "¿qué obra y de quién?".
+                // Sin wrap, para que la fila no crezca a cuatro líneas.
                 TextColumn::make('nombre')
                     ->label('Proyecto')
-                    ->searchable()
-                    ->wrap()
-                    ->limit(40),
+                    // El array de searchable() NO resuelve relaciones fuera de
+                    // la propia columna (Filament interpretó 'cliente.nombre'
+                    // como campo JSON y generó lower("cliente"->>'nombre')).
+                    // Con query: se arma a mano, agrupado para no romper el AND
+                    // con los filtros de la tabla.
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        $termino = '%'.$search.'%';
 
+                        return $query->where(fn (Builder $q): Builder => $q
+                            ->where('nombre', 'ilike', $termino)
+                            ->orWhereHas('cliente', fn (Builder $c): Builder => $c->where('nombre', 'ilike', $termino)));
+                    })
+                    ->limit(42)
+                    ->tooltip(fn (Proyecto $record): string => $record->nombre)
+                    ->description(fn (Proyecto $record): string => Str::limit($record->cliente->nombre, 42)),
+
+                // La tab activa YA dice el estado: mostrarlo en cada fila era
+                // repetir la misma palabra cinco veces. Queda disponible en el
+                // menú de columnas para quien filtre por otra vía.
                 TextColumn::make('estado')
                     ->label('Estado')
                     ->badge()
                     ->color(fn (EstadoProyecto $state): string => $state->getColor())
                     ->icon(fn (EstadoProyecto $state): string => $state->getIcon())
                     ->formatStateUsing(fn (EstadoProyecto $state): string => $state->getLabel())
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
+                // Emitido + vence en una sola celda. Se pinta en rojo solo en
+                // Enviada: es el único estado donde el vencimiento es
+                // accionable (follow-up con el cliente).
                 TextColumn::make('fecha_emision')
-                    ->label('Emitido')
+                    ->label('Vigencia')
                     ->date('d/M/Y')
                     ->sortable()
-                    ->visible(fn (mixed $livewire): bool => ! self::faseEjecucionActiva($livewire)),
-
-                TextColumn::make('fecha_validez')
-                    ->label('Válido hasta')
-                    ->date('d/M/Y')
-                    ->sortable()
-                    // Solo alerta en Enviada: es el único estado donde el
-                    // vencimiento es accionable (follow-up con el cliente).
+                    ->description(fn (Proyecto $record): string => 'vence '.$record->fecha_validez->translatedFormat('d/M/Y'))
                     ->color(fn (Proyecto $record): string => $record->estado === EstadoProyecto::Enviada && $record->fecha_validez->isPast()
                         ? 'danger'
                         : 'gray')
