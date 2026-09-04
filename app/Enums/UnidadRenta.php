@@ -92,6 +92,43 @@ enum UnidadRenta: string implements HasLabel
     }
 
     /**
+     * Sufijo del campo CANTIDAD en los formularios. ÚNICA fuente: lo
+     * usan la tabla de líneas y el modal de extender renta, que antes
+     * rotulaba "horas" aunque se cobrara por viajes (2026-08-16).
+     */
+    public function sufijoCantidad(): string
+    {
+        return match ($this) {
+            self::Hora      => 'horas',
+            self::Dia       => 'días',
+            self::Viaje     => 'viajes',
+            self::Kilometro => 'km',
+        };
+    }
+
+    /**
+     * Sufijo del campo TARIFA en los formularios.
+     */
+    public function sufijoTarifa(): string
+    {
+        return match ($this) {
+            self::Hora      => 'por hora',
+            self::Dia       => 'por día',
+            self::Viaje     => 'por viaje',
+            self::Kilometro => 'por km',
+        };
+    }
+
+    /**
+     * ¿La cantidad se cuenta entera? Medio viaje no existe; media hora,
+     * medio día y medio kilómetro sí.
+     */
+    public function esEntera(): bool
+    {
+        return $this === self::Viaje;
+    }
+
+    /**
      * @return array<string, string>
      */
     public static function options(): array
