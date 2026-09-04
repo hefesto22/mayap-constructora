@@ -80,6 +80,14 @@ jobs:
           php artisan key:generate
           # Sobreescribimos password de Postgres para CI
           sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=postgres/' .env
+          # PUERTOS DEL CI: .env.example lleva los puertos de la máquina de
+          # dev (MAYAP tiene contenedores propios en 5445/6392 porque 5432 y
+          # 6379 los ocupa otro proyecto). Los service containers de GitHub
+          # escuchan en los puertos estándar, así que se fuerzan acá — si no,
+          # cualquier paso que no exporte su env explota con "Connection
+          # refused" (pasó el 2026-09-04 en Run migrations, con Redis).
+          sed -i 's/^DB_PORT=.*/DB_PORT=5432/' .env
+          sed -i 's/^REDIS_PORT=.*/REDIS_PORT=6379/' .env
           # Aseguramos directorios de storage y cache writable (sin esto Filament/Livewire fallan)
           mkdir -p storage/framework/{cache/data,sessions,views,testing}
           mkdir -p storage/logs
@@ -105,6 +113,8 @@ jobs:
           DB_DATABASE: constructora_mayap_test
           DB_USERNAME: postgres
           DB_PASSWORD: postgres
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
         run: php artisan migrate --force
 
       - name: Run Pest test suite
