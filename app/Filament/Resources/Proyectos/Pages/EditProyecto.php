@@ -46,6 +46,7 @@ class EditProyecto extends EditRecord
                 // Ejecución de obra
                 AccionesEjecucion::iniciar(),
                 AccionesEjecucion::registrarAnticipo(),
+                AccionesEjecucion::registrarCostoArranque(),
                 AccionesEjecucion::ajustarPlazo(),
                 AccionesEjecucion::pausar(),
                 AccionesEjecucion::reactivar(),

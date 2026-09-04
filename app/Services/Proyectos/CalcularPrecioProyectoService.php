@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
  * FÓRMULAS:
  *
  *   subtotal_proyecto = SUMA(renglones.subtotal_cache)
+ *                     — o el monto_contratado, en obras heredadas —
  *
  *   isv_monto = aplica_isv
  *             ? subtotal × isv_porcentaje / 100
@@ -103,6 +104,15 @@ final class CalcularPrecioProyectoService
      */
     private function sumarSubtotales(Proyecto $proyecto): string
     {
+        // OBRA HEREDADA: el presupuesto es el monto que se firmó con el
+        // cliente, capturado a mano. No sale de los renglones porque nadie
+        // puede reconstruir las fichas APU de hace meses con sus precios de
+        // entonces. Si después cargan renglones (para control por capítulo),
+        // esos NO mueven el total contratado.
+        if ($proyecto->usaMontoContratado()) {
+            return (string) $proyecto->monto_contratado;
+        }
+
         $acumulado = '0';
 
         // Renta de maquinaria: la composicion son lineas de renta

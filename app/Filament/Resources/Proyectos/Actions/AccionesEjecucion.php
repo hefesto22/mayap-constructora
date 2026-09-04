@@ -6,6 +6,7 @@ namespace App\Filament\Resources\Proyectos\Actions;
 
 use App\Enums\EstadoProyecto;
 use App\Enums\ModoPlazo;
+use App\Enums\RubroCostoArranque;
 use App\Exceptions\Proyectos\ProyectoException;
 use App\Models\Proyecto;
 use App\Services\Proyectos\AjustarPlazoProyectoService;
@@ -13,6 +14,7 @@ use App\Services\Proyectos\CambiarEstadoEjecucionService;
 use App\Services\Proyectos\FinalizarRentaService;
 use App\Services\Proyectos\IniciarProyectoService;
 use App\Services\Proyectos\RegistrarAnticipoService;
+use App\Services\Proyectos\RegistrarCostoArranqueService;
 use App\Support\Permisos;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
@@ -339,6 +341,77 @@ final class AccionesEjecucion
                     app(CambiarEstadoEjecucionService::class)->cancelar($record, (string) $data['motivo']);
 
                     Notification::make()->success()->title('Proyecto cancelado')->send();
+                });
+            });
+    }
+
+    /**
+     * CARGA INICIAL — una partida del gasto anterior al sistema.
+     *
+     * Se agrega de a una porque el arrastre no se recuerda de una sentada:
+     * van apareciendo facturas viejas. El listado completo, con su total y
+     * la opción de borrar lo mal cargado, vive en la pestaña "Gasto anterior
+     * al sistema" de la página de edición.
+     */
+    public static function registrarCostoArranque(): Action
+    {
+        return Action::make('registrar_costo_arranque')
+            ->label('Agregar gasto anterior')
+            ->icon('heroicon-o-archive-box-arrow-down')
+            ->color('warning')
+            ->visible(fn (?Proyecto $record): bool => $record !== null && ! $record->esRenta() && in_array(
+                $record->estado,
+                [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
+                strict: true,
+            ) && self::puede(Permisos::REGISTRAR_COSTO_ARRANQUE_PROYECTO))
+            ->modalHeading('Gasto anterior al sistema')
+            ->modalDescription('Solo para obras que arrancaron antes de usar MAYAP. Cada partida suma al costo real para que el margen parta de la realidad. De aquí en adelante, todo se registra normal.')
+            ->modalSubmitActionLabel('Agregar')
+            ->schema([
+                Select::make('rubro')
+                    ->label('Rubro')
+                    ->required()
+                    ->options(RubroCostoArranque::options())
+                    ->default(RubroCostoArranque::Materiales->value)
+                    ->native(false),
+
+                TextInput::make('monto')
+                    ->label('Monto')
+                    ->required()
+                    ->numeric()
+                    ->minValue(0.01)
+                    ->step(0.01)
+                    ->prefix('L'),
+
+                DatePicker::make('fecha')
+                    ->label('¿De cuándo es?')
+                    ->required()
+                    ->default(now())
+                    ->native(false),
+
+                Textarea::make('descripcion')
+                    ->label('¿De qué era?')
+                    ->required()
+                    ->rows(2)
+                    ->maxLength(300)
+                    ->helperText('Ej: "Hierro 3/8, ferretería El Sol, factura 4412". Dentro de tres meses esto es lo único que va a permitir validar la cifra.'),
+            ])
+            ->action(function (Proyecto $record, array $data): void {
+                self::ejecutarConManejo(function () use ($record, $data): void {
+                    app(RegistrarCostoArranqueService::class)->agregar(
+                        $record,
+                        RubroCostoArranque::from((string) $data['rubro']),
+                        (string) $data['monto'],
+                        (string) $data['descripcion'],
+                        Carbon::parse((string) $data['fecha']),
+                        auth()->id(),
+                    );
+
+                    Notification::make()
+                        ->success()
+                        ->title('Gasto anterior registrado')
+                        ->body('La obra arrastra L. '.number_format((float) $record->refresh()->costoArranqueTotal(), 2).' de costo previo.')
+                        ->send();
                 });
             });
     }

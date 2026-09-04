@@ -52,4 +52,28 @@ final class DatosEjecucionInvalidosException extends ProyectoException
             "'{$estado->getLabel()}'. Solo se permite mientras está En ejecución o Pausada."
         );
     }
+
+    public static function costoArranqueNegativo(string $rubro, string $monto): self
+    {
+        return new self(
+            "El costo de arranque de {$rubro} no puede ser negativo. Recibido: L {$monto}."
+        );
+    }
+
+    public static function costoArranqueSinDescripcion(): self
+    {
+        return new self(
+            'Cada partida del gasto anterior necesita decir de qué era. '.
+            'Sin eso, dentro de tres meses nadie va a poder validar la cifra.'
+        );
+    }
+
+    public static function estadoNoPermiteCostoArranque(EstadoProyecto $estado): self
+    {
+        return new self(
+            'No se puede registrar el costo de arranque con el proyecto en estado '.
+            "'{$estado->getLabel()}'. Es un dato de carga inicial: solo se permite ".
+            'desde Aprobada y mientras la obra sigue viva (En ejecución o Pausada).'
+        );
+    }
 }

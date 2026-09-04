@@ -31,9 +31,13 @@ final class CostoProyectoService
 
     public function calcular(Proyecto $proyecto): CostoProyecto
     {
-        $materiales = $this->costoMateriales($proyecto->id);
-        $maquinaria = $this->costoMaquinaria($proyecto->id);
-        $manoObra = $this->costoManoObra($proyecto->id);
+        // Costo de arranque: lo que la obra ya llevaba gastado ANTES del
+        // sistema. Suma a su propio rubro para que el desglose siga cuadrando;
+        // sin esto una obra heredada arranca con margen 100% y el primer mes
+        // de gastos reales parece un descontrol.
+        $materiales = bcadd($this->costoMateriales($proyecto->id), $proyecto->costo_arranque_materiales, self::SCALE);
+        $maquinaria = bcadd($this->costoMaquinaria($proyecto->id), $proyecto->costo_arranque_maquinaria, self::SCALE);
+        $manoObra = bcadd($this->costoManoObra($proyecto->id), $proyecto->costo_arranque_mano_obra, self::SCALE);
 
         $costoTotal = bcadd(bcadd($materiales, $maquinaria, self::SCALE), $manoObra, self::SCALE);
 
@@ -62,6 +66,7 @@ final class CostoProyectoService
             margen: $this->n($margen),
             margenPorcentaje: $margenPorcentaje,
             porcentajeConsumido: $porcentajeConsumido,
+            costoArranque: $this->n($proyecto->costoArranqueTotal()),
         );
     }
 

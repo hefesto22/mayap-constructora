@@ -119,35 +119,31 @@ class ProyectosTable
                     ->badge()
                     ->color(fn (int $state): string => $state > 0 ? 'success' : 'gray'),
 
+                // En ejecución el costo real va DEBAJO del total: son la misma
+                // pregunta ("¿cuánto vale y cuánto llevo gastado?") y como
+                // columnas separadas empujaban la tabla al scroll horizontal.
                 TextColumn::make('total_cache')
                     ->label('Total')
                     ->money('HNL')
                     ->sortable()
                     ->weight('bold')
-                    ->color('emerald'),
+                    ->color('emerald')
+                    ->description(fn (Proyecto $record, mixed $livewire): ?string => self::faseEjecucionActiva($livewire)
+                        ? 'costo L. '.number_format((float) CostoObra::para($record)->costoTotal, 2)
+                        : null),
 
-                TextColumn::make('costo_real')
-                    ->label('Costo real')
-                    ->money('HNL')
-                    ->state(fn (Proyecto $record): string => CostoObra::para($record)->costoTotal)
-                    ->toggleable()
-                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
-
+                // Margen arriba, consumo del presupuesto debajo: el nivel
+                // (Sano / Ajustado / Excedido) es la lectura del mismo número.
                 TextColumn::make('margen')
                     ->label('Margen')
                     ->badge()
                     ->color(fn (Proyecto $record): string => bccomp(CostoObra::para($record)->margen, '0', 2) >= 0 ? 'success' : 'danger')
                     ->state(fn (Proyecto $record): string => 'L. '.number_format((float) CostoObra::para($record)->margen, 2).' ('.CostoObra::para($record)->margenPorcentaje.'%)')
+                    ->description(fn (Proyecto $record): string => 'presupuesto '.CostoObra::para($record)->porcentajeConsumido.'% — '.CostoObra::para($record)->nivel()->getLabel())
                     ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
 
-                TextColumn::make('presupuesto_consumido')
-                    ->label('Presupuesto')
-                    ->badge()
-                    ->icon(fn (Proyecto $record): string => CostoObra::para($record)->nivel()->getIcon())
-                    ->color(fn (Proyecto $record): string => CostoObra::para($record)->nivel()->getColor())
-                    ->state(fn (Proyecto $record): string => CostoObra::para($record)->porcentajeConsumido.'% — '.CostoObra::para($record)->nivel()->getLabel())
-                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
-
+                // Avance físico arriba, plazo debajo: atraso = avance contra
+                // días, nunca se leen por separado.
                 TextColumn::make('avance_fisico_cache')
                     ->label('Avance obra')
                     ->badge()
@@ -158,23 +154,15 @@ class ProyectosTable
                         (float) $record->avance_fisico_cache > 0.0    => 'info',
                         default                                       => 'gray',
                     })
-                    ->toggleable()
-                    ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
-
-                TextColumn::make('plazo_restante')
-                    ->label('Plazo')
-                    ->badge()
-                    ->state(function (Proyecto $record): string {
+                    ->description(function (Proyecto $record): string {
                         if ($record->fecha_inicio === null) {
-                            return '—';
+                            return 'sin fecha de inicio';
                         }
 
                         $rest = $record->diasRestantes() ?? 0;
 
-                        return $rest >= 0 ? $rest.' días' : abs($rest).' días atraso';
+                        return $rest >= 0 ? "quedan {$rest} días" : abs($rest).' días de atraso';
                     })
-                    ->color(fn (Proyecto $record): string => $record->estaAtrasado() ? 'danger' : 'gray')
-                    ->toggleable()
                     ->visible(fn (mixed $livewire): bool => self::faseEjecucionActiva($livewire)),
             ])
             ->filters([
@@ -214,6 +202,7 @@ class ProyectosTable
                 ActionGroup::make([
                     AccionesEjecucion::iniciar(),
                     AccionesEjecucion::registrarAnticipo(),
+                    AccionesEjecucion::registrarCostoArranque(),
                     AccionesEjecucion::ajustarPlazo(),
                     AccionesEjecucion::pausar(),
                     AccionesEjecucion::reactivar(),

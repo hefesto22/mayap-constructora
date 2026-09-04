@@ -183,6 +183,34 @@ class ProyectoForm
                     ->native(false)
                     ->after('fecha_emision')
                     ->helperText('Después de esta fecha la cotización pasa automáticamente a estado Vencida.'),
+
+                // ── Obra heredada (carga inicial) ────────────────────────
+                // Una obra que ya venía caminando no puede reconstruir sus
+                // fichas APU: nadie recuerda los 40 renglones ni los precios
+                // que tenían hace meses. Lo que sí se conoce es el monto
+                // firmado con el cliente, y ese pasa a ser el presupuesto.
+                Section::make('¿La obra ya venía en curso?')
+                    ->icon('heroicon-o-archive-box-arrow-down')
+                    ->collapsed(fn (?Proyecto $record): bool => $record?->es_obra_heredada !== true)
+                    ->columnSpanFull()
+                    ->schema([
+                        Toggle::make('es_obra_heredada')
+                            ->label('Obra heredada (arrancó antes del sistema)')
+                            ->live()
+                            ->onColor('warning')
+                            ->helperText('Actívalo solo en la carga inicial. El presupuesto se captura a mano y los renglones quedan opcionales.'),
+
+                        TextInput::make('monto_contratado')
+                            ->label('Monto contratado con el cliente')
+                            ->numeric()
+                            ->minValue(0)
+                            ->step(0.01)
+                            ->prefix('L')
+                            ->visible(fn (Get $get): bool => (bool) $get('es_obra_heredada'))
+                            ->required(fn (Get $get): bool => (bool) $get('es_obra_heredada'))
+                            ->helperText('Subtotal SIN ISV, tal como quedó en el contrato. Reemplaza a la suma de los renglones: si después cargás renglones para control por capítulo, este monto no se mueve.'),
+                    ])
+                    ->columns(2),
             ])
             ->columns(2);
     }

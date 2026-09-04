@@ -38,6 +38,13 @@ final class Permisos
 
     public const string AJUSTAR_PLAZO_PROYECTO = 'AjustarPlazo:Proyecto';
 
+    /**
+     * Carga inicial: lo que una obra HEREDADA ya llevaba gastado antes de
+     * entrar al sistema. Toca directamente el margen, así que va aparte de
+     * los demás permisos de ejecución.
+     */
+    public const string REGISTRAR_COSTO_ARRANQUE_PROYECTO = 'RegistrarCostoArranque:Proyecto';
+
     // ── Visibilidad por estado en Proyectos ─────────────────────────────
     // Las obras VIVAS (En ejecución / Pausada) son la base de todo rol con
     // acceso a Proyectos; el resto de estados se otorga UNO POR UNO desde
@@ -138,7 +145,7 @@ final class Permisos
     ];
 
     /**
-     * Los 7 de ejecución de obra, juntos (seeder y docs).
+     * Los 8 de ejecución de obra, juntos (seeder y docs).
      *
      * @var list<string>
      */
@@ -150,6 +157,7 @@ final class Permisos
         self::CANCELAR_PROYECTO,
         self::REGISTRAR_ANTICIPO_PROYECTO,
         self::AJUSTAR_PLAZO_PROYECTO,
+        self::REGISTRAR_COSTO_ARRANQUE_PROYECTO,
     ];
 
     /**
@@ -162,13 +170,14 @@ final class Permisos
      */
     public const array PERSONALIZADOS_POR_MODULO = [
         'Proyectos — Ejecución de obra' => [
-            self::INICIAR_PROYECTO            => 'Iniciar proyecto',
-            self::PAUSAR_PROYECTO             => 'Pausar proyecto',
-            self::REACTIVAR_PROYECTO          => 'Reactivar proyecto',
-            self::FINALIZAR_PROYECTO          => 'Finalizar proyecto',
-            self::CANCELAR_PROYECTO           => 'Cancelar proyecto',
-            self::REGISTRAR_ANTICIPO_PROYECTO => 'Registrar anticipo del cliente',
-            self::AJUSTAR_PLAZO_PROYECTO      => 'Ajustar plazo de la obra',
+            self::INICIAR_PROYECTO                  => 'Iniciar proyecto',
+            self::PAUSAR_PROYECTO                   => 'Pausar proyecto',
+            self::REACTIVAR_PROYECTO                => 'Reactivar proyecto',
+            self::FINALIZAR_PROYECTO                => 'Finalizar proyecto',
+            self::CANCELAR_PROYECTO                 => 'Cancelar proyecto',
+            self::REGISTRAR_ANTICIPO_PROYECTO       => 'Registrar anticipo del cliente',
+            self::AJUSTAR_PLAZO_PROYECTO            => 'Ajustar plazo de la obra',
+            self::REGISTRAR_COSTO_ARRANQUE_PROYECTO => 'Registrar costo de arranque (obra heredada)',
         ],
         'Proyectos — Visibilidad por estado' => [
             self::VER_BORRADORES_PROYECTO  => 'Ver proyectos en borrador',

@@ -116,7 +116,24 @@ class ProyectoCostoInfolist
             .' · La mano de obra suma solo planillas cerradas.</div>'
             .'</div>';
 
-        return new HtmlString($grandes.$desglose.$consumo);
+        // ── Aviso de obra heredada ──────────────────────────────────────
+        // Sin esto, un costo con arrastre se lee como gasto registrado en el
+        // sistema y nadie sabe por qué el desglose no cuadra con las compras.
+        $arranque = '';
+
+        if ($record->tieneCostoArranque()) {
+            $nota = $record->costo_arranque_nota;
+
+            $arranque = '<div style="margin-top:16px; border:1px dashed rgba(245,158,11,.6); border-radius:10px; padding:12px 16px; background:rgba(245,158,11,.06);">'
+                .'<div style="font-size:.8rem; font-weight:700; color:#b45309;">Obra heredada</div>'
+                .'<div style="font-size:.85rem; margin-top:4px; opacity:.85;">'
+                .'De ese costo real, <strong>L '.number_format((float) $costo->costoArranque, 2).'</strong> '
+                .'es gasto anterior al sistema (carga inicial), no movimientos registrados en MAYAP.'
+                .($nota !== null ? ' <em>'.e($nota).'</em>' : '')
+                .'</div></div>';
+        }
+
+        return new HtmlString($grandes.$desglose.$consumo.$arranque);
     }
 
     /**

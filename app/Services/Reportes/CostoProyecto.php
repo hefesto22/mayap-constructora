@@ -13,6 +13,10 @@ use App\Enums\NivelPresupuesto;
  * presupuesto de venta − costo total; el porcentaje es sobre el presupuesto.
  * `porcentajeConsumido` es costo total / presupuesto × 100 y alimenta el
  * nivel de alerta de presupuesto.
+ *
+ * Los rubros incluyen el COSTO DE ARRANQUE del proyecto (lo gastado antes
+ * de que la obra entrara al sistema); `costoArranque` dice cuánto de ese
+ * total es arrastre histórico y no gasto registrado.
  */
 final readonly class CostoProyecto
 {
@@ -26,6 +30,12 @@ final readonly class CostoProyecto
         public string $margen,
         public string $margenPorcentaje,
         public string $porcentajeConsumido,
+        /**
+         * Parte del costo total que la obra YA arrastraba antes de entrar al
+         * sistema (carga inicial). Va incluida en los tres rubros y en
+         * costoTotal; se expone aparte solo para poder decirlo en pantalla.
+         */
+        public string $costoArranque = '0.00',
     ) {}
 
     /**

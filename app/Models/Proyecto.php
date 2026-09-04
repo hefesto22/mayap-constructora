@@ -83,6 +83,13 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string|null $motivo_pausa
  * @property string|null $motivo_cancelacion
  * @property string $avance_fisico_cache
+ * @property bool $es_obra_heredada
+ * @property numeric-string|null $monto_contratado
+ * @property numeric-string $costo_arranque_materiales
+ * @property numeric-string $costo_arranque_mano_obra
+ * @property numeric-string $costo_arranque_maquinaria
+ * @property string|null $costo_arranque_nota
+ * @property Carbon|null $costo_arranque_registrado_at
  * @property Carbon|null $precio_calculado_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -90,6 +97,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property-read Zona $zona
  * @property-read Cliente $cliente
  * @property-read Collection<int, ProyectoRenglon> $renglones
+ * @property-read Collection<int, CostoArranqueProyecto> $costosArranque
  * @property-read Collection<int, ProyectoLineaRenta> $lineasRenta
  * @property-read Collection<int, ProyectoActividad> $actividades
  */
@@ -118,6 +126,14 @@ class Proyecto extends Model
     protected $attributes = [
         'tipo'   => 'presupuestado',
         'estado' => 'borrador',
+
+        // Arrastre histórico: 0 hasta que alguien lo registre. Espejo del
+        // default de la columna para que costoArranqueTotal() nunca vea null
+        // en un modelo recién instanciado.
+        'costo_arranque_materiales' => '0.00',
+        'costo_arranque_mano_obra'  => '0.00',
+        'costo_arranque_maquinaria' => '0.00',
+        'es_obra_heredada'          => false,
     ];
 
     /** @var list<string> */
@@ -150,6 +166,13 @@ class Proyecto extends Model
         'motivo_pausa',
         'motivo_cancelacion',
         'avance_fisico_cache',
+        'es_obra_heredada',
+        'monto_contratado',
+        'costo_arranque_materiales',
+        'costo_arranque_mano_obra',
+        'costo_arranque_maquinaria',
+        'costo_arranque_nota',
+        'costo_arranque_registrado_at',
         'precio_calculado_at',
     ];
 
@@ -177,6 +200,15 @@ class Proyecto extends Model
             'fecha_fin_estimada'  => 'date',
             'fecha_fin_real'      => 'date',
             'avance_fisico_cache' => 'decimal:2',
+
+            'es_obra_heredada' => 'boolean',
+            'monto_contratado' => 'decimal:2',
+
+            'costo_arranque_materiales'    => 'decimal:2',
+            'costo_arranque_mano_obra'     => 'decimal:2',
+            'costo_arranque_maquinaria'    => 'decimal:2',
+            'costo_arranque_registrado_at' => 'datetime',
+
             'precio_calculado_at' => 'datetime',
         ];
     }
@@ -205,6 +237,11 @@ class Proyecto extends Model
                 'motivo_pausa',
                 'motivo_cancelacion',
                 'avance_fisico_cache',
+                'es_obra_heredada',
+                'monto_contratado',
+                'costo_arranque_materiales',
+                'costo_arranque_mano_obra',
+                'costo_arranque_maquinaria',
             ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
@@ -347,6 +384,16 @@ class Proyecto extends Model
     }
 
     /**
+     * Partidas del gasto anterior al sistema (solo obras heredadas).
+     *
+     * @return HasMany<CostoArranqueProyecto, $this>
+     */
+    public function costosArranque(): HasMany
+    {
+        return $this->hasMany(CostoArranqueProyecto::class)->latest('fecha');
+    }
+
+    /**
      * @return HasMany<ProyectoRenglon, $this>
      */
     public function renglones(): HasMany
@@ -368,6 +415,40 @@ class Proyecto extends Model
     /**
      * Azucar semantica: este proyecto es una renta de maquinaria?
      */
+    /**
+     * Costo que la obra ya arrastraba ANTES de entrar al sistema, sumando
+     * los tres rubros. Cero cuando la obra nació dentro de MAYAP.
+     *
+     * @return numeric-string
+     */
+    public function costoArranqueTotal(): string
+    {
+        return bcadd(
+            bcadd($this->costo_arranque_materiales, $this->costo_arranque_mano_obra, 2),
+            $this->costo_arranque_maquinaria,
+            2,
+        );
+    }
+
+    /**
+     * ¿El presupuesto de esta obra se captura a mano en vez de calcularse
+     * desde los renglones? Solo las heredadas: nadie puede reconstruir 40
+     * fichas APU con los precios que tenían hace ocho meses, pero el monto
+     * firmado con el cliente sí se conoce.
+     */
+    public function usaMontoContratado(): bool
+    {
+        return $this->es_obra_heredada
+            && $this->monto_contratado !== null
+            && bccomp($this->monto_contratado, '0', 2) > 0;
+    }
+
+    /** ¿Esta obra venía caminando antes del sistema? */
+    public function tieneCostoArranque(): bool
+    {
+        return bccomp($this->costoArranqueTotal(), '0', 2) > 0;
+    }
+
     public function esRenta(): bool
     {
         return $this->tipo->esRenta();

@@ -6,7 +6,6 @@ namespace Database\Factories;
 
 use App\Models\UnidadMedida;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 
 /**
  * @extends Factory<UnidadMedida>
@@ -16,11 +15,19 @@ class UnidadMedidaFactory extends Factory
     protected $model = UnidadMedida::class;
 
     /**
+     * Contador por proceso — misma razón que en ZonaFactory: pasar
+     * Str::random a mayúsculas colapsa el espacio de caracteres y
+     * `unidades_medida_codigo_unique` termina colisionando de vez en
+     * cuando. Una secuencia lo vuelve imposible.
+     */
+    private static int $secuencia = 0;
+
+    /**
      * @return array<string, mixed>
      */
     public function definition(): array
     {
-        $codigo = strtoupper(Str::random(4));
+        $codigo = 'UM'.str_pad((string) (++self::$secuencia), 4, '0', STR_PAD_LEFT);
 
         return [
             'codigo'  => $codigo,

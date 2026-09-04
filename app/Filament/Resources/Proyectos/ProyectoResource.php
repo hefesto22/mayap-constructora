@@ -9,6 +9,7 @@ use App\Filament\Resources\Proyectos\Pages\CreateProyecto;
 use App\Filament\Resources\Proyectos\Pages\EditProyecto;
 use App\Filament\Resources\Proyectos\Pages\ListProyectos;
 use App\Filament\Resources\Proyectos\Pages\ViewProyecto;
+use App\Filament\Resources\Proyectos\RelationManagers\CostosArranqueRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\LineasRentaRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\MaquinariaRelationManager;
 use App\Filament\Resources\Proyectos\RelationManagers\RenglonesRelationManager;
@@ -161,6 +162,8 @@ class ProyectoResource extends Resource
     {
         return [
             RenglonesRelationManager::class,
+            // Obras heredadas: el gasto anterior al sistema, en partidas.
+            CostosArranqueRelationManager::class,
             // Rentas: líneas máquina × horas/días (solo tipo renta).
             LineasRentaRelationManager::class,
             // Historial de maquinaria: qué se agendó, si trabajó (partes
