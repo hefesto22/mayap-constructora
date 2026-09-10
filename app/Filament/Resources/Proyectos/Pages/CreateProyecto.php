@@ -8,6 +8,7 @@ use App\Filament\Resources\Proyectos\ProyectoResource;
 use App\Models\Proyecto;
 use App\Services\Proyectos\CalcularPrecioProyectoService;
 use Filament\Resources\Pages\CreateRecord;
+use Override;
 
 class CreateProyecto extends CreateRecord
 {
@@ -33,6 +34,7 @@ class CreateProyecto extends CreateRecord
         }
     }
 
+    #[Override]
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('edit', ['record' => $this->record]);

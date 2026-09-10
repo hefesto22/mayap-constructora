@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Exceptions\Maquinaria;
 
+use App\Enums\ModalidadTrabajo;
+
 /**
  * Se lanza cuando un parte de trabajo es inválido: la asignación no está
  * activa, el horómetro retrocede, faltan horas, hay horas extra sin motivo,
@@ -67,6 +69,34 @@ final class ParteInvalidoException extends MaquinariaException
     {
         return new self(
             'Un parte de flete necesita la actividad realizada (ej: "FLETE DE CEMENTO A LA OBRA X").'
+        );
+    }
+
+    /**
+     * Cobrar más horas de las que el motor estuvo encendido es facturar aire.
+     */
+    public static function cobraMasQueElMotor(string $horasCobradas, string $horasMotor): self
+    {
+        return new self(
+            "No se pueden cobrar {$horasCobradas} horas si el horómetro solo corrió {$horasMotor}. ".
+            'Revisá la lectura final o las horas trabajadas.'
+        );
+    }
+
+    public static function sinMotivoIdle(string $porcentaje, string $horasMuertas): self
+    {
+        return new self(
+            "El {$porcentaje}% del tiempo de motor no se cobró ({$horasMuertas} horas muertas). ".
+            'Escribí el motivo: esperando material, se llovió, traslado dentro de la obra…'
+        );
+    }
+
+    public static function sinTarifaPactada(ModalidadTrabajo $modalidad, string $codigoAsignacion): self
+    {
+        return new self(
+            "La asignación {$codigoAsignacion} no tiene pactada la tarifa ".
+            "{$modalidad->sufijoTarifa()}, que es como cobra esta máquina. ".
+            'Editá la asignación y pactala antes de registrar el parte.'
         );
     }
 }

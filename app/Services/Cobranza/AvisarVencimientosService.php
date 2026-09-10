@@ -51,7 +51,11 @@ final readonly class AvisarVencimientosService
         foreach ($cuentas as $cuenta) {
             $escalon = $this->escalonDeHoy($cuenta, $hoy);
 
-            if ($escalon === null || ! $this->tocaAvisar($cuenta, $escalon)) {
+            if ($escalon === null) {
+                continue;
+            }
+
+            if (! $this->tocaAvisar($cuenta, $escalon)) {
                 continue;
             }
 

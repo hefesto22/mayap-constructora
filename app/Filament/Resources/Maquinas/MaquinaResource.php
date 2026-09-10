@@ -17,6 +17,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Override;
 
 class MaquinaResource extends Resource
 {
@@ -32,21 +33,25 @@ class MaquinaResource extends Resource
 
     protected static ?int $navigationSort = 10;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Maquinaria';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return MaquinaForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return MaquinasTable::configure($table);
     }
 
+    #[Override]
     public static function getRelations(): array
     {
         return [
@@ -54,6 +59,7 @@ class MaquinaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -64,6 +70,7 @@ class MaquinaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre', 'serie', 'marca'];

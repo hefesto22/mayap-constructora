@@ -51,8 +51,11 @@ final class Roles
      */
     public static function despachaBodega(?User $user): bool
     {
-        return $user !== null && $user->hasAnyRole([self::BODEGUERO, self::RECEPCION, self::GERENCIA])
-            || self::esSuper($user);
+        if ($user instanceof User && $user->hasAnyRole([self::BODEGUERO, self::RECEPCION, self::GERENCIA])) {
+            return true;
+        }
+
+        return self::esSuper($user);
     }
 
     /**
@@ -60,8 +63,11 @@ final class Roles
      */
     public static function compra(?User $user): bool
     {
-        return $user !== null && $user->hasAnyRole([self::RECEPCION, self::GERENCIA])
-            || self::esSuper($user);
+        if ($user instanceof User && $user->hasAnyRole([self::RECEPCION, self::GERENCIA])) {
+            return true;
+        }
+
+        return self::esSuper($user);
     }
 
     /**
@@ -70,7 +76,7 @@ final class Roles
      */
     public static function soloEncargado(?User $user): bool
     {
-        return $user !== null
+        return $user instanceof User
             && $user->hasRole(self::ENCARGADO_OBRA)
             && ! $user->hasAnyRole([self::BODEGUERO, self::RECEPCION, self::MAQUINARIA, self::GERENCIA])
             && ! self::esSuper($user);
@@ -78,7 +84,7 @@ final class Roles
 
     private static function esSuper(?User $user): bool
     {
-        return $user !== null
+        return $user instanceof User
             && $user->hasRole(Utils::getSuperAdminName());
     }
 }

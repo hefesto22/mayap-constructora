@@ -139,8 +139,8 @@ test('la compra saldada aparece PAGADA en el mes final con su historial de meses
     $html = htmlDelPeriodo();
 
     expect($html)->toContain('PAGADA')
-        ->and($html)->toContain(ucfirst($mesUno->translatedFormat('F Y')).' — L 4,000.00 (1 abono)')
-        ->and($html)->toContain(ucfirst($this->periodo->translatedFormat('F Y')).' — L 5,000.00 (1 abono)');
+        ->and($html)->toContain(ucfirst((string) $mesUno->translatedFormat('F Y')).' — L 4,000.00 (1 abono)')
+        ->and($html)->toContain(ucfirst((string) $this->periodo->translatedFormat('F Y')).' — L 5,000.00 (1 abono)');
 
     // En el mes 1 la cuenta NO estaba saldada: ahí solo se ve su depósito.
     expect($this->service->cuentasSaldadasEn($mesUno))->toBeEmpty();

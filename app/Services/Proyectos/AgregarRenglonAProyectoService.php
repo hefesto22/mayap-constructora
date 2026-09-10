@@ -34,14 +34,14 @@ use Illuminate\Support\Facades\DB;
  * El campo `orden` se asigna automáticamente como el máximo actual + 1
  * para que los renglones nuevos vayan al final del listado.
  */
-final class AgregarRenglonAProyectoService
+final readonly class AgregarRenglonAProyectoService
 {
     private const int SCALE_INTERNO = 12;
 
     private const int SCALE_FINAL = 2;
 
     public function __construct(
-        private readonly CalcularPrecioProyectoService $calculadorTotales = new CalcularPrecioProyectoService,
+        private CalcularPrecioProyectoService $calculadorTotales = new CalcularPrecioProyectoService,
     ) {}
 
     /**

@@ -25,11 +25,9 @@ beforeEach(function (): void {
     $this->admin = User::factory()->create(['is_active' => true]);
     $this->admin->assignRole(Utils::getSuperAdminName());
 
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 
@@ -53,6 +51,11 @@ test('CompraResource: crea una compra con líneas en borrador', function (): voi
             'fecha'          => '2026-06-18',
             'condicion_pago' => CondicionPago::Contado->value,
             'aplica_isv'     => true,
+            // La compra a bodega se registra SIN detalle por defecto
+            // (Mauricio 2026-09-05). Escribirlo aquí es la excepción y hay
+            // que pedirlo: sin este interruptor las pestañas de líneas ni
+            // aparecen.
+            'detallar_ahora' => true,
             'lineas'         => [
                 ['material_id' => $material->id, 'cantidad' => '100', 'costo_unitario' => '10'],
             ],
@@ -65,6 +68,27 @@ test('CompraResource: crea una compra con líneas en borrador', function (): voi
     expect($compra->codigo)->toStartWith('COM-2026-')
         ->and($compra->estado)->toBe(EstadoCompra::Borrador)
         ->and($compra->lineas)->toHaveCount(1);
+});
+
+test('GOLDEN: la compra a bodega se registra sin detalle — total de factura y foto (Mauricio 2026-09-05)', function (): void {
+    Livewire::test(CreateCompra::class)
+        ->fillForm([
+            'proveedor_id'   => $this->proveedor->id,
+            'bodega_id'      => $this->bodega->id,
+            'fecha'          => '2026-06-18',
+            'condicion_pago' => CondicionPago::Contado->value,
+            'aplica_isv'     => true,
+            'total_factura'  => '4500.00',
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $compra = Compra::query()->firstOrFail();
+
+    expect($compra->estado)->toBe(EstadoCompra::Borrador)
+        ->and($compra->lineas)->toHaveCount(0)          // el detalle lo escribe el bodeguero
+        ->and((string) $compra->total_factura)->toBe('4500.00')
+        ->and($compra->capturaDiferida())->toBeTrue();
 });
 
 test('al elegir un proveedor a crédito, la compra hereda su condición de pago', function (): void {

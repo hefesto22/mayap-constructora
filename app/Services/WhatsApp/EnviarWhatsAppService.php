@@ -37,7 +37,7 @@ final class EnviarWhatsAppService
      */
     public function enviarTexto(string $telefono, string $texto, ?int $userId = null): void
     {
-        $numero = self::normalizarTelefono($telefono);
+        $numero = $this->destino($telefono);
 
         if ($numero === null) {
             throw WhatsAppException::sinTelefono($telefono);
@@ -56,7 +56,7 @@ final class EnviarWhatsAppService
      */
     public function enviarImagen(string $telefono, string $rutaAbsoluta, string $caption, ?int $userId = null): void
     {
-        $numero = self::normalizarTelefono($telefono);
+        $numero = $this->destino($telefono);
 
         if ($numero === null) {
             throw WhatsAppException::sinTelefono($telefono);
@@ -87,7 +87,7 @@ final class EnviarWhatsAppService
      */
     public function enviarDocumento(string $telefono, string $rutaAbsoluta, string $caption, ?int $userId = null): void
     {
-        $numero = self::normalizarTelefono($telefono);
+        $numero = $this->destino($telefono);
 
         if ($numero === null) {
             throw WhatsAppException::sinTelefono($telefono);
@@ -109,6 +109,33 @@ final class EnviarWhatsAppService
         ]);
 
         $this->bitacora('documento', $numero, $caption, $userId);
+    }
+
+    /**
+     * A QUÉ número sale de verdad el mensaje. Normaliza el destino y, si
+     * hay número de pruebas configurado (solo desarrollo), lo redirige
+     * ahí: probar el flujo completo sin que le llegue nada a un cliente
+     * ni a un encargado real (decisión Mauricio 2026-08-07, después de
+     * descubrir que los tests mandaban a teléfonos inventados por la
+     * factory, que son números hondureños válidos).
+     */
+    private function destino(string $telefono): ?string
+    {
+        $numero = self::normalizarTelefono($telefono);
+
+        if ($numero === null) {
+            return null;
+        }
+
+        return self::normalizarTelefono((string) config('whatsapp.redirigir_a')) ?? $numero;
+    }
+
+    /**
+     * ¿El mensaje se está desviando al número de pruebas?
+     */
+    private function redirigido(): bool
+    {
+        return self::normalizarTelefono((string) config('whatsapp.redirigir_a')) !== null;
     }
 
     /**
@@ -138,7 +165,7 @@ final class EnviarWhatsAppService
 
         $url = rtrim((string) config('whatsapp.base_url'), '/')
             .$rutaBase
-            .(string) config('whatsapp.instance');
+            .config('whatsapp.instance');
 
         try {
             $respuesta = $this->cliente()->post($url, $payload);
@@ -166,9 +193,10 @@ final class EnviarWhatsAppService
         activity('whatsapp')
             ->causedBy($userId)
             ->withProperties([
-                'tipo'    => $tipo,
-                'numero'  => $numero,
-                'resumen' => mb_substr($resumen, 0, 200),
+                'tipo'       => $tipo,
+                'numero'     => $numero,
+                'redirigido' => $this->redirigido(),
+                'resumen'    => mb_substr($resumen, 0, 200),
             ])
             ->event('mensaje_enviado')
             ->log("WhatsApp ({$tipo}) enviado a {$numero}");

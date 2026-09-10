@@ -37,13 +37,13 @@ use Illuminate\Support\Facades\DB;
  * El extra por horas reales > pactadas se cobra al FINALIZAR
  * (FinalizarRentaService) — aquí solo se pacta.
  */
-final class AprobarRentaService
+final readonly class AprobarRentaService
 {
     public function __construct(
-        private readonly CalcularPrecioProyectoService $calculadora,
-        private readonly TransicionComercialProyectoService $transiciones,
-        private readonly IniciarProyectoService $iniciador,
-        private readonly AgendarMaquinaService $agenda,
+        private CalcularPrecioProyectoService $calculadora,
+        private TransicionComercialProyectoService $transiciones,
+        private IniciarProyectoService $iniciador,
+        private AgendarMaquinaService $agenda,
     ) {}
 
     /**
@@ -119,7 +119,7 @@ final class AprobarRentaService
             $hasta = $this->ultimoDiaDeLinea($linea);
 
             $inicio = ($inicio === null || $desde->lt($inicio)) ? $desde : $inicio;
-            $fin = ($fin === null || $hasta->gt($fin)) ? $hasta : $fin;
+            $fin = (! $fin instanceof Carbon || $hasta->gt($fin)) ? $hasta : $fin;
         }
 
         /** @var Carbon $inicio */
@@ -156,9 +156,10 @@ final class AprobarRentaService
             $resultado = $this->agenda->agendarLote(
                 [$linea->maquina_id],
                 $proyecto->id,
+                // Solo el día de llegada. Los días contratados ya viven en la
+                // línea de renta y el cierre lo hace FinalizarRentaService;
+                // llenar el calendario con una fila por día era duplicarlo.
                 $linea->fecha_llegada->toDateString(),
-                $this->ultimoDiaDeLinea($linea)->toDateString(),
-                excluirDomingos: false,
                 notas: 'RENTA '.$proyecto->codigo,
                 userId: $userId,
                 horaEntrada: $linea->hora_llegada,

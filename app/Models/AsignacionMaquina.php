@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 
 /**
  * Asignación de una máquina a una obra (proyecto). Congela la tarifa por hora
@@ -26,6 +27,9 @@ use Illuminate\Support\Facades\DB;
  * @property int $maquina_id
  * @property int $proyecto_id
  * @property string $tarifa_hora_pactada
+ * @property numeric-string|null $tarifa_viaje_pactada
+ * @property numeric-string|null $tarifa_km_pactada
+ * @property numeric-string|null $tarifa_flete_pactada
  * @property Carbon $fecha_inicio
  * @property Carbon|null $fecha_fin
  * @property EstadoAsignacion $estado
@@ -51,6 +55,9 @@ class AsignacionMaquina extends Model
         'maquina_id',
         'proyecto_id',
         'tarifa_hora_pactada',
+        'tarifa_viaje_pactada',
+        'tarifa_km_pactada',
+        'tarifa_flete_pactada',
         'fecha_inicio',
         'fecha_fin',
         'estado',
@@ -60,18 +67,23 @@ class AsignacionMaquina extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
-            'estado'              => EstadoAsignacion::class,
-            'tarifa_hora_pactada' => 'decimal:2',
-            'fecha_inicio'        => 'date',
-            'fecha_fin'           => 'date',
+            'estado'               => EstadoAsignacion::class,
+            'tarifa_hora_pactada'  => 'decimal:2',
+            'tarifa_viaje_pactada' => 'decimal:2',
+            'tarifa_km_pactada'    => 'decimal:2',
+            'tarifa_flete_pactada' => 'decimal:2',
+            'fecha_inicio'         => 'date',
+            'fecha_fin'            => 'date',
         ];
     }
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (AsignacionMaquina $asignacion): void {

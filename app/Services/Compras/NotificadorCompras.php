@@ -61,6 +61,39 @@ final class NotificadorCompras
     }
 
     /**
+     * Compra registrada SIN detalle (Mauricio 2026-09-05, extendida a
+     * obra el 2026-09-10): quien recibe es quien va a escribir qué llegó,
+     * así que el aviso no es "verificá esto" sino "cuando llegue, anotá
+     * qué trajeron".
+     */
+    public function esperandoCaptura(Compra $compra, ?int $actorId = null): void
+    {
+        $compra->loadMissing('proveedor:id,nombre');
+
+        $estimada = $compra->fecha_estimada_llegada;
+
+        // Le suena a QUIEN RECIBE, que es quien va a escribir el detalle
+        // (Mauricio 2026-09-10): el bodeguero si entra a bodega, el
+        // encargado de ESA obra si el camión va directo al sitio.
+        $directa = $compra->esDirectaAObra();
+
+        $this->enviar(
+            destinatarios: $directa
+                ? $this->encargadosDeObra((int) $compra->proyecto_id)
+                : $this->usuariosConRol(Roles::BODEGUERO),
+            compra: $compra,
+            titulo: $directa
+                ? 'Va directo a la obra — falta anotar qué bajaron'
+                : 'Factura registrada — falta anotar qué llegó a bodega',
+            detalle: 'Factura por L. '.number_format((float) $compra->totalDeclarado(), 2)
+                .'. Al recibir, anota material por material lo que trajeron: hasta que lo capturado cuadre '
+                .'con ese total, la mercadería no entra al inventario.'
+                .($estimada !== null ? ' Llegada estimada: '.$estimada->format('d/m/Y').'.' : ''),
+            actorId: $actorId,
+        );
+    }
+
+    /**
      * Pedido LIBRE registrado (taller/equipo/oficina): aquí no hay
      * bodeguero que cuente bultos — se avisa a la oficina que el pedido
      * quedó en camino, con su fecha estimada si la hay.
@@ -186,6 +219,20 @@ final class NotificadorCompras
 
         return User::query()
             ->whereHas('obrasEncargadas', fn ($q) => $q->whereIn('proyectos.id', $obrasIds))
+            ->where('is_active', true)
+            ->get();
+    }
+
+    /**
+     * Encargados de UNA obra — la de la cabecera, cuando la compra ni
+     * siquiera tiene líneas todavía (captura diferida directo a obra).
+     *
+     * @return Collection<int, User>
+     */
+    private function encargadosDeObra(int $proyectoId): Collection
+    {
+        return User::query()
+            ->whereHas('obrasEncargadas', fn ($q) => $q->whereKey($proyectoId))
             ->where('is_active', true)
             ->get();
     }

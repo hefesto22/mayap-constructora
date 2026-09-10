@@ -14,11 +14,13 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ListFichas extends ListRecords
 {
     protected static string $resource = FichaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -126,6 +128,7 @@ class ListFichas extends ListRecords
      * en lugar de N+1 (una por zona). Aguanta cientos de zonas sin
      * degradación visible.
      */
+    #[Override]
     public function getTabs(): array
     {
         // Conteo total por zona — una sola query.
@@ -167,6 +170,7 @@ class ListFichas extends ListRecords
      * zona no existe, la primera zona activa. Evita arrancar en una vista
      * global que mezclaría fichas de distintas zonas.
      */
+    #[Override]
     public function getDefaultActiveTab(): string|int|null
     {
         $codigos = Zona::activas()->orderBy('codigo')->pluck('codigo');

@@ -40,6 +40,31 @@ final class CompraNoVerificableException extends CompraException
         return new self("No se capturó ninguna cantidad recibida para la compra {$codigo}.");
     }
 
+    public static function noEsperaCaptura(string $codigo): self
+    {
+        return new self(
+            "La compra {$codigo} ya tiene su detalle capturado. ".
+            'Para corregir lo contado usa la corrección de conteo, no la captura.'
+        );
+    }
+
+    public static function noCuadraConLaFactura(string $codigo, string $declarado, string $capturado): self
+    {
+        return new self(
+            "Lo capturado no cuadra con la factura {$codigo}: la factura dice L. {$declarado} ".
+            "y lo capturado suma L. {$capturado}. ".
+            'Revisa cantidades y precios — si la diferencia es real, anótala en las notas y avisa a compras.'
+        );
+    }
+
+    public static function materialRepetido(string $codigo, string $material): self
+    {
+        return new self(
+            "El material {$material} aparece dos veces en la captura de la compra {$codigo}. ".
+            'Súmalo en una sola línea.'
+        );
+    }
+
     public static function lineaAjena(string $codigo, int $lineaId): self
     {
         return new self("La línea #{$lineaId} no pertenece a la compra {$codigo}.");

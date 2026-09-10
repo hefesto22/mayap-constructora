@@ -6,6 +6,7 @@ namespace App\Filament\Resources\CuentasPorCobrar\Pages;
 
 use App\Filament\Resources\CuentasPorCobrar\CuentaPorCobrarResource;
 use Filament\Resources\Pages\CreateRecord;
+use Override;
 
 class CreateCuentaPorCobrar extends CreateRecord
 {
@@ -18,6 +19,7 @@ class CreateCuentaPorCobrar extends CreateRecord
      *
      * @return array<string, mixed>
      */
+    #[Override]
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['saldo'] = $data['monto_original'];

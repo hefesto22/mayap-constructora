@@ -33,9 +33,9 @@ use RuntimeException;
  * Regenerable: correr dos veces el mismo período reemplaza el PDF y
  * actualiza la MISMA fila (updateOrCreate por tipo + periodo).
  */
-final class GenerarReportePagosMensualService
+final readonly class GenerarReportePagosMensualService
 {
-    public function __construct(private readonly RenderizadorPdf $pdf) {}
+    public function __construct(private RenderizadorPdf $pdf) {}
 
     /**
      * Genera (o regenera) el reporte de pagos del mes de la fecha dada
@@ -187,7 +187,7 @@ final class GenerarReportePagosMensualService
 
                 $n = $abonosDelMes->count();
 
-                $lineas[] = ucfirst($primero->fecha->translatedFormat('F Y'))
+                $lineas[] = ucfirst((string) $primero->fecha->translatedFormat('F Y'))
                     .' — L '.number_format((float) $total, 2)
                     ." ({$n} abono".($n === 1 ? '' : 's').')';
             }
@@ -213,7 +213,11 @@ final class GenerarReportePagosMensualService
         foreach ($abonos as $abono) {
             $ruta = $abono->foto_comprobante;
 
-            if ($ruta === null || ! Storage::disk('public')->exists($ruta)) {
+            if ($ruta === null) {
+                continue;
+            }
+
+            if (! Storage::disk('public')->exists($ruta)) {
                 continue;
             }
 
@@ -227,7 +231,7 @@ final class GenerarReportePagosMensualService
             };
 
             $porAbono[$abono->id] = 'data:'.$mime.';base64,'
-                .base64_encode(Storage::disk('public')->get($ruta));
+                .base64_encode((string) Storage::disk('public')->get($ruta));
         }
 
         return $porAbono;

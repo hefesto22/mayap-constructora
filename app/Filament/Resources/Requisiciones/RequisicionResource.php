@@ -20,6 +20,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class RequisicionResource extends Resource
 {
@@ -35,21 +36,25 @@ class RequisicionResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Inventario';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return RequisicionForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return RequisicionesTable::configure($table);
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
@@ -68,6 +73,7 @@ class RequisicionResource extends Resource
     /**
      * @return array<class-string>
      */
+    #[Override]
     public static function getRelations(): array
     {
         return [
@@ -75,6 +81,7 @@ class RequisicionResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -85,6 +92,7 @@ class RequisicionResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo'];

@@ -7,11 +7,13 @@ namespace App\Services\Reportes;
 use App\Enums\EstadoPlanilla;
 use App\Enums\TipoMovimientoInventario;
 use App\Models\ConsumoCombustible;
+use App\Models\GastoMantenimiento;
 use App\Models\MovimientoInventario;
 use App\Models\ParteTrabajo;
 use App\Models\PlanillaLinea;
 use App\Models\Proyecto;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Calcula el costo real de una obra juntando las tres fuentes de costo:
@@ -102,7 +104,8 @@ final class CostoProyectoService
     }
 
     /**
-     * Maquinaria = costo de partes de trabajo + combustible de la obra.
+     * Maquinaria = partes de trabajo + combustible de la obra + las
+     * reparaciones que recepción decidió cargarle.
      */
     private function costoMaquinaria(int $proyectoId): string
     {
@@ -116,7 +119,17 @@ final class CostoProyectoService
             ->whereHas('asignacion', $deLaObra)
             ->sum('costo_cache');
 
-        return bcadd($partes, $combustible, self::SCALE);
+        // Reparaciones que RECEPCIÓN decidió cargarle a esta obra. Por
+        // defecto una avería es costo de flota y NO toca el margen del
+        // proyecto donde ocurrió (decisión Mauricio 2026-09-05).
+        // COALESCE: si recepción pactó un monto para la obra, manda ese;
+        // si no, el costo tal cual.
+        $reparaciones = (string) GastoMantenimiento::query()
+            ->cargadosAObra()
+            ->where('proyecto_id', $proyectoId)
+            ->sum(DB::raw('COALESCE(monto_obra, monto)'));
+
+        return bcadd(bcadd($partes, $combustible, self::SCALE), $reparaciones, self::SCALE);
     }
 
     /**

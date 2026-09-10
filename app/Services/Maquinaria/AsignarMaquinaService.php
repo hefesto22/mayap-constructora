@@ -108,4 +108,60 @@ final class AsignarMaquinaService
             }
         });
     }
+
+    /**
+     * Devuelve una máquina al parque DESDE el catálogo de Maquinaria —
+     * la salida de la obra en el mismo lugar donde se ve el estado
+     * (decisión Mauricio 2026-08-16). Espejo de
+     * MantenimientoService::marcarReparada.
+     *
+     * Cierra la asignación abierta por la MISMA puerta que la acción
+     * Finalizar. Si el estado quedó HUÉRFANO —Asignada sin asignación
+     * activa— la libera igual y lo deja anotado: esa máquina no tenía
+     * forma de volver al parque.
+     *
+     * @return AsignacionMaquina|null La asignación cerrada; null si no había ninguna.
+     */
+    public function liberarDeObra(Maquina $maquina, ?string $fechaFin = null): ?AsignacionMaquina
+    {
+        return DB::transaction(function () use ($maquina, $fechaFin): ?AsignacionMaquina {
+            $maquinaBloqueada = Maquina::query()
+                ->whereKey($maquina->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($maquinaBloqueada->estado !== EstadoMaquina::Asignada) {
+                throw AsignacionInvalidaException::maquinaNoAsignada(
+                    $maquinaBloqueada->codigo,
+                    $maquinaBloqueada->estado,
+                );
+            }
+
+            $abierta = AsignacionMaquina::query()
+                ->where('maquina_id', $maquinaBloqueada->id)
+                ->where('estado', EstadoAsignacion::Activa->value)
+                ->orderByDesc('fecha_inicio')
+                ->lockForUpdate()
+                ->first();
+
+            if ($abierta !== null) {
+                $this->finalizar($abierta, $fechaFin);
+
+                return $abierta->refresh();
+            }
+
+            // Estado huérfano: sin asignación que cerrar, la liberación
+            // queda en el registro de actividad (quién y cuándo).
+            $maquinaBloqueada->estado = EstadoMaquina::Disponible;
+            $maquinaBloqueada->save();
+
+            activity('maquinaria')
+                ->performedOn($maquinaBloqueada)
+                ->withProperties(['fecha' => $fechaFin ?? now()->toDateString()])
+                ->event('liberada_sin_asignacion')
+                ->log("{$maquinaBloqueada->codigo} volvió al parque sin asignación activa");
+
+            return null;
+        });
+    }
 }

@@ -89,16 +89,41 @@ function compraEnCamino(Proyecto $proyecto, Material $material, Requisicion $req
     return $compra;
 }
 
+/*
+| Las fechas van SIEMPRE relativas a hoy: con literales el test caducaba
+| solo. La factory pone fecha_solicitud = HOY y el CHECK
+| requisiciones_fechas_coherentes exige fecha_necesaria >= solicitud, así
+| que una fecha escrita a mano reventaba a la semana siguiente.
+*/
+
+/** El día para el que la obra pide el material. */
+function fechaPedida(): string
+{
+    return today()->addDays(5)->toDateString();
+}
+
+/** El proveedor entrega un día ANTES de lo necesario. */
+function entregaAdelantada(): string
+{
+    return today()->addDays(4)->toDateString();
+}
+
+/** El proveedor entrega tres días DESPUÉS: llega tarde. */
+function entregaAtrasada(): string
+{
+    return today()->addDays(8)->toDateString();
+}
+
 test('GOLDEN: al programar la llegada, la obra recibe la fecha y la comparación con lo que pidió', function (): void {
     // Pide para el 10, el proveedor entrega el 9: llega un día ANTES.
-    $requisicion = requisicionQueEspera($this->proyecto, $this->material, '2026-08-10');
-    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, '2026-08-09');
+    $requisicion = requisicionQueEspera($this->proyecto, $this->material, fechaPedida());
+    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, entregaAdelantada());
 
     $this->seguimiento->programar($compra);
 
     $requisicion->refresh();
 
-    expect($requisicion->fecha_estimada_llegada?->toDateString())->toBe('2026-08-09')
+    expect($requisicion->fecha_estimada_llegada?->toDateString())->toBe(entregaAdelantada())
         ->and($requisicion->llegaTarde())->toBeFalse()
         ->and($requisicion->esperandoLlegada())->toBeTrue();
 
@@ -114,8 +139,8 @@ test('GOLDEN: al programar la llegada, la obra recibe la fecha y la comparación
 });
 
 test('cuando la entrega cae DESPUÉS de la fecha necesaria, el aviso lo dice en la cara', function (): void {
-    $requisicion = requisicionQueEspera($this->proyecto, $this->material, '2026-08-10');
-    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, '2026-08-13');
+    $requisicion = requisicionQueEspera($this->proyecto, $this->material, fechaPedida());
+    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, entregaAtrasada());
 
     $this->seguimiento->programar($compra);
 
@@ -124,7 +149,7 @@ test('cuando la entrega cae DESPUÉS de la fecha necesaria, el aviso lo dice en 
 });
 
 test('el pedido directo a obra desde una requisición NO se registra sin fecha de llegada', function (): void {
-    $requisicion = requisicionQueEspera($this->proyecto, $this->material, '2026-08-10');
+    $requisicion = requisicionQueEspera($this->proyecto, $this->material, fechaPedida());
 
     $compra = Compra::factory()
         ->directaAObra($this->proyecto)
@@ -140,31 +165,33 @@ test('el pedido directo a obra desde una requisición NO se registra sin fecha d
 });
 
 test('reprogramar la llegada deja el anterior → nuevo en bitácora y avisa del ATRASO', function (): void {
-    $requisicion = requisicionQueEspera($this->proyecto, $this->material, '2026-08-10');
-    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, '2026-08-09');
+    $requisicion = requisicionQueEspera($this->proyecto, $this->material, fechaPedida());
+    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, entregaAdelantada());
 
     $this->seguimiento->programar($compra);
     $this->encargado->notifications()->delete();
 
     app(ReprogramarLlegadaCompraService::class)->reprogramar(
         $compra,
-        Carbon::parse('2026-08-13'),
+        Carbon::parse(entregaAtrasada()),
         'El proveedor no tuvo el material en bodega.',
     );
 
     $requisicion->refresh();
 
-    expect($requisicion->fecha_estimada_llegada?->toDateString())->toBe('2026-08-13')
+    $rastro = today()->addDays(4)->format('d/m/Y').' → '.today()->addDays(8)->format('d/m/Y');
+
+    expect($requisicion->fecha_estimada_llegada?->toDateString())->toBe(entregaAtrasada())
         ->and($requisicion->llegaTarde())->toBeTrue()
         ->and($compra->refresh()->aviso_llegada_at)->toBeNull()
-        ->and($requisicion->transiciones()->where('nota', 'like', '%09/08/2026 → 13/08/2026%')->exists())->toBeTrue();
+        ->and($requisicion->transiciones()->where('nota', 'like', "%{$rastro}%")->exists())->toBeTrue();
 
     expect(json_encode($this->encargado->notifications()->first()?->data))->toContain('ATRASO');
 });
 
 test('reprogramar exige motivo y no admite fechas en el pasado', function (): void {
-    $requisicion = requisicionQueEspera($this->proyecto, $this->material, '2026-08-10');
-    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, '2026-08-09');
+    $requisicion = requisicionQueEspera($this->proyecto, $this->material, fechaPedida());
+    $compra = compraEnCamino($this->proyecto, $this->material, $requisicion, entregaAdelantada());
 
     expect(fn () => app(ReprogramarLlegadaCompraService::class)->reprogramar($compra, today()->addDay(), '   '))
         ->toThrow(LlegadaNoReprogramableException::class, 'motivo');
@@ -208,7 +235,7 @@ test('si la fecha prometida pasó y el material no llegó, el reclamo se repite 
 });
 
 test('no se puede verificar la recepción antes del día que el proveedor prometió', function (): void {
-    $requisicion = requisicionQueEspera($this->proyecto, $this->material, '2026-08-20');
+    $requisicion = requisicionQueEspera($this->proyecto, $this->material, today()->addDays(15)->toDateString());
     $compra = compraEnCamino(
         $this->proyecto,
         $this->material,

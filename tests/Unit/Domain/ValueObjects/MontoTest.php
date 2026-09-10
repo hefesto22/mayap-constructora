@@ -7,11 +7,11 @@ use App\Domain\ValueObjects\Monto;
 
 describe('Monto — invariantes del constructor', function (): void {
     test('rechaza valor negativo', function (): void {
-        expect(fn () => new Monto(-1.0))->toThrow(ValueObjectInvalidoException::class);
+        expect(fn (): Monto => new Monto(-1.0))->toThrow(ValueObjectInvalidoException::class);
     });
 
     test('rechaza moneda con longitud distinta a 3', function (): void {
-        expect(fn () => new Monto(100.0, 'HONDURAS'))
+        expect(fn (): Monto => new Monto(100.0, 'HONDURAS'))
             ->toThrow(ValueObjectInvalidoException::class);
     });
 
@@ -32,7 +32,7 @@ describe('Monto — aritmética', function (): void {
         $hnl = new Monto(100.00, 'HNL');
         $usd = new Monto(100.00, 'USD');
 
-        expect(fn () => $hnl->sumar($usd))->toThrow(ValueObjectInvalidoException::class);
+        expect(fn (): Monto => $hnl->sumar($usd))->toThrow(ValueObjectInvalidoException::class);
     });
 
     test('aplica porcentaje correctamente — caso ISV 15%', function (): void {
@@ -46,7 +46,7 @@ describe('Monto — aritmética', function (): void {
         $a = new Monto(50.00);
         $b = new Monto(100.00);
 
-        expect(fn () => $a->restar($b))->toThrow(ValueObjectInvalidoException::class);
+        expect(fn (): Monto => $a->restar($b))->toThrow(ValueObjectInvalidoException::class);
     });
 
     test('multiplica sin perder precisión en redondeo', function (): void {

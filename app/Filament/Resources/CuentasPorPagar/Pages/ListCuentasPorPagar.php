@@ -9,6 +9,7 @@ use App\Models\CuentaPorPagar;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ListCuentasPorPagar extends ListRecords
 {
@@ -24,6 +25,7 @@ class ListCuentasPorPagar extends ListRecords
      *  3. Con saldo  — toda la deuda viva con proveedores
      *  4. Todas      — histórico completo (incluye pagadas)
      */
+    #[Override]
     public function getTabs(): array
     {
         $vencidas = CuentaPorPagar::query()->vencidas()->count();
@@ -58,6 +60,7 @@ class ListCuentasPorPagar extends ListRecords
      * vencidas si hay atrasos, por vencer si hay urgencias, y si no,
      * toda la deuda con saldo.
      */
+    #[Override]
     public function getDefaultActiveTab(): string|int|null
     {
         return match (true) {

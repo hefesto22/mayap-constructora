@@ -27,9 +27,9 @@ use Illuminate\Support\Facades\Storage;
  *    regenerar o en un reporte posterior).
  *  - Idempotente: `fotos_purgadas_at` marca el mes ya liberado.
  */
-final class PurgarFotosFacturasService
+final readonly class PurgarFotosFacturasService
 {
-    public function __construct(private readonly NotificadorReportesFiscales $notificador) {}
+    public function __construct(private NotificadorReportesFiscales $notificador) {}
 
     /**
      * @return int Cuántos reportes liberaron sus fotos en esta pasada.

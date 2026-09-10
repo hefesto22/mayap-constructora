@@ -114,6 +114,21 @@ enum EstadoProyecto: string implements HasColor, HasIcon, HasLabel
     }
 
     /**
+     * Los estados terminales, como valores — ÚNICA fuente para los
+     * selectores de obra: a una obra muerta no se le pide material ni
+     * se le asigna maquinaria (2026-08-16).
+     *
+     * @return list<string>
+     */
+    public static function terminales(): array
+    {
+        return array_values(array_map(
+            static fn (self $estado): string => $estado->value,
+            array_filter(self::cases(), static fn (self $estado): bool => $estado->esTerminal()),
+        ));
+    }
+
+    /**
      * ¿Es un estado terminal (no se puede cambiar a otro)?
      */
     public function esTerminal(): bool

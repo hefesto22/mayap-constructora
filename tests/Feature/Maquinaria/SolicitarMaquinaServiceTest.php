@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoSolicitudMaquina;
 use App\Enums\PrioridadSolicitud;
+use App\Exceptions\Maquinaria\AgendaInvalidaException;
 use App\Exceptions\Maquinaria\SolicitudInvalidaException;
 use App\Models\AgendaMaquina;
 use App\Models\MantenimientoMaquina;
@@ -64,22 +65,12 @@ test('GOLDEN: máquina disponible → la solicitud nace AGENDADA con su agendado
         ->and($agendado->proyecto_id)->toBe($obra->id);
 });
 
-test('RANGO: "del lunes al miércoles" crea un agendado por día; lo que choca se salta y queda en el motivo', function (): void {
+test('la solicitud agenda SOLO el día de llegada, aunque pida un rango', function (): void {
     $obra = Proyecto::factory()->enEjecucion()->create();
     $maquina = Maquina::factory()->create();
 
-    // Anclado a lunes-miércoles: sin domingos de por medio (el lote los
-    // excluye por default y el conteo sería distinto según el día de hoy).
     $desde = today()->addWeek()->startOfWeek();
     $hasta = $desde->copy()->addDays(2);
-
-    // El día de en medio está en taller: 2 de 3 días se agendan.
-    MantenimientoMaquina::factory()->create([
-        'maquina_id'   => $maquina->id,
-        'fecha_inicio' => $desde->copy()->addDay()->toDateString(),
-        'fecha_fin'    => $desde->copy()->addDay()->toDateString(),
-        'estado'       => EstadoMantenimiento::EnProceso,
-    ]);
 
     $solicitud = $this->servicio->crear(
         proyectoId: $obra->id,
@@ -89,15 +80,17 @@ test('RANGO: "del lunes al miércoles" crea un agendado por día; lo que choca s
         fechaHasta: $hasta->toDateString(),
     );
 
+    // La fecha_hasta que pidió el encargado se guarda como referencia, pero
+    // ya no genera una fila de agenda por día: la máquina se queda en la obra
+    // hasta que él mismo registre la salida (2026-09-04).
     expect($solicitud->estado)->toBe(EstadoSolicitudMaquina::Agendada)
         ->and($solicitud->fecha_hasta->toDateString())->toBe($hasta->toDateString())
-        ->and($solicitud->motivo)->toContain('2 día(s)')
-        ->and($solicitud->motivo)->toContain('Saltados')
-        ->and(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(2)
-        ->and($solicitud->rangoParaEl())->toContain('al '.$hasta->format('d/m/Y'));
+        ->and(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(1)
+        ->and(AgendaMaquina::where('maquina_id', $maquina->id)->firstOrFail()->fecha->toDateString())
+        ->toBe($desde->toDateString());
 });
 
-test('DOBLE USO: con la máquina YA comprometida ese día, la solicitud requiere autorización de maquinaria', function (): void {
+test('DOBLE USO: con la máquina comprometida, la solicitud queda pendiente y ni maquinaria la agenda', function (): void {
     $obraA = Proyecto::factory()->enEjecucion()->create();
     $obraB = Proyecto::factory()->enEjecucion()->create();
     $maquina = Maquina::factory()->create();
@@ -107,22 +100,22 @@ test('DOBLE USO: con la máquina YA comprometida ese día, la solicitud requiere
     // Día libre: la primera se agenda sola.
     expect($this->servicio->crear($obraA->id, $maquina->id, $fecha, '07:00')->estado)->toBe(EstadoSolicitudMaquina::Agendada);
 
-    // La SEGUNDA del mismo día ya no decide sola: jornadas largas — nadie
-    // garantiza que se desocupe. Autoriza maquinaria.
+    // La SEGUNDA no decide sola y explica por qué, nombrando la obra donde
+    // la máquina está comprometida.
     $segunda = $this->servicio->crear($obraB->id, $maquina->id, $fecha, '15:00');
 
-    // El motivo dice a qué HORA y a qué OBRA está comprometida —
-    // maquinaria autoriza con los datos enfrente, no a ciegas.
     expect($segunda->estado)->toBe(EstadoSolicitudMaquina::Pendiente)
-        ->and($segunda->motivo)->toContain('autorización de maquinaria')
-        ->and($segunda->motivo)->toContain('llega 7:00 AM a '.$obraA->nombre)
+        ->and($segunda->motivo)->toContain($obraA->nombre)
         ->and(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(1);
 
-    // Maquinaria autoriza el doble uso → la agenda manualmente (sin límite).
-    $resuelta = $this->servicio->agendar($segunda, $fecha, userId: $jefe->id);
+    // Y desde 2026-09-04 ya NO hay vía de escape: ni maquinaria puede
+    // forzarla. La estadía dejó de tener fecha de fin, así que nadie puede
+    // afirmar que la máquina se desocupó — la única forma de liberarla es
+    // que el encargado de la obra A registre la salida.
+    expect(fn () => $this->servicio->agendar($segunda, $fecha, userId: $jefe->id))
+        ->toThrow(AgendaInvalidaException::class, $obraA->nombre);
 
-    expect($resuelta->estado)->toBe(EstadoSolicitudMaquina::Agendada)
-        ->and(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(2);
+    expect(AgendaMaquina::where('maquina_id', $maquina->id)->count())->toBe(1);
 });
 
 test('OBVIO: la misma máquina a la MISMA obra el mismo día se rechaza sin crear la solicitud', function (): void {
@@ -280,7 +273,7 @@ test('la solicitud queda en el historial del proyecto (relaciones)', function ()
         ->and($obra->agendaMaquina()->count())->toBe(1);
 });
 
-test('pedir la máquina para un DOMINGO deja la solicitud pendiente y DICE por qué', function (): void {
+test('pedir la máquina para un DOMINGO la agenda igual: el encargado eligió ese día', function (): void {
     Role::firstOrCreate(['name' => 'maquinaria', 'guard_name' => 'web']);
 
     $encargado = User::factory()->create();
@@ -298,11 +291,11 @@ test('pedir la máquina para un DOMINGO deja la solicitud pendiente y DICE por q
         userId: $encargado->id,
     );
 
-    // Pendiente está bien (trabajar domingo se autoriza, no se agenda
-    // solo). Lo que NO puede pasar es que quede sin explicación.
-    expect($solicitud->estado)->toBe(EstadoSolicitudMaquina::Pendiente)
-        ->and($solicitud->agenda_maquina_id)->toBeNull()
-        ->and($solicitud->motivo)->toContain('domingo')
-        ->and($solicitud->motivo)->not->toBe('')
-        ->and(AgendaMaquina::count())->toBe(0);
+    // El domingo dejó de ser especial: antes el lote recortaba domingos del
+    // rango y la solicitud quedaba sin agendar. Ahora se agenda UN día — el
+    // que el encargado pidió — y si eligió domingo es una decisión suya.
+    expect($solicitud->estado)->toBe(EstadoSolicitudMaquina::Agendada)
+        ->and($solicitud->agenda_maquina_id)->not->toBeNull()
+        ->and(AgendaMaquina::count())->toBe(1)
+        ->and(AgendaMaquina::firstOrFail()->fecha->toDateString())->toBe($domingo);
 });

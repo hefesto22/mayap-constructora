@@ -14,11 +14,13 @@ use Filament\Actions\CreateAction;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ManageRecords;
 use Filament\Support\Exceptions\Halt;
+use Override;
 
 class ManageSolicitudesMaquina extends ManageRecords
 {
     protected static string $resource = SolicitudMaquinaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -41,7 +43,7 @@ class ManageSolicitudesMaquina extends ManageRecords
                             fechaDesde: (string) ($fechas[0] ?? today()->toDateString()),
                             horaLlegada: (string) $data['hora_llegada'],
                             fechaHasta: isset($fechas[1]) ? (string) $fechas[1] : null,
-                            notas: is_string($data['notas'] ?? null) && trim((string) $data['notas']) !== '' ? (string) $data['notas'] : null,
+                            notas: is_string($data['notas'] ?? null) && trim($data['notas']) !== '' ? $data['notas'] : null,
                             userId: is_numeric(auth()->id()) ? (int) auth()->id() : null,
                             // ToggleButtons con enum entrega el enum ya casteado;
                             // por si llega crudo (string), se normaliza.
@@ -59,7 +61,7 @@ class ManageSolicitudesMaquina extends ManageRecords
                             ->persistent()
                             ->send();
 
-                        throw new Halt;
+                        throw new Halt($e->getMessage(), $e->getCode(), $e);
                     }
                 })
                 ->successNotification(null)

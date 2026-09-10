@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Override;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -80,6 +81,7 @@ class Material extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -108,6 +110,7 @@ class Material extends Model
 
     // ─── Lifecycle: auto-generación de código global ───────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (Material $material): void {

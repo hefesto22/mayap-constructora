@@ -13,6 +13,7 @@ use App\Support\Roles;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Pages\Page;
+use Override;
 use UnitEnum;
 
 /**
@@ -48,6 +49,7 @@ class CalendarioMaquinaria extends Page
 
     public ?int $proyectoId = null;
 
+    #[Override]
     public static function canAccess(): bool
     {
         return auth()->user()?->can('View:CalendarioMaquinaria') ?? false;
@@ -60,6 +62,7 @@ class CalendarioMaquinaria extends Page
      *
      * @return array<int, Action>
      */
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -83,6 +86,7 @@ class CalendarioMaquinaria extends Page
     /**
      * @return array<string, mixed>
      */
+    #[Override]
     protected function getViewData(): array
     {
         $user = auth()->user();

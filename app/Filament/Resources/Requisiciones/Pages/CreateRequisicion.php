@@ -8,6 +8,7 @@ use App\Filament\Resources\Requisiciones\RequisicionResource;
 use App\Models\Requisicion;
 use App\Services\Requisiciones\NotificadorRequisiciones;
 use Filament\Resources\Pages\CreateRecord;
+use Override;
 
 class CreateRequisicion extends CreateRecord
 {
@@ -20,6 +21,7 @@ class CreateRequisicion extends CreateRecord
      *
      * @return array<string, mixed>
      */
+    #[Override]
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['solicitante_id'] = auth()->id();

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Renglón de un Proyecto/Cotización.
@@ -79,6 +80,7 @@ class ProyectoRenglon extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -91,6 +93,7 @@ class ProyectoRenglon extends Model
 
     // ─── Lifecycle: subtotal coherente ────────────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         // El subtotal SIEMPRE = cantidad × precio_snapshot. Recalcular en

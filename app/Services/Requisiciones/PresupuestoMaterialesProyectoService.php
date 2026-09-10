@@ -182,7 +182,11 @@ final class PresupuestoMaterialesProyectoService
         return DB::table('compra_lineas')
             ->join('compras', 'compras.id', '=', 'compra_lineas.compra_id')
             ->join('materiales', 'materiales.id', '=', 'compra_lineas.material_id')
-            ->where('compras.estado', EstadoCompra::Confirmada->value)
+            // Confirmada Y Completada (2026-08-16): completar es cerrar
+            // la compra, no revertirla. Con solo Confirmada, al
+            // completarla el material comprometido DESAPARECÍA del
+            // control y se podía volver a pedir lo mismo.
+            ->whereIn('compras.estado', [EstadoCompra::Confirmada->value, EstadoCompra::Completada->value])
             ->whereNull('compras.requisicion_id')
             ->whereNull('compras.deleted_at')
             ->where('materiales.categoria', CategoriaItem::Materiales->value)

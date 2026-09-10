@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Vista de existencias — SOLO LECTURA. El stock es un saldo derivado del
@@ -32,16 +33,19 @@ class ExistenciaResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Inventario';
     }
 
+    #[Override]
     public static function canCreate(): bool
     {
         return false;
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return ExistenciasTable::configure($table);
@@ -51,6 +55,7 @@ class ExistenciaResource extends Resource
      * Eager loading: la ubicación se arma con bodega o proyecto, y el
      * nombre/código del material — evita N+1 en el listado.
      */
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
@@ -78,6 +83,7 @@ class ExistenciaResource extends Resource
         return $query;
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [

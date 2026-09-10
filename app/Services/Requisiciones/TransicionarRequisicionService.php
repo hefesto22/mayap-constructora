@@ -6,6 +6,7 @@ namespace App\Services\Requisiciones;
 
 use App\Enums\EstadoRequisicion;
 use App\Enums\OrigenDespacho;
+use App\Enums\ResolucionLinea;
 use App\Exceptions\Inventario\StockInsuficienteException;
 use App\Exceptions\Requisiciones\RequisicionInvalidaException;
 use App\Exceptions\Requisiciones\TransicionInvalidaException;
@@ -83,6 +84,253 @@ final readonly class TransicionarRequisicionService
 
             $this->aplicarTransicion($requisicion, EstadoRequisicion::Autorizada, $userId, $nota);
         });
+    }
+
+    /**
+     * REVISIÓN DEL PEDIDO, RENGLÓN POR RENGLÓN (Mauricio, 2026-09-10).
+     *
+     * "Si el de obra pide x materiales el bodeguero confirma si hay en
+     * bodega y salen de ahí; si no hay y se compraron, le llegarán; si no
+     * hay y no se pudo comprar, se marca que ese no le llegará."
+     *
+     * Es UNA pasada: el bodeguero contesta los tres botones por material y
+     * de un solo golpe sale el stock que hay, queda pedida la compra de lo
+     * que falta y queda cerrado lo que no se consiguió. Antes bastaba un
+     * material sin stock para que TODO el pedido se fuera a "requisición
+     * de compra" — la obra esperaba el cemento que sí había por culpa de
+     * unos clavos que no.
+     *
+     * El estado de la cabecera se deduce, no se elige:
+     *   algo por llegar  → RequisicionCompra (Administración compra)
+     *   nada por llegar y algo salió → Despachada
+     *   nada por llegar y nada salió → Rechazada (no le llega nada)
+     *
+     * Si de un renglón sale de bodega MENOS de lo que falta, el resto
+     * queda pendiente y arrastra la cabecera a RequisicionCompra: lo que
+     * no salió, alguien lo tiene que comprar.
+     *
+     * Si el stock se movió entre que se pintó la pantalla y se apretó
+     * Guardar, StockInsuficienteException revienta la transacción entera
+     * y no se resuelve NADA: el bodeguero está ahí parado y vuelve a
+     * marcar ese renglón. Es lo contrario del despacho clásico, que en ese
+     * caso se tragaba el pedido completo.
+     *
+     * @param array<int, array{resolucion?: string, cantidad?: string, nota?: string|null}> $decisiones requisicion_linea_id => decisión
+     */
+    public function resolverDisponibilidad(
+        Requisicion $requisicion,
+        Ubicacion $bodega,
+        array $decisiones,
+        ?int $userId = null,
+        ?string $nota = null,
+    ): EstadoRequisicion {
+        $requisicion->loadMissing('lineas.material:id,codigo,nombre');
+        $this->assertTieneLineas($requisicion);
+
+        $obra = Ubicacion::obra($requisicion->proyecto_id);
+
+        return DB::transaction(function () use ($requisicion, $bodega, $obra, $decisiones, $userId, $nota): EstadoRequisicion {
+            $ahora = Carbon::now();
+            $conteo = [ResolucionLinea::Bodega->value => 0, ResolucionLinea::Comprar->value => 0, ResolucionLinea::NoDisponible->value => 0];
+            $salioDeBodega = false;
+            $quedaPorLlegar = false;
+            /** @var array<string, string> $noLlegan */
+            $noLlegan = [];
+
+            foreach ($requisicion->lineas as $linea) {
+                $etiqueta = $this->etiquetaMaterial($linea);
+                $decision = $decisiones[$linea->id] ?? null;
+
+                if ($decision === null) {
+                    throw RequisicionInvalidaException::renglonSinResolver($etiqueta);
+                }
+
+                $cruda = (string) ($decision['resolucion'] ?? '');
+                $resolucion = ResolucionLinea::tryFrom($cruda);
+
+                if ($resolucion === null) {
+                    throw $cruda === ''
+                        ? RequisicionInvalidaException::renglonSinResolver($etiqueta)
+                        : RequisicionInvalidaException::resolucionInvalida($cruda);
+                }
+
+                if ($resolucion === ResolucionLinea::Bodega) {
+                    $movio = $this->despacharRenglon(
+                        $linea,
+                        $bodega,
+                        $obra,
+                        (string) ($decision['cantidad'] ?? $linea->pendiente()),
+                        $userId,
+                        $requisicion,
+                    );
+
+                    $salioDeBodega = $salioDeBodega || $movio;
+                }
+
+                if ($resolucion === ResolucionLinea::NoDisponible) {
+                    $this->cerrarRenglonSinLlegada(
+                        $linea,
+                        (string) ($decision['nota'] ?? ''),
+                        $etiqueta,
+                    );
+
+                    $noLlegan[$etiqueta] = (string) $linea->resolucion_nota;
+                }
+
+                // ResolucionLinea::Comprar no mueve nada: el renglón queda
+                // pendiente y es eso lo que manda la cabecera a compra.
+
+                $linea->resolucion = $resolucion;
+                $linea->resuelta_at = $ahora;
+                $linea->resuelta_por = $userId;
+                $linea->save();
+
+                $conteo[$resolucion->value]++;
+
+                // Lo que la obra sigue esperando: lo que se compra, y lo
+                // que salió de bodega a medias.
+                if (bccomp($linea->pendiente(), '0', self::SCALE_CANTIDAD) > 0) {
+                    $quedaPorLlegar = true;
+                }
+            }
+
+            // Aunque la cabecera se vaya a RequisicionCompra: si algo salió
+            // de una bodega nuestra, ese tramo de carretera existió y la
+            // requisición SÍ pasa por tránsito.
+            if ($salioDeBodega) {
+                $requisicion->origen_despacho = OrigenDespacho::Bodega;
+            }
+
+            $destino = match (true) {
+                $quedaPorLlegar => EstadoRequisicion::RequisicionCompra,
+                $salioDeBodega  => EstadoRequisicion::Despachada,
+                default         => EstadoRequisicion::Rechazada,
+            };
+
+            $resumen = $this->resumenResolucion($conteo, $nota);
+
+            // Revisar de nuevo un pedido que ya estaba en RequisicionCompra
+            // y sigue faltando algo no es una transición (sería hacia sí
+            // mismo): se guarda la resolución y ya.
+            if ($requisicion->estado === $destino) {
+                $requisicion->save();
+            } else {
+                $this->aplicarTransicion($requisicion, $destino, $userId, $resumen);
+            }
+
+            // El estado de la cabecera no contesta "¿me llega o no?". Este
+            // aviso sí, y va a quien lo pidió — pase lo que pase con la
+            // transición, porque para la obra la noticia es la misma.
+            $this->notificador->resolucionDelPedido(
+                $requisicion,
+                $conteo[ResolucionLinea::Bodega->value],
+                $conteo[ResolucionLinea::Comprar->value],
+                $noLlegan,
+                $userId,
+            );
+
+            return $destino;
+        });
+    }
+
+    /**
+     * Saca de bodega lo que este renglón pidió (o la parte que haya).
+     *
+     * @return bool ¿Se movió stock de verdad?
+     */
+    private function despacharRenglon(
+        RequisicionLinea $linea,
+        Ubicacion $bodega,
+        Ubicacion $obra,
+        string $cantidad,
+        ?int $userId,
+        Requisicion $requisicion,
+    ): bool {
+        $cantidad = is_numeric($cantidad)
+            ? number_format((float) $cantidad, self::SCALE_CANTIDAD, '.', '')
+            : '0';
+
+        if (bccomp($cantidad, '0', self::SCALE_CANTIDAD) <= 0) {
+            return false;
+        }
+
+        $pendiente = $linea->pendiente();
+
+        if (bccomp($cantidad, $pendiente, self::SCALE_CANTIDAD) > 0) {
+            throw RequisicionInvalidaException::despachoExcedePendiente(
+                $this->etiquetaMaterial($linea),
+                $cantidad,
+                $pendiente,
+            );
+        }
+
+        $this->inventario->salidaDespacho(
+            materialId: $linea->material_id,
+            origen: $bodega,
+            destino: $obra,
+            cantidad: $cantidad,
+            userId: $userId,
+            referencia: $requisicion,
+        );
+
+        $linea->cantidad_despachada = bcadd(
+            (string) $linea->cantidad_despachada,
+            $cantidad,
+            self::SCALE_CANTIDAD,
+        );
+
+        return true;
+    }
+
+    /**
+     * "No se consiguió": el renglón se cierra en TODO el sistema bajando
+     * su cantidad autorizada a lo que ya salió (normalmente cero). Así
+     * nada lo persigue después — ni la conciliación, ni el prellenado de
+     * una compra, ni el pendiente de despacho— y el motivo queda escrito
+     * para el que lo pidió.
+     */
+    private function cerrarRenglonSinLlegada(RequisicionLinea $linea, string $motivo, string $etiqueta): void
+    {
+        $motivo = trim($motivo);
+
+        if ($motivo === '') {
+            throw RequisicionInvalidaException::motivoNoDisponibleRequerido($etiqueta);
+        }
+
+        $linea->cantidad_autorizada = (string) $linea->cantidad_despachada;
+        $linea->resolucion_nota = $motivo;
+    }
+
+    private function etiquetaMaterial(RequisicionLinea $linea): string
+    {
+        $linea->loadMissing('material:id,codigo,nombre');
+
+        return $linea->material->codigo.' — '.$linea->material->nombre;
+    }
+
+    /**
+     * Nota de bitácora en el idioma en que se tomó la decisión.
+     *
+     * @param array<string, int> $conteo
+     */
+    private function resumenResolucion(array $conteo, ?string $nota): string
+    {
+        $partes = [];
+
+        foreach (ResolucionLinea::cases() as $caso) {
+            $cuantos = $conteo[$caso->value] ?? 0;
+
+            if ($cuantos > 0) {
+                $partes[] = $cuantos.' '.($cuantos === 1 ? 'material' : 'materiales')
+                    .': '.mb_strtolower($caso->getLabel());
+            }
+        }
+
+        $resumen = 'Revisión del pedido — '.implode(' · ', $partes).'.';
+
+        return $nota !== null && trim($nota) !== ''
+            ? $resumen.' '.trim($nota)
+            : $resumen;
     }
 
     /**
@@ -182,7 +430,11 @@ final readonly class TransicionarRequisicionService
             $autorizada = (string) ($linea->cantidad_autorizada ?? $linea->cantidad_solicitada);
             $pendiente = bcsub($autorizada, (string) $linea->cantidad_despachada, self::SCALE_CANTIDAD);
 
-            if (bccomp($pendiente, '0', self::SCALE_CANTIDAD) <= 0 || bccomp($comprado, '0', self::SCALE_CANTIDAD) <= 0) {
+            if (bccomp($pendiente, '0', self::SCALE_CANTIDAD) <= 0) {
+                continue;
+            }
+
+            if (bccomp($comprado, '0', self::SCALE_CANTIDAD) <= 0) {
                 continue;
             }
 

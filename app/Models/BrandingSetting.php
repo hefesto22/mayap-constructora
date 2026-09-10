@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
+use Override;
 
 /**
  * Configuración visual del sistema (logo, favicon, color primario).
@@ -29,7 +30,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class BrandingSetting extends Model
 {
-    private const CACHE_KEY = 'branding_setting:current';
+    private const string CACHE_KEY = 'branding_setting:current';
 
     /** @var array<int, string> */
     protected $fillable = [
@@ -62,6 +63,7 @@ class BrandingSetting extends Model
      * archivo anterior se borra definitivamente (no se acumulan en
      * storage/branding).
      */
+    #[Override]
     protected static function booted(): void
     {
         static::updating(static function (self $setting): void {

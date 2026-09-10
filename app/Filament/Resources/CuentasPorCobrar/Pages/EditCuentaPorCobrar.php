@@ -7,11 +7,13 @@ namespace App\Filament\Resources\CuentasPorCobrar\Pages;
 use App\Filament\Resources\CuentasPorCobrar\CuentaPorCobrarResource;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditCuentaPorCobrar extends EditRecord
 {
     protected static string $resource = CuentaPorCobrarResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -27,6 +29,7 @@ class EditCuentaPorCobrar extends EditRecord
      *
      * @return array<string, mixed>
      */
+    #[Override]
     protected function mutateFormDataBeforeSave(array $data): array
     {
         if (isset($data['monto_original'])) {

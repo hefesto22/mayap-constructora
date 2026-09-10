@@ -10,8 +10,9 @@ use App\Enums\FaseMantenimiento;
 /**
  * Se lanza cuando una operación de mantenimiento es inválida: la máquina no
  * está operativa, no hay obra de la cual sustituir, el mantenimiento ya no
- * está en proceso, el avance de fase viene incompleto, o la fase
- * intenta retroceder (las fases solo avanzan).
+ * está en proceso, se quiere sacar del taller una máquina que no está
+ * en él, el avance de fase viene incompleto, o la fase intenta
+ * retroceder (las fases solo avanzan).
  */
 final class MantenimientoInvalidoException extends MaquinariaException
 {
@@ -19,6 +20,14 @@ final class MantenimientoInvalidoException extends MaquinariaException
     {
         return new self(
             "La máquina {$codigo} no se puede enviar a mantenimiento. ".
+            "Estado actual: {$estado->getLabel()}."
+        );
+    }
+
+    public static function maquinaNoEnTaller(string $codigo, EstadoMaquina $estado): self
+    {
+        return new self(
+            "La máquina {$codigo} no está en el taller, así que no hay reparación que cerrar. ".
             "Estado actual: {$estado->getLabel()}."
         );
     }

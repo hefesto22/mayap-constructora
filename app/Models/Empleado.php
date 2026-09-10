@@ -12,9 +12,11 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -37,6 +39,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
+ * @property-read Operador|null $operador
  */
 class Empleado extends Model
 {
@@ -65,6 +68,7 @@ class Empleado extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -73,6 +77,17 @@ class Empleado extends Model
             'tarifa_base'       => 'decimal:2',
             'activo'            => 'boolean',
         ];
+    }
+
+    /**
+     * Su ficha de operador de maquinaria, si maneja. La mayoría del
+     * personal no maneja: null es lo normal.
+     *
+     * @return HasOne<Operador, $this>
+     */
+    public function operador(): HasOne
+    {
+        return $this->hasOne(Operador::class);
     }
 
     public function getActivitylogOptions(): LogOptions
@@ -86,6 +101,7 @@ class Empleado extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (Empleado $empleado): void {

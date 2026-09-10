@@ -143,7 +143,7 @@ final class ResumenRentaService
      */
     private function tarifaUnitaria(string $dimension, ?ProyectoLineaRenta $linea): string
     {
-        if ($linea === null) {
+        if (! $linea instanceof ProyectoLineaRenta) {
             return '0.00';
         }
 
@@ -157,7 +157,7 @@ final class ResumenRentaService
 
         $linea->loadMissing('maquina');
 
-        $jornada = (string) $linea->maquina->jornada_horas;
+        $jornada = (string) $linea->maquina->horas_dia_renta;
 
         if (bccomp($jornada, '0', self::SCALE) <= 0) {
             return (string) $linea->tarifa_snapshot;

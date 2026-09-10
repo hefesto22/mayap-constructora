@@ -20,10 +20,10 @@ use Illuminate\Support\Facades\View;
  * El armado del HTML está separado de la generación del PDF para poder
  * probar el contenido sin depender de Chromium en el entorno de tests.
  */
-final class ComposicionProyectoPdfService
+final readonly class ComposicionProyectoPdfService
 {
     public function __construct(
-        private readonly PdfRenderer $pdf,
+        private PdfRenderer $pdf,
     ) {}
 
     /**

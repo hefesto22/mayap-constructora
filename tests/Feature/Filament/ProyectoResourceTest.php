@@ -37,11 +37,9 @@ beforeEach(function (): void {
     $this->admin = User::factory()->create(['is_active' => true]);
     $this->admin->assignRole(Utils::getSuperAdminName());
 
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 

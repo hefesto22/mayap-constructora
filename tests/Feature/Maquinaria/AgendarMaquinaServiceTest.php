@@ -71,74 +71,70 @@ test('máquina en mantenimiento ese día NO se agenda (rango y abierto)', functi
     expect($agendado->exists)->toBeTrue();
 });
 
-test('no se duplica la misma máquina+obra+fecha, pero sí puede ir a OTRA obra ese día', function (): void {
+test('una máquina comprometida no se agenda a NINGUNA otra obra hasta que salga', function (): void {
     $maquina = Maquina::factory()->create();
-    $obraA = Proyecto::factory()->enEjecucion()->create();
+    $obraA = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA ALFA']);
     $obraB = Proyecto::factory()->enEjecucion()->create();
     $fecha = today()->addDays(3)->toDateString();
 
     $this->servicio->agendar($maquina->id, $obraA->id, $fecha, horaEntrada: '08:00:00');
 
+    // Ni a la misma obra otra vez...
     expect(fn () => $this->servicio->agendar($maquina->id, $obraA->id, $fecha, horaEntrada: '14:00:00'))
-        ->toThrow(AgendaInvalidaException::class, 'ya está agendada');
+        ->toThrow(AgendaInvalidaException::class, 'OBRA ALFA');
 
-    // Sale de la obra A y entra a la B más tarde ese mismo día: válido.
-    // El criterio de horarios es de quien agenda (ve los compromisos en
-    // el formulario) — el sistema no estima cuánto trabajará.
-    $otraObra = $this->servicio->agendar($maquina->id, $obraB->id, $fecha, horaEntrada: '13:00:00');
-    expect($otraObra->exists)->toBeTrue()
-        ->and($otraObra->horaEntradaCorta())->toBe('13:00');
+    // ...ni a otra el mismo día, ni días después. Desde 2026-09-04 la
+    // estadía no tiene fecha de fin: la máquina sigue en OBRA ALFA hasta
+    // que el encargado registre la salida, y el sistema no puede adivinar
+    // que ya se desocupó. La vía para liberarla es marcar que terminó.
+    expect(fn () => $this->servicio->agendar($maquina->id, $obraB->id, $fecha, horaEntrada: '13:00:00'))
+        ->toThrow(AgendaInvalidaException::class, 'OBRA ALFA');
+
+    expect(fn () => $this->servicio->agendar($maquina->id, $obraB->id, today()->addDays(9)->toDateString()))
+        ->toThrow(AgendaInvalidaException::class, 'OBRA ALFA');
 });
 
-test('LOTE: varias máquinas × rango de días en un guardado, excluye domingos y salta choques sin abortar', function (): void {
+test('LOTE: varias máquinas al mismo día; lo que choca se salta sin abortar el resto', function (): void {
     $excavadora = Maquina::factory()->create(['nombre' => 'EXCAVADORA']);
     $vibro = Maquina::factory()->create(['nombre' => 'VIBRO']);
     $obra = Proyecto::factory()->enEjecucion()->create();
 
-    // Lunes a domingo próximos (7 días, 1 es domingo).
-    $lunes = today()->addWeek()->startOfWeek();
-    $domingo = $lunes->copy()->addDays(6);
+    $dia = today()->addWeek()->startOfWeek();
 
-    // La vibro entra al taller el miércoles de esa semana (abierto).
+    // La vibro está en el taller ese día (reparación abierta).
     MantenimientoMaquina::factory()->create([
         'maquina_id'   => $vibro->id,
-        'fecha_inicio' => $lunes->copy()->addDays(2)->toDateString(),
+        'fecha_inicio' => $dia->copy()->subDay()->toDateString(),
         'fecha_fin'    => null,
         'estado'       => EstadoMantenimiento::EnProceso,
     ]);
 
+    // Un solo día — el de la llegada (2026-09-04). Antes esto recorría un
+    // rango creando una fila por día y recortaba domingos; ahora la
+    // permanencia la decide el encargado al registrar la salida.
     $resultado = $this->servicio->agendarLote(
         maquinaIds: [$excavadora->id, $vibro->id],
         proyectoId: $obra->id,
-        desde: $lunes->toDateString(),
-        hasta: $domingo->toDateString(),
+        dia: $dia->toDateString(),
         horaEntrada: '08:00:00',
     );
 
-    // Excavadora: 6 días hábiles (domingo excluido). Vibro: solo lun+mar
-    // (desde el miércoles choca con el mantenimiento abierto).
-    expect($resultado['creados'])->toBe(8)
-        ->and($resultado['saltados'])->toHaveCount(4)
+    expect($resultado['creados'])->toBe(1)
+        ->and($resultado['saltados'])->toHaveCount(1)
         ->and($resultado['saltados'][0])->toContain('mantenimiento');
 });
 
-test('LOTE: rango invertido o mayor a 31 días se rechaza completo', function (): void {
-    $maquina = Maquina::factory()->create();
-    $obra = Proyecto::factory()->enEjecucion()->create();
+test('una máquina que ya está en otra obra no se puede agendar', function (): void {
+    $maquina = Maquina::factory()->create(['nombre' => 'RETRO 416']);
+    $primera = Proyecto::factory()->enEjecucion()->create(['nombre' => 'LOS PINOS']);
+    $segunda = Proyecto::factory()->enEjecucion()->create(['nombre' => 'LAS PALMAS']);
 
-    expect(fn () => $this->servicio->agendarLote(
-        [$maquina->id],
-        $obra->id,
-        today()->addDays(5)->toDateString(),
-        today()->addDay()->toDateString(),
-    ))->toThrow(AgendaInvalidaException::class, 'invertido');
+    $this->servicio->agendar($maquina->id, $primera->id, today()->addDay()->toDateString());
 
-    expect(fn () => $this->servicio->agendarLote(
-        [$maquina->id],
-        $obra->id,
-        today()->toDateString(),
-        today()->addDays(40)->toDateString(),
-    ))->toThrow(AgendaInvalidaException::class, '31');
+    // Sin fecha de salida, la máquina sigue comprometida: mandarla a otra
+    // obra al día siguiente la duplicaría en dos sitios a la vez.
+    expect(fn () => $this->servicio->agendar($maquina->id, $segunda->id, today()->addDays(2)->toDateString()))
+        ->toThrow(AgendaInvalidaException::class, 'LOS PINOS');
 });
 
 test('NOTIFICA: al agendar, los encargados de la obra reciben campanita con máquina, fechas y llegada', function (): void {
@@ -151,8 +147,7 @@ test('NOTIFICA: al agendar, los encargados de la obra reciben campanita con máq
     $this->servicio->agendarLote(
         maquinaIds: [$maquina->id],
         proyectoId: $obra->id,
-        desde: today()->addDay()->toDateString(),
-        hasta: today()->addDays(2)->toDateString(),
+        dia: today()->addDay()->toDateString(),
         horaEntrada: '08:00:00',
     );
 
@@ -176,8 +171,7 @@ test('NOTIFICA: el actor que agenda no se auto-notifica', function (): void {
     $this->servicio->agendarLote(
         maquinaIds: [$maquina->id],
         proyectoId: $obra->id,
-        desde: today()->addDay()->toDateString(),
-        hasta: today()->addDay()->toDateString(),
+        dia: today()->addDay()->toDateString(),
         userId: $encargado->id,
         horaEntrada: '08:00:00',
     );

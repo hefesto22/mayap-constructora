@@ -27,6 +27,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ProyectoResource extends Resource
 {
@@ -55,21 +56,25 @@ class ProyectoResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Comercial';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return ProyectoForm::configure($schema);
     }
 
+    #[Override]
     public static function infolist(Schema $schema): Schema
     {
         return ProyectoCostoInfolist::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return ProyectosTable::configure($table);
@@ -78,6 +83,7 @@ class ProyectoResource extends Resource
     /**
      * Eager loading global del Resource — evita N+1 en el listado y edit.
      */
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
@@ -158,6 +164,7 @@ class ProyectoResource extends Resource
         return $visibles;
     }
 
+    #[Override]
     public static function getRelations(): array
     {
         return [
@@ -173,6 +180,7 @@ class ProyectoResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -183,6 +191,7 @@ class ProyectoResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

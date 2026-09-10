@@ -98,24 +98,24 @@ test('FK restrict: ficha con renglones NO se puede eliminar', function (): void 
 });
 
 test('CHECK rechaza cantidad cero o negativa', function (): void {
-    expect(fn () => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
+    expect(fn (): bool => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
         'cantidad' => 0.0000, 'precio_unitario_snapshot' => 100.00, 'subtotal_cache' => 0.00,
     ]))->toThrow(QueryException::class);
 
-    expect(fn () => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
+    expect(fn (): bool => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
         'cantidad' => -5.0000, 'precio_unitario_snapshot' => 100.00, 'subtotal_cache' => -500.00,
     ]))->toThrow(QueryException::class);
 });
 
 test('CHECK rechaza precio_unitario_snapshot negativo', function (): void {
-    expect(fn () => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
+    expect(fn (): bool => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
         'cantidad' => 1.0000, 'precio_unitario_snapshot' => -100.00, 'subtotal_cache' => -100.00,
     ]))->toThrow(QueryException::class);
 });
 
 test('CHECK rechaza subtotal_cache incoherente con cantidad × precio', function (): void {
     // Subtotal manualmente forzado a un valor que NO corresponde a cantidad × precio.
-    expect(fn () => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
+    expect(fn (): bool => insertarRenglonCrudo($this->proyecto->id, $this->ficha->id, [
         'cantidad'                 => 10.0000,
         'precio_unitario_snapshot' => 100.00,
         'subtotal_cache'           => 500.00,  // debería ser 1000.00

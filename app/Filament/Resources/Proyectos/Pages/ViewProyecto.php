@@ -14,6 +14,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
+use Override;
 
 /**
  * Cabecera SIN ruido (decisión Mauricio 2026-07-19, afinada 2026-07-22):
@@ -25,6 +26,7 @@ class ViewProyecto extends ViewRecord
 {
     protected static string $resource = ProyectoResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

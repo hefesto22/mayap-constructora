@@ -1,6 +1,8 @@
 <?php
 
 declare(strict_types=1);
+
+use App\Models\User;
 use App\Support\Permisos;
 use BezhanSalleh\FilamentShield\Resources\Roles\RoleResource;
 use Filament\Pages\Dashboard;
@@ -56,7 +58,7 @@ return [
     |
     */
 
-    'auth_provider_model' => 'App\\Models\\User',
+    'auth_provider_model' => User::class,
 
     /*
     |--------------------------------------------------------------------------

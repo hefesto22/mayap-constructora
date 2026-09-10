@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Requisiciones\Schemas;
 
+use App\Enums\EstadoProyecto;
 use App\Enums\EstadoRequisicion;
 use App\Models\Material;
 use App\Models\Requisicion;
@@ -49,7 +50,14 @@ class RequisicionForm
                             Select::make('proyecto_id')
                                 ->label('Obra (proyecto)')
                                 ->relationship('proyecto', 'nombre', function ($query) {
-                                    $query->orderBy('nombre');
+                                    // Fuera las obras MUERTAS (2026-08-16):
+                                    // a una finalizada, cancelada o
+                                    // rechazada no se le despacha material
+                                    // — misma regla que ya aplicaba
+                                    // Compras en servicio.
+                                    $query
+                                        ->whereNotIn('estado', EstadoProyecto::terminales())
+                                        ->orderBy('nombre');
 
                                     // El encargado solo pide para SUS obras.
                                     $user = auth()->user();
@@ -94,7 +102,16 @@ class RequisicionForm
                                 ->required()
                                 ->native(false)
                                 ->minDate(fn (callable $get) => $get('fecha_solicitud'))
-                                ->helperText('Cuándo debe estar el material en obra sí o sí.'),
+                                // Vencida: el campo se bloquea para que nadie
+                                // esquive la regla editando sin motivo — la
+                                // fecha solo se mueve con la acción Reprogramar
+                                // (motivo obligatorio, queda en bitácora).
+                                ->disabled(fn (?Requisicion $record): bool => $record instanceof Requisicion
+                                    && $record->fechaNecesariaVencida())
+                                ->helperText(fn (?Requisicion $record): string => $record instanceof Requisicion
+                                    && $record->fechaNecesariaVencida()
+                                    ? 'Fecha vencida: se actualiza solo con la acción Reprogramar (motivo obligatorio, queda en bitácora).'
+                                    : 'Cuándo debe estar el material en obra sí o sí.'),
 
                             Textarea::make('notas')
                                 ->label('Notas')
@@ -138,7 +155,7 @@ class RequisicionForm
                                 )
                                 // Al menos un material con cantidad — valida el conjunto,
                                 // no cada fila (las vacías son legítimas).
-                                ->rule(static fn () => static function (string $attribute, mixed $value, Closure $fail): void {
+                                ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
                                     $conCantidad = collect(is_array($value) ? $value : [])
                                         ->filter(fn (mixed $linea): bool => is_array($linea) && self::lineaConCantidad($linea));
 
@@ -203,12 +220,12 @@ class RequisicionForm
                                 ->schema([
                                     Placeholder::make('estado_actual')
                                         ->label('Estado actual')
-                                        ->content(fn (?Requisicion $record): string => $record !== null
+                                        ->content(fn (?Requisicion $record): string => $record instanceof Requisicion
                                             ? $record->estado->getLabel()
                                             : '—'),
                                     Placeholder::make('transiciones_count')
                                         ->label('Transiciones registradas')
-                                        ->content(fn (?Requisicion $record): string => $record !== null
+                                        ->content(fn (?Requisicion $record): string => $record instanceof Requisicion
                                             ? (string) $record->transiciones()->count()
                                             : '—'),
                                 ])

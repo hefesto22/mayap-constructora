@@ -84,9 +84,28 @@ final class CalendarioMaquinariaService
      */
     private function agenda(string $desde, string $hasta, ?int $maquinaId, ?int $proyectoId, ?array $soloProyectos): array
     {
+        $hoy = today();
+
+        /** Estadía ABIERTA: llegó y nadie ha marcado que se fue. */
+        $abierta = fn ($q) => $q
+            ->whereNotNull('llegada_confirmada_at')
+            ->whereNull('salida_confirmada_at');
+
+        // Máquinas paradas EN LA OBRA esperando reparación: su estadía se
+        // pinta ámbar en vez de sumar un bloque de mantenimiento aparte.
+        $averiadasEnSitio = MantenimientoMaquina::query()
+            ->where('estado', EstadoMantenimiento::EnProceso)
+            ->where('en_sitio', true)
+            ->pluck('maquina_id')
+            ->flip();
+
         return AgendaMaquina::query()
             ->with(['maquina:id,codigo,nombre', 'proyecto:id,nombre'])
-            ->whereBetween('fecha', [$desde, $hasta])
+            ->where('fecha', '<=', $hasta)
+            // La estadía abierta entra aunque haya empezado antes de la
+            // ventana visible: la máquina SIGUE ahí y tiene que verse
+            // (2026-09-05 — "saber dónde está la máquina en todo momento").
+            ->where(fn ($q) => $q->where('fecha', '>=', $desde)->orWhere($abierta))
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))
             ->when($proyectoId, fn ($q) => $q->where('proyecto_id', $proyectoId))
             ->when($soloProyectos !== null, fn ($q) => $q->whereIn('proyecto_id', $soloProyectos))
@@ -95,22 +114,40 @@ final class CalendarioMaquinariaService
             ->whereNull('no_llego_at')
             // Plan CUMPLIDO desaparece: si ya hay un parte real de esa
             // máquina en esa obra ese día, el evento se retira y el día
-            // queda limpio (lo trabajado no se pinta — 2026-07-20).
-            ->whereNotExists(function ($q): void {
-                $q->selectRaw('1')
-                    ->from('partes_trabajo as pt')
-                    ->join('asignaciones_maquina as am', 'am.id', '=', 'pt.asignacion_maquina_id')
-                    ->whereColumn('am.maquina_id', 'agenda_maquina.maquina_id')
-                    ->whereColumn('am.proyecto_id', 'agenda_maquina.proyecto_id')
-                    ->whereColumn('pt.fecha', 'agenda_maquina.fecha')
-                    ->whereNull('pt.deleted_at');
-            })
+            // queda limpio (lo trabajado no se pinta — 2026-07-20). La
+            // estadía abierta es la excepción: aunque el día ya tenga su
+            // parte, la máquina no se ha ido y la barra sigue.
+            ->where(fn ($q) => $q
+                ->where($abierta)
+                ->orWhereNotExists(function ($sub): void {
+                    $sub->selectRaw('1')
+                        ->from('partes_trabajo as pt')
+                        ->join('asignaciones_maquina as am', 'am.id', '=', 'pt.asignacion_maquina_id')
+                        ->whereColumn('am.maquina_id', 'agenda_maquina.maquina_id')
+                        ->whereColumn('am.proyecto_id', 'agenda_maquina.proyecto_id')
+                        ->whereColumn('pt.fecha', 'agenda_maquina.fecha')
+                        ->whereNull('pt.deleted_at');
+                }))
             ->get()
-            ->map(function (AgendaMaquina $a): array {
+            ->map(function (AgendaMaquina $a) use ($hoy, $averiadasEnSitio): array {
                 // La fecha pasó y nadie confirmó la llegada: CONTINGENCIA
                 // en rojo (decisión Mauricio 2026-07-20). El click la
                 // resuelve: llegó tarde o no llegó (con motivo).
                 $sinConfirmar = $a->llegada_confirmada_at === null && $a->fecha->isPast() && ! $a->fecha->isToday();
+
+                // Estadía abierta = BARRA violeta del día que llegó hasta
+                // hoy. Sin esto, la máquina que se queda en la obra
+                // desaparecía del calendario en cuanto se registraba el
+                // parte del primer día, y con ella la única forma de
+                // cerrar los días siguientes.
+                $enObra = $a->llegada_confirmada_at !== null && $a->salida_confirmada_at === null;
+                $hastaHoy = $enObra && $a->fecha->lt($hoy)
+                    ? $hoy->copy()->addDay()->toDateString()
+                    : null;
+
+                // Parada en la obra esperando repuesto: sigue siendo la
+                // misma estadía, pero en ámbar y diciéndolo.
+                $averiada = $enObra && $averiadasEnSitio->has($a->maquina_id);
 
                 return [
                     'id' => "agenda-{$a->id}",
@@ -123,10 +160,17 @@ final class CalendarioMaquinariaService
                     // fecha pasó sin confirmar. Sin emojis — los datos
                     // hablan solos.
                     'title' => "{$a->maquina->nombre} · {$a->proyecto->nombre}"
-                        .($sinConfirmar ? ' — SIN CONFIRMAR' : self::cicloLlegada($a)),
+                        .match (true) {
+                            $sinConfirmar => ' — SIN CONFIRMAR',
+                            $averiada     => ' — AVERIADA, se repara en la obra',
+                            default       => $this->cicloLlegada($a),
+                        },
                     'start' => $a->fecha->toDateString(),
+                    // Fin EXCLUSIVO en FullCalendar: hoy + 1 día.
+                    ...($hastaHoy !== null ? ['end' => $hastaHoy] : []),
                     'color' => match (true) {
                         $sinConfirmar                      => self::COLOR_SIN_CONFIRMAR,
+                        $averiada                          => self::COLOR_MANTENIMIENTO,
                         $a->llegada_confirmada_at === null => self::COLOR_PROGRAMADA,
                         default                            => self::COLOR_TRABAJANDO,
                     },
@@ -169,6 +213,19 @@ final class CalendarioMaquinariaService
                         ->whereColumn('pt.fecha', 'asignaciones_maquina.fecha_inicio')
                         ->whereNull('pt.deleted_at');
                 }))
+            // La ESTADÍA abierta ya pinta esta misma máquina en esta misma
+            // obra, y encima es la que se puede clicar para cerrar el día:
+            // la barra de asignación al lado era el mismo hecho dos veces
+            // (Mauricio 2026-09-05).
+            ->whereNotExists(function ($sub): void {
+                $sub->selectRaw('1')
+                    ->from('agenda_maquina as ag')
+                    ->whereColumn('ag.maquina_id', 'asignaciones_maquina.maquina_id')
+                    ->whereColumn('ag.proyecto_id', 'asignaciones_maquina.proyecto_id')
+                    ->whereNotNull('ag.llegada_confirmada_at')
+                    ->whereNull('ag.salida_confirmada_at')
+                    ->whereNull('ag.no_llego_at');
+            })
             ->get()
             ->map(function (AsignacionMaquina $a): array {
                 $abierta = $a->fecha_fin === null;
@@ -207,6 +264,10 @@ final class CalendarioMaquinariaService
             ->where('fecha_inicio', '<=', $hasta)
             ->where(fn ($q) => $q->whereNull('fecha_fin')->orWhere('fecha_fin', '>=', $desde))
             ->when($maquinaId, fn ($q) => $q->where('maquina_id', $maquinaId))
+            // La reparación EN SITIO no tiene bloque propio: la máquina
+            // está en la obra y su barra de estadía ya la muestra — ahí
+            // se pinta ámbar y dice "averiada" (Mauricio 2026-09-05).
+            ->where('en_sitio', false)
             ->get()
             ->map(function (MantenimientoMaquina $m): array {
                 $abierto = $m->fecha_fin === null;
@@ -230,14 +291,18 @@ final class CalendarioMaquinariaService
      * plan ("llega 8:00 AM"), adentro ("llegó 8:15 AM") o cerrado
      * ("8:15 AM → 1:00 PM").
      */
-    private static function cicloLlegada(AgendaMaquina $a): string
+    private function cicloLlegada(AgendaMaquina $a): string
     {
         if ($a->llegada_confirmada_at !== null && $a->salida_confirmada_at !== null) {
             return ' — '.$a->llegada_confirmada_at->format('g:i A').' → '.$a->salida_confirmada_at->format('g:i A');
         }
 
         if ($a->llegada_confirmada_at !== null) {
-            return ' — llegó '.$a->llegada_confirmada_at->format('g:i A');
+            // Estadía que ya pasó de su día: lo importante deja de ser la
+            // hora en que llegó y pasa a ser que SIGUE AHÍ.
+            return $a->fecha->isToday()
+                ? ' — llegó '.$a->llegada_confirmada_at->format('g:i A')
+                : ' — en obra desde el '.$a->fecha->format('d/m');
         }
 
         return $a->horaEntrada12() !== null ? " — llega {$a->horaEntrada12()}" : '';

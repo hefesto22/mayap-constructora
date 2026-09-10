@@ -51,7 +51,7 @@ class TemplateRename extends Command
         }
 
         if ($domain === '') {
-            $dominioSugerido = (string) Str::slug($name, '-').'.test';
+            $dominioSugerido = Str::slug($name, '-').'.test';
             $domain = (string) $this->ask('¿Cuál es el dominio Herd local?', $dominioSugerido);
         }
 

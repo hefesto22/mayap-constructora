@@ -25,11 +25,9 @@ beforeEach(function (): void {
     $this->admin = User::factory()->create(['is_active' => true]);
     $this->admin->assignRole(Utils::getSuperAdminName());
 
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 });
@@ -61,7 +59,7 @@ test('la vista de la obra muestra el desglose de costo real', function (): void 
     );
 
     // Maquinaria: parte 5 h × 2,000 = 10,000.
-    $maquina = Maquina::factory()->create(['jornada_horas' => 8, 'horometro_actual' => 0]);
+    $maquina = Maquina::factory()->create(['horas_dia_renta' => 8, 'horometro_actual' => 0]);
     $asignacion = (new AsignarMaquinaService)->asignar($maquina, $obra->id, tarifaPactada: '2000');
     (new RegistrarParteService)->registrarManual($asignacion, horas: '5');
 

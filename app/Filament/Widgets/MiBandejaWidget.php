@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Support\Roles;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Override;
 
 /**
  * MI BANDEJA (Fase G1) — lo pendiente PARA MÍ según mi rol, con link
@@ -36,6 +37,7 @@ class MiBandejaWidget extends StatsOverviewWidget
     /**
      * @return array<int, Stat>
      */
+    #[Override]
     protected function getStats(): array
     {
         $user = auth()->user();
@@ -54,12 +56,12 @@ class MiBandejaWidget extends StatsOverviewWidget
             $stats[] = Stat::make('Requisiciones por autorizar', $porAutorizar)
                 ->description('Obras esperando visto bueno')
                 ->color($porAutorizar > 0 ? 'warning' : 'success')
-                ->url(self::urlRequisiciones(EstadoRequisicion::Solicitada));
+                ->url($this->urlRequisiciones(EstadoRequisicion::Solicitada));
 
             $stats[] = Stat::make('Por despachar de bodega', $porDespachar)
                 ->description('Autorizadas listas para salir')
                 ->color($porDespachar > 0 ? 'info' : 'success')
-                ->url(self::urlRequisiciones(EstadoRequisicion::Autorizada));
+                ->url($this->urlRequisiciones(EstadoRequisicion::Autorizada));
 
             // G2: compras en camino que hay que CONTAR al llegar.
             $porRecibir = Compra::query()->enEstado(EstadoCompra::PorRecibir)->count();
@@ -67,7 +69,7 @@ class MiBandejaWidget extends StatsOverviewWidget
             $stats[] = Stat::make('Compras por recibir', $porRecibir)
                 ->description('Verificar lo que llegue contra la factura')
                 ->color($porRecibir > 0 ? 'warning' : 'success')
-                ->url(self::urlComprasPorRecibir());
+                ->url($this->urlComprasPorRecibir());
         }
 
         // ── Recepción: comprar lo que bodega no tiene ───────────────────
@@ -77,7 +79,7 @@ class MiBandejaWidget extends StatsOverviewWidget
             $stats[] = Stat::make('Compras pendientes', $porComprar)
                 ->description('Requisiciones sin stock esperando compra')
                 ->color($porComprar > 0 ? 'danger' : 'success')
-                ->url(self::urlRequisiciones(EstadoRequisicion::RequisicionCompra));
+                ->url($this->urlRequisiciones(EstadoRequisicion::RequisicionCompra));
         }
 
         // ── Encargado: lo que viene en camino a SUS obras ───────────────
@@ -90,7 +92,7 @@ class MiBandejaWidget extends StatsOverviewWidget
             $stats[] = Stat::make('Entregas por confirmar', $enCamino)
                 ->description('Material en camino a tus obras')
                 ->color($enCamino > 0 ? 'warning' : 'success')
-                ->url(self::urlRequisiciones(EstadoRequisicion::EnTransito));
+                ->url($this->urlRequisiciones(EstadoRequisicion::EnTransito));
 
             // G2: compras con material directo a SUS obras por verificar.
             $comprasPorVerificar = Compra::query()
@@ -106,20 +108,20 @@ class MiBandejaWidget extends StatsOverviewWidget
             $stats[] = Stat::make('Compras por verificar', $comprasPorVerificar)
                 ->description('Material comprado en camino a tus obras')
                 ->color($comprasPorVerificar > 0 ? 'warning' : 'success')
-                ->url(self::urlComprasPorRecibir());
+                ->url($this->urlComprasPorRecibir());
         }
 
         return $stats;
     }
 
-    private static function urlComprasPorRecibir(): string
+    private function urlComprasPorRecibir(): string
     {
         return CompraResource::getUrl('index', [
             'tableFilters' => ['estado' => ['value' => EstadoCompra::PorRecibir->value]],
         ]);
     }
 
-    private static function urlRequisiciones(EstadoRequisicion $estado): string
+    private function urlRequisiciones(EstadoRequisicion $estado): string
     {
         return RequisicionResource::getUrl('index', [
             'tableFilters' => ['estado' => ['value' => $estado->value]],

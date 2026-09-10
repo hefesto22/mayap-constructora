@@ -77,7 +77,7 @@ class BodegaForm
                                 ->schema([
                                     Placeholder::make('existencias_count')
                                         ->label('Items con existencia')
-                                        ->content(fn (?Bodega $record): string => $record !== null
+                                        ->content(fn (?Bodega $record): string => $record instanceof Bodega
                                             ? (string) $record->existencias()->count()
                                             : '—'),
                                     Placeholder::make('creada_at')
@@ -86,7 +86,7 @@ class BodegaForm
                                     Placeholder::make('cambios_registrados')
                                         ->label('Cambios registrados')
                                         ->content(function (?Bodega $record): string {
-                                            if ($record === null) {
+                                            if (! $record instanceof Bodega) {
                                                 return '—';
                                             }
 

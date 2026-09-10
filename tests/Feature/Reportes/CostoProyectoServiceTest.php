@@ -71,7 +71,7 @@ test('el costo de materiales es lo despachado a la obra menos lo devuelto', func
 });
 
 test('el costo de maquinaria suma partes de trabajo y combustible', function (): void {
-    $maquina = Maquina::factory()->create(['jornada_horas' => 8, 'horometro_actual' => 0]);
+    $maquina = Maquina::factory()->create(['horas_dia_renta' => 8, 'horometro_actual' => 0]);
     $asignacion = $this->asignar->asignar($maquina, $this->obra->id, tarifaPactada: '1000');
 
     // Parte: 8 h × 1,000 = 8,000.
@@ -101,7 +101,7 @@ test('GOLDEN: el costo total junta materiales y maquinaria y calcula el margen',
     );
 
     // Maquinaria: parte 5 h × 2,000 = 10,000.
-    $maquina = Maquina::factory()->create(['jornada_horas' => 8, 'horometro_actual' => 0]);
+    $maquina = Maquina::factory()->create(['horas_dia_renta' => 8, 'horometro_actual' => 0]);
     $asignacion = $this->asignar->asignar($maquina, $this->obra->id, tarifaPactada: '2000');
     $this->partes->registrarManual($asignacion, horas: '5');
 

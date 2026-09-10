@@ -25,10 +25,10 @@ use Illuminate\Support\Collection;
  * Optimización: hace UNA sola query para cargar todos los items
  * referenciados, evitando N+1 cuando el form se redibuja en vivo.
  */
-final class CalcularDesdeStateFicha
+final readonly class CalcularDesdeStateFicha
 {
     public function __construct(
-        private readonly CalcularPrecioFichaService $servicio = new CalcularPrecioFichaService,
+        private CalcularPrecioFichaService $servicio = new CalcularPrecioFichaService,
     ) {}
 
     /**

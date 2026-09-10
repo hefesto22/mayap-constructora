@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Maquinaria;
 
+use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoMaquina;
 use App\Enums\EstadoProyecto;
 use App\Exceptions\Maquinaria\AgendaInvalidaException;
@@ -11,7 +12,6 @@ use App\Models\AgendaMaquina;
 use App\Models\MantenimientoMaquina;
 use App\Models\Maquina;
 use App\Models\Proyecto;
-use Carbon\CarbonPeriod;
 use Illuminate\Support\Carbon;
 
 /**
@@ -33,13 +33,10 @@ use Illuminate\Support\Carbon;
  *     iniciado antes — se bloquea.
  *  5. No duplicar la misma máquina+obra+fecha (respaldo del unique).
  */
-final class AgendarMaquinaService
+final readonly class AgendarMaquinaService
 {
-    /** Protección: máximo de días por lote (un mes es más que suficiente). */
-    private const int MAX_DIAS_LOTE = 31;
-
     public function __construct(
-        private readonly NotificadorMaquinaria $notificador,
+        private NotificadorMaquinaria $notificador,
     ) {}
 
     /**
@@ -55,38 +52,26 @@ final class AgendarMaquinaService
     public function agendarLote(
         array $maquinaIds,
         int $proyectoId,
-        string $desde,
-        string $hasta,
-        bool $excluirDomingos = true,
+        string $dia,
         ?string $notas = null,
         ?int $userId = null,
         ?string $horaEntrada = null,
     ): array {
-        $inicio = Carbon::parse($desde)->startOfDay();
-        $fin = Carbon::parse($hasta)->startOfDay();
-
-        if ($fin->lt($inicio)) {
-            throw AgendaInvalidaException::rangoInvertido($desde, $hasta);
-        }
-
-        if ($inicio->diffInDays($fin) >= self::MAX_DIAS_LOTE) {
-            throw AgendaInvalidaException::rangoMuyLargo(self::MAX_DIAS_LOTE);
-        }
+        // UN SOLO DÍA — el de la llegada (Mauricio, 2026-09-04). Antes esto
+        // recorría un rango con CarbonPeriod y creaba una fila por día, o sea
+        // pedía adivinar cuánto se iba a quedar la máquina. La permanencia
+        // real sale de la asignación: empieza cuando el encargado confirma la
+        // llegada y termina cuando registra la salida.
+        $fecha = Carbon::parse($dia)->startOfDay()->toDateString();
 
         $creados = collect();
         $saltados = [];
 
-        foreach (CarbonPeriod::create($inicio, $fin) as $dia) {
-            if ($excluirDomingos && $dia->isSunday()) {
-                continue;
-            }
-
-            foreach ($maquinaIds as $maquinaId) {
-                try {
-                    $creados->push($this->agendar((int) $maquinaId, $proyectoId, $dia->toDateString(), $notas, $userId, $horaEntrada));
-                } catch (AgendaInvalidaException $e) {
-                    $saltados[] = $e->getMessage();
-                }
+        foreach ($maquinaIds as $maquinaId) {
+            try {
+                $creados->push($this->agendar((int) $maquinaId, $proyectoId, $fecha, $notas, $userId, $horaEntrada));
+            } catch (AgendaInvalidaException $e) {
+                $saltados[] = $e->getMessage();
             }
         }
 
@@ -129,6 +114,7 @@ final class AgendarMaquinaService
         }
 
         $this->validarSinMantenimiento($maquina, $dia);
+        $this->validarSinCompromisoVigente($maquina);
         $this->validarSinDuplicado($maquinaId, $proyectoId, $dia, $maquina->nombre, $proyecto->nombre);
 
         return AgendaMaquina::create([
@@ -142,14 +128,21 @@ final class AgendarMaquinaService
     }
 
     /**
-     * ¿La máquina está o estará en el taller ese día? Un mantenimiento
-     * ABIERTO (sin fecha fin) bloquea desde su inicio en adelante: hasta
-     * que no se finalice, la máquina no se compromete.
+     * ¿La máquina está en el taller ese día? Solo la reparación EN
+     * PROCESO bloquea, dentro de su rango: abierta (sin fecha fin)
+     * bloquea de su inicio en adelante; con salida prevista, hasta ese
+     * día.
+     *
+     * La FINALIZADA es historia y no bloquea aunque su rango cubra el
+     * día — la máquina ya volvió al parque. Antes el día en que se
+     * cerraba la reparación (fecha_fin = ese día) seguía rechazando el
+     * agendado (2026-08-16).
      */
     private function validarSinMantenimiento(Maquina $maquina, Carbon $dia): void
     {
         $enTaller = MantenimientoMaquina::query()
             ->where('maquina_id', $maquina->id)
+            ->where('estado', EstadoMantenimiento::EnProceso->value)
             ->whereDate('fecha_inicio', '<=', $dia)
             ->where(fn ($q) => $q->whereNull('fecha_fin')->orWhereDate('fecha_fin', '>=', $dia))
             ->exists();
@@ -157,6 +150,45 @@ final class AgendarMaquinaService
         if ($enTaller) {
             throw AgendaInvalidaException::enMantenimiento($maquina->nombre, $dia->format('d/m/Y'));
         }
+    }
+
+    /**
+     * Una máquina a la vez: no se agenda si ya está comprometida.
+     *
+     * Desde que la estadía dejó de tener fecha de fin (2026-09-04), el choque
+     * ya no se puede detectar por fechas. Una máquina está OCUPADA si:
+     *   - llegó a una obra y nadie registró su salida, o
+     *   - tiene un agendado pendiente al que todavía no llega.
+     *
+     * Sin esto la misma retro se podía mandar el viernes a una obra y el
+     * sábado a otra, aunque siguiera parada en la primera.
+     */
+    private function validarSinCompromisoVigente(Maquina $maquina): void
+    {
+        $vigente = AgendaMaquina::query()
+            ->with('proyecto:id,nombre')
+            ->where('maquina_id', $maquina->id)
+            // Un "no llegó" libera la máquina: el compromiso se cayó.
+            ->whereNull('no_llego_at')
+            ->whereNull('salida_confirmada_at')
+            ->orderBy('fecha')
+            ->first();
+
+        if ($vigente === null) {
+            return;
+        }
+
+        throw $vigente->llegada_confirmada_at !== null
+            ? AgendaInvalidaException::maquinaEnOtraObra(
+                $maquina->nombre,
+                (string) $vigente->proyecto->nombre,
+                $vigente->llegada_confirmada_at->format('d/m/Y'),
+            )
+            : AgendaInvalidaException::maquinaYaComprometida(
+                $maquina->nombre,
+                (string) $vigente->proyecto->nombre,
+                $vigente->fecha->format('d/m/Y'),
+            );
     }
 
     private function validarSinDuplicado(

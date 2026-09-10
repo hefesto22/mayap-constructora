@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Override;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
@@ -34,11 +35,13 @@ class ReporteFiscalResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Compras';
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return $table
@@ -108,6 +111,7 @@ class ReporteFiscalResource extends Resource
             ->emptyStateDescription('El día 1 de cada mes se generan solos los del mes anterior (facturas y pagos) — o genera uno ahora con el botón de arriba.');
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -115,6 +119,7 @@ class ReporteFiscalResource extends Resource
         ];
     }
 
+    #[Override]
     public static function canCreate(): bool
     {
         return false; // Se generan por comando o botón, no con formulario.

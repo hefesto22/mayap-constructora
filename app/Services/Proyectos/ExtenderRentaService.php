@@ -12,7 +12,6 @@ use App\Models\Proyecto;
 use App\Models\ProyectoLineaRenta;
 use App\Services\Cobranza\AjustarCuentaPorCobrarService;
 use App\Services\Maquinaria\AgendarMaquinaService;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -26,14 +25,14 @@ use Illuminate\Support\Facades\DB;
  * Solo procede con el proyecto Aprobado, En ejecución o Pausado. Una
  * renta Finalizada no se extiende — se hace otra renta (duplicar).
  */
-final class ExtenderRentaService
+final readonly class ExtenderRentaService
 {
     private const int SCALE = 2;
 
     public function __construct(
-        private readonly AgregarLineaRentaService $lineas,
-        private readonly AgendarMaquinaService $agenda,
-        private readonly AjustarCuentaPorCobrarService $ajustes,
+        private AgregarLineaRentaService $lineas,
+        private AgendarMaquinaService $agenda,
+        private AjustarCuentaPorCobrarService $ajustes,
     ) {}
 
     /**
@@ -77,9 +76,10 @@ final class ExtenderRentaService
             $resultado = $this->agenda->agendarLote(
                 [$linea->maquina_id],
                 $proyecto->id,
+                // Solo el día de llegada. Los días contratados ya viven en la
+                // línea de renta y el cierre lo hace FinalizarRentaService;
+                // llenar el calendario con una fila por día era duplicarlo.
                 $linea->fecha_llegada->toDateString(),
-                $this->ultimoDiaDeLinea($linea)->toDateString(),
-                excluirDomingos: false,
                 notas: 'EXTENSIÓN RENTA '.$proyecto->codigo,
                 userId: $userId,
                 horaEntrada: $linea->hora_llegada,
@@ -103,15 +103,6 @@ final class ExtenderRentaService
 
             return ['linea' => $linea, 'saltados' => $resultado['saltados']];
         });
-    }
-
-    private function ultimoDiaDeLinea(ProyectoLineaRenta $linea): Carbon
-    {
-        $dias = $linea->unidad === UnidadRenta::Dia
-            ? max(1, (int) ceil((float) $linea->cantidad))
-            : 1;
-
-        return $linea->fecha_llegada->copy()->startOfDay()->addDays($dias - 1);
     }
 
     /**

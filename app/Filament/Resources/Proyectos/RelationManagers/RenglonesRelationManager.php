@@ -27,6 +27,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Override;
 
 /**
  * Renglones del proyecto como TABLA PAGINADA — escala a cientos de líneas
@@ -49,6 +50,7 @@ class RenglonesRelationManager extends RelationManager
      * Solo en proyectos presupuestados: las rentas de maquinaria usan
      * su propio manager de líneas (LineasRentaRelationManager).
      */
+    #[Override]
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return $ownerRecord instanceof Proyecto && ! $ownerRecord->esRenta();
@@ -58,6 +60,7 @@ class RenglonesRelationManager extends RelationManager
      * Solo se pueden tocar renglones en Borrador. En otros estados la
      * tabla queda de solo lectura (se preserva la integridad comercial).
      */
+    #[Override]
     public function isReadOnly(): bool
     {
         $owner = $this->getOwnerRecord();

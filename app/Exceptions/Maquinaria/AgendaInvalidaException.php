@@ -127,4 +127,28 @@ class AgendaInvalidaException extends MaquinariaException
             'Para marcar que la máquina no llegó hay que anotar el motivo — es la constancia de la contingencia.'
         );
     }
+
+    public static function maquinaEnOtraObra(string $maquina, string $obra, string $desde): self
+    {
+        return new self(
+            "{$maquina} está en {$obra} desde el {$desde} y nadie ha registrado su salida. ".
+            'El encargado de esa obra tiene que marcar que terminó antes de mandarla a otra.'
+        );
+    }
+
+    public static function maquinaYaComprometida(string $maquina, string $obra, string $fecha): self
+    {
+        return new self(
+            "{$maquina} ya está agendada para {$obra} el {$fecha}. ".
+            'Cancelá ese agendado antes de comprometerla en otra obra.'
+        );
+    }
+
+    public static function horometroRetrocede(string $lectura, string $actual): self
+    {
+        return new self(
+            "El horómetro no puede retroceder: la máquina ya marcaba {$actual} h ".
+            "y se registró {$lectura} h a la llegada. Revisá la lectura."
+        );
+    }
 }

@@ -19,7 +19,7 @@ test('máquina persiste con casts correctos', function (): void {
         'tipo'             => TipoMaquina::Excavadora->value,
         'horometro_actual' => 1200.50,
         'tarifa_hora'      => 1500,
-        'jornada_horas'    => 8,
+        'horas_dia_renta'  => 8,
         'estado'           => EstadoMaquina::Disponible->value,
     ]);
 
@@ -88,9 +88,9 @@ test('CHECK rechaza tarifa negativa', function (): void {
 
 test('CHECK rechaza jornada cero o negativa', function (): void {
     DB::table('maquinas')->insert([
-        'codigo'        => 'MAQ-99995',
-        'nombre'        => 'X',
-        'jornada_horas' => 0,
+        'codigo'          => 'MAQ-99995',
+        'nombre'          => 'X',
+        'horas_dia_renta' => 0,
     ]);
 })->throws(QueryException::class);
 

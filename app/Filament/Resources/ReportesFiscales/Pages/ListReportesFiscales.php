@@ -16,6 +16,7 @@ use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Carbon;
+use Override;
 use Throwable;
 
 /**
@@ -28,6 +29,7 @@ class ListReportesFiscales extends ListRecords
 {
     protected static string $resource = ReporteFiscalResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

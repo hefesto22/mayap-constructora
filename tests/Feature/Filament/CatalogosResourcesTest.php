@@ -44,11 +44,9 @@ beforeEach(function (): void {
     // depender de eso, registramos un Gate::before que bypaseé policies
     // para super_admin — equivalente al comportamiento de Shield en
     // producción una vez que los permisos están sincronizados.
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 });
@@ -157,6 +155,6 @@ test('ZonaResource: action clonar_items ejecuta el service y dispara notificaci�
         ->assertNotified();
 
     expect($destino->items()->count())->toBe(4);
-    expect($destino->items()->pluck('codigo')->every(fn ($c) => str_starts_with($c, 'TGU-')))
+    expect($destino->items()->pluck('codigo')->every(fn ($c): bool => str_starts_with((string) $c, 'TGU-')))
         ->toBeTrue();
 });

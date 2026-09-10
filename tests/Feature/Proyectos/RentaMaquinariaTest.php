@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\EstadoProyecto;
+use App\Enums\ModalidadTrabajo;
 use App\Enums\TipoProyecto;
 use App\Enums\UnidadRenta;
 use App\Exceptions\Proyectos\RentaInvalidaException;
@@ -39,7 +40,7 @@ function crearRentaConLinea(?Cliente $cliente = null): Proyecto
         ->for($cliente ?? Cliente::factory()->create())
         ->create();
 
-    $maquina = Maquina::factory()->create(['tarifa_hora' => 950, 'jornada_horas' => 8]);
+    $maquina = Maquina::factory()->create(['tarifa_hora' => 950, 'horas_dia_renta' => 8]);
 
     app(AgregarLineaRentaService::class)->agregar(
         $proyecto,
@@ -65,9 +66,18 @@ test('una línea de renta calcula subtotal y totales con ISV', function (): void
         ->and($proyecto->total_cache)->toBe('8740.00');
 });
 
-test('la tarifa se sugiere del catálogo según la unidad', function (): void {
+test('cada presentación de renta cotiza con SU precio, no derivado de la hora', function (): void {
     $proyecto = Proyecto::factory()->renta()->create();
-    $maquina = Maquina::factory()->create(['tarifa_hora' => 1000, 'jornada_horas' => 8]);
+
+    // El día NO es 8 × la hora: el mercado de renta da descuento por volumen
+    // (la hora ronda el 15% del día). Derivarlo sobrecotizaba ~20%, así que
+    // cada presentación lleva su propio precio en el rate card.
+    $maquina = Maquina::factory()->create([
+        'tarifa_hora'     => 1000,
+        'tarifa_dia'      => 6700,
+        'tarifa_semana'   => 33000,
+        'horas_dia_renta' => 8,
+    ]);
 
     $porDia = app(AgregarLineaRentaService::class)->agregar(
         $proyecto,
@@ -77,9 +87,18 @@ test('la tarifa se sugiere del catálogo según la unidad', function (): void {
         now()->addDays(2)->toDateString(),
     );
 
-    // Día = tarifa_hora × jornada: 1000 × 8 = 8000. Dos días = 16,000.
-    expect($porDia->tarifa_snapshot)->toBe('8000.00')
-        ->and($porDia->subtotal_cache)->toBe('16000.00');
+    expect($porDia->tarifa_snapshot)->toBe('6700.00')
+        ->and($porDia->subtotal_cache)->toBe('13400.00');
+
+    $porSemana = app(AgregarLineaRentaService::class)->agregar(
+        $proyecto,
+        $maquina->id,
+        UnidadRenta::Semana,
+        '1',
+        now()->addDays(8)->toDateString(),
+    );
+
+    expect($porSemana->tarifa_snapshot)->toBe('33000.00');
 });
 
 test('aprobar una renta la deja en ejecución, agendada y con cuenta por cobrar', function (): void {
@@ -192,12 +211,15 @@ test('el excedente sobre la jornada se cobra UNA vez, no dos', function (): void
     $parte = app(RegistrarParteService::class)->registrarManual(
         asignacion: $asignacion,
         horas: '10',
-        motivoHorasExtra: 'EL CLIENTE PIDIO TERMINAR LA ZANJA',
     );
 
-    // Así queda el parte: el total del día y su excedente, no 10 + 2 = 12.
+    // El parte guarda el total del día y nada más: desde 2026-09-04 no
+    // calcula horas extra, porque "la jornada de la máquina" no era un dato
+    // real (hay días de 4 horas y días de 12). El excedente sobre lo
+    // CONTRATADO lo mide la renta al finalizar, comparando contra la unidad
+    // pactada — que es lo que verifica la aserción de abajo.
     expect($parte->horas)->toBe('10.00')
-        ->and($parte->horas_extra)->toBe('2.00');
+        ->and($parte->horas_extra)->toBe('0.00');
 
     $resultado = app(FinalizarRentaService::class)->finalizar($proyecto);
 
@@ -326,4 +348,74 @@ test('el proyecto conoce su cuenta pendiente y la suelta al saldarse', function 
     // Cobro final: el proyecto ya no debe nada.
     app(CobrarService::class)->cobrar($cuenta->refresh(), '4740');
     expect($proyecto->cuentaPorCobrarPendiente())->toBeNull();
+});
+
+test('DOS DIMENSIONES: el día que se cobra por viajes no se cobra otra vez por horas', function (): void {
+    // Volqueta con renta mixta: 8 h pactadas Y 2 viajes pactados. El
+    // parte anota las horas del día en TODAS las modalidades, así que
+    // sumarlas en la dimensión "horas" facturaba el mismo día dos veces
+    // (2026-08-16).
+    $proyecto = Proyecto::factory()->renta()->for(Cliente::factory()->create())->create();
+
+    $maquina = Maquina::factory()->create([
+        'tarifa_hora'     => 950,
+        'tarifa_viaje'    => 1200,
+        'horas_dia_renta' => 8,
+    ]);
+
+    $agregar = app(AgregarLineaRentaService::class);
+    $llegada = now()->addDays(2)->toDateString();
+
+    $agregar->agregar($proyecto, $maquina->id, UnidadRenta::Hora, '8', $llegada, '07:00');
+    $agregar->agregar($proyecto, $maquina->id, UnidadRenta::Viaje, '2', $llegada, '07:00');
+
+    app(AprobarRentaService::class)->aprobar($proyecto->refresh());
+    $proyecto->refresh();
+
+    // Un solo día real: 9 horas y 10 viajes, registrado POR VIAJES.
+    $asignacion = AsignacionMaquina::factory()->create([
+        'maquina_id'  => $maquina->id,
+        'proyecto_id' => $proyecto->id,
+    ]);
+
+    ParteTrabajo::factory()->create([
+        'asignacion_maquina_id' => $asignacion->id,
+        'modalidad'             => ModalidadTrabajo::Viajes,
+        'horas'                 => 9,
+        'horas_extra'           => 0,
+        'viajes'                => 10,
+    ]);
+
+    $resultado = app(FinalizarRentaService::class)->finalizar($proyecto);
+
+    // SOLO el excedente de viajes: (10 − 2) × 1,200 = 9,600 + 15% = 11,040.
+    // La hora extra sobre la jornada NO se cobra aparte: ese día ya se
+    // facturó por viajes.
+    expect($resultado['extra'])->toBe('11040.00');
+});
+
+test('DOS DIMENSIONES: con renta solo por horas, el parte por viajes sí aporta sus horas', function (): void {
+    // La volqueta se rentó POR HORAS aunque su modalidad de catálogo sea
+    // viajes: nada se cobra por viajes, así que esas horas cuentan.
+    $proyecto = crearRentaConLinea();
+    $linea = $proyecto->lineasRenta->first();
+
+    app(AprobarRentaService::class)->aprobar($proyecto);
+    $proyecto->refresh();
+
+    $asignacion = AsignacionMaquina::factory()->create([
+        'maquina_id'  => $linea->maquina_id,
+        'proyecto_id' => $proyecto->id,
+    ]);
+
+    ParteTrabajo::factory()->create([
+        'asignacion_maquina_id' => $asignacion->id,
+        'modalidad'             => ModalidadTrabajo::Viajes,
+        'horas'                 => 10,
+        'horas_extra'           => 0,
+        'viajes'                => 4,
+    ]);
+
+    // 2 h sobre las 8 pactadas × L 950 = 1,900 + ISV = 2,185.
+    expect(app(FinalizarRentaService::class)->finalizar($proyecto)['extra'])->toBe('2185.00');
 });

@@ -12,7 +12,7 @@ use Filament\Support\Contracts\HasLabel;
  *
  * - Hora: cantidad × tarifa por hora.
  * - Dia: cantidad × tarifa por día. La tarifa diaria sugerida se
- *   deriva de la máquina: tarifa_hora × jornada_horas (ajustable
+ *   deriva de la máquina: tarifa_hora × horas_dia_renta (ajustable
  *   al cotizar — la línea guarda SU tarifa como snapshot).
  * - Viaje: volquetas por viajes (origen → destino) — tarifa_viaje
  *   del catálogo de la máquina (decisión Mauricio 2026-07-20).
@@ -29,33 +29,48 @@ enum UnidadRenta: string implements HasLabel
 {
     case Hora = 'hora';
     case Dia = 'dia';
+    case Semana = 'semana';
+    case Mes = 'mes';
     case Viaje = 'viaje';
     case Kilometro = 'kilometro';
+
+    /**
+     * Días que incluye una semana de renta. Seis: en Honduras se trabaja de
+     * lunes a sábado.
+     */
+    public const int DIAS_POR_SEMANA = 6;
+
+    /** Días que incluye un mes de renta (4 semanas de 6 días). */
+    public const int DIAS_POR_MES = 24;
 
     public function getLabel(): string
     {
         return match ($this) {
             self::Hora      => 'Horas',
             self::Dia       => 'Días',
+            self::Semana    => 'Semanas',
+            self::Mes       => 'Meses',
             self::Viaje     => 'Viajes',
             self::Kilometro => 'Kilómetros',
         };
     }
 
     /**
-     * Tarifa sugerida para esta unidad según el catálogo de la máquina.
-     * Hora → tarifa_hora; Día → tarifa_hora × jornada_horas;
-     * Viaje → tarifa_viaje; Km → tarifa_km (0 si no está en el catálogo).
+     * Precio sugerido de esta presentación, tomado del rate card de la
+     * máquina.
+     *
+     * Cada presentación lleva SU precio: no se derivan una de otra. El día
+     * no es 8 × la hora ni la semana 6 × el día — el mercado de renta cobra
+     * con descuento por volumen (la hora ronda el 15% del día, el día el 25%
+     * de la semana). Derivarlas sobrecotizaba ~20% y espantaba clientes.
      */
     public function tarifaSugerida(Maquina $maquina): string
     {
         return match ($this) {
-            self::Hora => (string) $maquina->tarifa_hora,
-            self::Dia  => bcmul(
-                (string) $maquina->tarifa_hora,
-                (string) $maquina->jornada_horas,
-                2,
-            ),
+            self::Hora      => (string) $maquina->tarifa_hora,
+            self::Dia       => (string) ($maquina->tarifa_dia ?? '0'),
+            self::Semana    => (string) ($maquina->tarifa_semana ?? '0'),
+            self::Mes       => (string) ($maquina->tarifa_mes ?? '0'),
             self::Viaje     => (string) ($maquina->tarifa_viaje ?? '0'),
             self::Kilometro => (string) ($maquina->tarifa_km ?? '0'),
         };
@@ -69,9 +84,13 @@ enum UnidadRenta: string implements HasLabel
      */
     public function horasEquivalentes(string $cantidad, Maquina $maquina): string
     {
+        $horasDia = (string) $maquina->horas_dia_renta;
+
         return match ($this) {
-            self::Hora => $cantidad,
-            self::Dia  => bcmul($cantidad, (string) $maquina->jornada_horas, 2),
+            self::Hora   => $cantidad,
+            self::Dia    => bcmul($cantidad, $horasDia, 2),
+            self::Semana => bcmul($cantidad, bcmul($horasDia, (string) self::DIAS_POR_SEMANA, 2), 2),
+            self::Mes    => bcmul($cantidad, bcmul($horasDia, (string) self::DIAS_POR_MES, 2), 2),
             self::Viaje,
             self::Kilometro => '0.00',
         };
@@ -85,9 +104,9 @@ enum UnidadRenta: string implements HasLabel
     public function dimension(): string
     {
         return match ($this) {
-            self::Hora, self::Dia => 'horas',
-            self::Viaje           => 'viajes',
-            self::Kilometro       => 'km',
+            self::Hora, self::Dia, self::Semana, self::Mes => 'horas',
+            self::Viaje                                    => 'viajes',
+            self::Kilometro                                => 'km',
         };
     }
 
@@ -101,6 +120,8 @@ enum UnidadRenta: string implements HasLabel
         return match ($this) {
             self::Hora      => 'horas',
             self::Dia       => 'días',
+            self::Semana    => 'semanas',
+            self::Mes       => 'meses',
             self::Viaje     => 'viajes',
             self::Kilometro => 'km',
         };
@@ -114,6 +135,8 @@ enum UnidadRenta: string implements HasLabel
         return match ($this) {
             self::Hora      => 'por hora',
             self::Dia       => 'por día',
+            self::Semana    => 'por semana',
+            self::Mes       => 'por mes',
             self::Viaje     => 'por viaje',
             self::Kilometro => 'por km',
         };
@@ -121,7 +144,7 @@ enum UnidadRenta: string implements HasLabel
 
     /**
      * ¿La cantidad se cuenta entera? Medio viaje no existe; media hora,
-     * medio día y medio kilómetro sí.
+     * medio día, media semana y medio kilómetro sí.
      */
     public function esEntera(): bool
     {

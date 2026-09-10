@@ -29,6 +29,14 @@ final class AsignacionInvalidaException extends MaquinariaException
         );
     }
 
+    public static function maquinaNoAsignada(string $codigo, EstadoMaquina $estado): self
+    {
+        return new self(
+            "La máquina {$codigo} no está asignada a ninguna obra. ".
+            "Estado actual: {$estado->getLabel()}."
+        );
+    }
+
     public static function asignacionNoActiva(string $codigo): self
     {
         return new self(

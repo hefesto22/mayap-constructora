@@ -10,11 +10,13 @@ use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ListCuentasPorCobrar extends ListRecords
 {
     protected static string $resource = CuentaPorCobrarResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -31,6 +33,7 @@ class ListCuentasPorCobrar extends ListRecords
      *  3. Con saldo  — toda la cartera viva
      *  4. Todas      — histórico completo (incluye pagadas)
      */
+    #[Override]
     public function getTabs(): array
     {
         $vencidas = CuentaPorCobrar::query()->vencidas()->count();
@@ -65,6 +68,7 @@ class ListCuentasPorCobrar extends ListRecords
      * vencidas si hay morosos, por vencer si hay urgencias, y si no,
      * toda la cartera con saldo.
      */
+    #[Override]
     public function getDefaultActiveTab(): string|int|null
     {
         return match (true) {

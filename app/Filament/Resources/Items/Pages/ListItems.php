@@ -11,11 +11,13 @@ use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ListItems extends ListRecords
 {
     protected static string $resource = ItemResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -40,6 +42,7 @@ class ListItems extends ListRecords
      *
      * Performance: dos queries con GROUP BY (totales + stale), no N+1.
      */
+    #[Override]
     public function getTabs(): array
     {
         $conteosTotales = Item::query()
@@ -79,6 +82,7 @@ class ListItems extends ListRecords
      * Si esa zona no existe, cae en la primera zona activa. Evita arrancar en
      * una vista global que mezclaría precios de distintas zonas.
      */
+    #[Override]
     public function getDefaultActiveTab(): string|int|null
     {
         $codigos = Zona::activas()->orderBy('codigo')->pluck('codigo');

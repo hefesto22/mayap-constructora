@@ -18,6 +18,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class CompraResource extends Resource
 {
@@ -33,21 +34,25 @@ class CompraResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Compras';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return CompraForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return ComprasTable::configure($table);
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
@@ -85,6 +90,7 @@ class CompraResource extends Resource
         return $query;
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -94,6 +100,7 @@ class CompraResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'numero_factura'];

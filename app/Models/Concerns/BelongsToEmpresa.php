@@ -37,7 +37,7 @@ trait BelongsToEmpresa
         static::addGlobalScope('empresa', function (Builder $builder): void {
             $user = Auth::user();
 
-            if ($user === null || ! isset($user->empresa_id) || $user->empresa_id === null) {
+            if ($user === null || (! property_exists($user, 'empresa_id') || $user->empresa_id === null) || $user->empresa_id === null) {
                 return;
             }
 
@@ -54,7 +54,7 @@ trait BelongsToEmpresa
 
             $user = Auth::user();
 
-            if ($user !== null && isset($user->empresa_id)) {
+            if ($user !== null && (property_exists($user, 'empresa_id') && $user->empresa_id !== null)) {
                 $model->empresa_id = $user->empresa_id;
             }
         });

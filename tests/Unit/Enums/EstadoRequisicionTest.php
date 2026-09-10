@@ -69,7 +69,7 @@ test('despachada por compra directa va derecho a Recibida, nunca a EnTransito', 
 });
 
 test('sin origen se asume la vía bodega: nunca nos saltamos un tránsito real', function (): void {
-    expect(EstadoRequisicion::Despachada->transicionesPermitidas(null))
+    expect(EstadoRequisicion::Despachada->transicionesPermitidas())
         ->toBe([EstadoRequisicion::EnTransito]);
 });
 

@@ -23,9 +23,9 @@ use Illuminate\Support\Facades\View;
  * catálogo vivo. El armado del HTML está separado para probarse sin
  * Chromium.
  */
-final class CotizacionRentaService
+final readonly class CotizacionRentaService
 {
-    public function __construct(private readonly PdfRenderer $pdf) {}
+    public function __construct(private PdfRenderer $pdf) {}
 
     /**
      * Renderiza el HTML de la cotización (sin generar nada). Testeable.

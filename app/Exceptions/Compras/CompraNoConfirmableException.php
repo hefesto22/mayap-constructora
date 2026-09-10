@@ -30,6 +30,22 @@ final class CompraNoConfirmableException extends CompraException
      * esperando ese material y necesita saber QUÉ DÍA llega (decisión
      * Mauricio 2026-08-07). Sin fecha prometida no se registra el pedido.
      */
+    public static function sinTotalDeFactura(string $codigo): self
+    {
+        return new self(
+            "La compra {$codigo} va a bodega, así que las líneas las captura el bodeguero al recibir. ".
+            'Para registrarla hace falta el TOTAL que dice la factura: es contra ese número que se cuadra lo capturado.'
+        );
+    }
+
+    public static function sinFotoDeFactura(string $codigo): self
+    {
+        return new self(
+            "La compra {$codigo} se registra sin detalle, así que la foto de la factura es el único respaldo de lo que se pidió. ".
+            'Súbela antes de registrarla.'
+        );
+    }
+
     public static function sinFechaDeLlegadaParaObra(string $codigo, string $codigoRequisicion): self
     {
         return new self(

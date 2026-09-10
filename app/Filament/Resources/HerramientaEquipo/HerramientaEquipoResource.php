@@ -16,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Herramienta y equipo — la MISMA tabla `materiales` (mismo inventario,
@@ -50,21 +51,25 @@ class HerramientaEquipoResource extends Resource
 
     protected static ?int $navigationSort = 60;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Maquinaria';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return MaterialForm::configure($schema, CategoriaItem::HerramientaEquipo);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return MaterialsTable::configure($table, conCategoria: false);
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -73,6 +78,7 @@ class HerramientaEquipoResource extends Resource
             ->withCount('items');
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -82,6 +88,7 @@ class HerramientaEquipoResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

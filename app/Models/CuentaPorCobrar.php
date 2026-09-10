@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 
 /**
  * Cuenta por cobrar — lo que un cliente le debe a MAYAP. Se reduce con cobros
@@ -66,6 +67,7 @@ class CuentaPorCobrar extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -80,6 +82,7 @@ class CuentaPorCobrar extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (CuentaPorCobrar $cuenta): void {

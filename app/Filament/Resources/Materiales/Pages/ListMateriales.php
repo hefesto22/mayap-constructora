@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Materiales\Pages;
 use App\Filament\Resources\Materiales\MaterialResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
+use Override;
 
 /**
  * Listado de materiales — SOLO categoría materiales (decisión Mauricio
@@ -17,6 +18,7 @@ class ListMateriales extends ListRecords
 {
     protected static string $resource = MaterialResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

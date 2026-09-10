@@ -8,11 +8,13 @@ use App\Filament\Resources\Requisiciones\RequisicionResource;
 use App\Models\Requisicion;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
+use Override;
 
 class ViewRequisicion extends ViewRecord
 {
     protected static string $resource = RequisicionResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

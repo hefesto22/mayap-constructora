@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\ResolucionLinea;
 use Database\Factories\RequisicionLineaFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Línea de una requisición — un material con sus cuatro cantidades de
@@ -19,6 +21,10 @@ use Illuminate\Support\Carbon;
  * El llenado de cada cantidad lo gobierna el Service al avanzar el estado;
  * este modelo solo persiste y consulta.
  *
+ * `resolucion` (Mauricio 2026-09-10) es la respuesta del bodeguero a la
+ * única pregunta que le importa a la obra por cada material: ¿me llega o
+ * no? Sale de bodega, se compra, o no se consiguió (con su motivo).
+ *
  * @property int $id
  * @property int $requisicion_id
  * @property int $material_id
@@ -26,6 +32,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $cantidad_autorizada
  * @property string $cantidad_despachada
  * @property string $cantidad_recibida
+ * @property ResolucionLinea|null $resolucion
+ * @property string|null $resolucion_nota
+ * @property Carbon|null $resuelta_at
+ * @property int|null $resuelta_por
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Requisicion $requisicion
@@ -46,11 +56,16 @@ class RequisicionLinea extends Model
         'cantidad_autorizada',
         'cantidad_despachada',
         'cantidad_recibida',
+        'resolucion',
+        'resolucion_nota',
+        'resuelta_at',
+        'resuelta_por',
     ];
 
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -58,6 +73,8 @@ class RequisicionLinea extends Model
             'cantidad_autorizada' => 'decimal:4',
             'cantidad_despachada' => 'decimal:4',
             'cantidad_recibida'   => 'decimal:4',
+            'resolucion'          => ResolucionLinea::class,
+            'resuelta_at'         => 'datetime',
         ];
     }
 
@@ -91,5 +108,51 @@ class RequisicionLinea extends Model
     public function scopeConDiscrepancia(Builder $query): Builder
     {
         return $query->whereColumn('cantidad_despachada', '!=', 'cantidad_recibida');
+    }
+
+    // ─── Resolución del renglón ────────────────────────────────────
+
+    /**
+     * Cantidad vigente del renglón: la autorizada si ya se autorizó, si no
+     * la solicitada. Es contra ésta que se mide lo que falta.
+     *
+     * is_numeric antes de devolverla (regla de la casa): el cast decimal
+     * entrega `string` a secas y todo lo que consume esto son bc*, que
+     * exigen numeric-string.
+     *
+     * @return numeric-string
+     */
+    public function cantidadVigente(): string
+    {
+        $cantidad = (string) ($this->cantidad_autorizada ?? $this->cantidad_solicitada);
+
+        return is_numeric($cantidad) ? $cantidad : '0';
+    }
+
+    /**
+     * Lo que todavía no ha salido hacia la obra.
+     *
+     * @return numeric-string
+     */
+    public function pendiente(): string
+    {
+        $despachada = (string) $this->cantidad_despachada;
+
+        if (! is_numeric($despachada)) {
+            return $this->cantidadVigente();
+        }
+
+        $pendiente = bcsub($this->cantidadVigente(), $despachada, 4);
+
+        return bccomp($pendiente, '0', 4) > 0 ? $pendiente : '0';
+    }
+
+    /**
+     * ¿Este renglón quedó cerrado sin que llegue nada? Es lo que la obra
+     * necesita ver de un vistazo: "ese no me llega".
+     */
+    public function noLlega(): bool
+    {
+        return $this->resolucion === ResolucionLinea::NoDisponible;
     }
 }

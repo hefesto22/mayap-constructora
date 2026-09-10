@@ -39,6 +39,7 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\RawJs;
 use Illuminate\Support\HtmlString;
 
 class CompraForm
@@ -51,8 +52,13 @@ class CompraForm
                 ->persistTabInQueryString()
                 ->tabs([
                     self::tabDatos(),
-                    self::tabLineas(),
-                    self::tabLineasLibres(),
+                    // CAPTURA DIFERIDA (Mauricio 2026-09-05): la compra que
+                    // va a bodega se registra con el total y la foto; el
+                    // detalle lo escribe el bodeguero al recibir. Estas dos
+                    // pestañas son justamente lo que hacía interminable
+                    // registrar 50 facturas en un día.
+                    self::tabLineas()->visible(fn (callable $get): bool => self::llevaDetalleAhora($get)),
+                    self::tabLineasLibres()->visible(fn (callable $get): bool => self::llevaDetalleAhora($get)),
                     self::tabEstado(),
                 ]),
         ]);
@@ -111,46 +117,170 @@ class CompraForm
         return $lineas === [] ? $filaVacia : $lineas;
     }
 
+    /**
+     * Campo de dinero con separador de miles (Mauricio, 2026-09-10:
+     * "100, 1,000, 10,000, 100,000, 1,000,000").
+     *
+     * Un input `type="number"` no puede agrupar miles — el navegador no lo
+     * permite— así que la máscara lo vuelve texto y `stripCharacters`
+     * quita las comas antes de guardar. La base sigue recibiendo 100000.
+     *
+     * OJO: mientras se teclea, el estado del campo es "100,000" — con coma.
+     * Cualquier cuenta en vivo sobre uno de estos campos tiene que pasar
+     * por self::monto(), nunca por (float) directo, que daría 100.
+     */
+    private static function conSeparadorDeMiles(TextInput $campo): TextInput
+    {
+        return $campo
+            ->mask(RawJs::make('$money($input)'))
+            ->stripCharacters(',');
+    }
+
+    /**
+     * Lee un campo de dinero del formulario como número.
+     *
+     * Es el reverso de la máscara: "100,000.50" → 100000.5. Devuelve null
+     * cuando no hay número que leer, para que el que llama decida.
+     */
+    private static function monto(mixed $valor): ?float
+    {
+        if (is_int($valor) || is_float($valor)) {
+            return (float) $valor;
+        }
+
+        if (! is_string($valor)) {
+            return null;
+        }
+
+        $limpio = str_replace(',', '', $valor);
+
+        return is_numeric($limpio) ? (float) $limpio : null;
+    }
+
+    /**
+     * Enciende o apaga el ISV moviendo las DOS columnas a la vez.
+     *
+     * El CHECK `aplica_isv = TRUE OR isv_porcentaje = 0` de la tabla
+     * `compras` las amarra: apagar el toggle y dejar el 15% escrito es una
+     * fila que Postgres rechaza. Un solo lugar que las toque significa que
+     * no se pueden desincronizar.
+     */
+    private static function fijarIsv(Set $set, bool $aplica): void
+    {
+        $set('aplica_isv', $aplica);
+        $set('isv_porcentaje', $aplica ? 15 : 0);
+    }
+
+    /**
+     * ¿Esta compra se registra SIN detalle? (Mauricio 2026-09-05,
+     * extendida a obra el 2026-09-10).
+     *
+     * Espejo de Compra::capturaDiferida() pero leyendo el formulario. Da
+     * igual si va a bodega o directo a la obra: en las dos hay alguien
+     * recibiendo, y ese alguien escribe el detalle con la mercadería
+     * enfrente ("así evitamos eso de que estén agregando y agregando").
+     *
+     * Se exceptúan dos casos, por razones distintas:
+     *  - el repuesto de una reparación: es una línea sola, atada al
+     *    mantenimiento, de la que cuelga el gasto de la máquina;
+     *  - Taller y Oficina sueltos: se escriben a mano porque no están en
+     *    el catálogo, así que no hay nada que anotar contra existencias.
+     */
+    private static function capturaDiferida(callable $get): bool
+    {
+        return blank($get('mantenimiento_id')) && self::soloCatalogo($get('categorias'));
+    }
+
+    /**
+     * ¿Todas las categorías marcadas salen del catálogo (MAT- / HE-)?
+     * Sin categorías todavía no se sabe: responde que no.
+     */
+    private static function soloCatalogo(mixed $estado): bool
+    {
+        if (! is_iterable($estado)) {
+            return false;
+        }
+
+        $categorias = [];
+
+        foreach ($estado as $valor) {
+            $categoria = $valor instanceof CategoriaCompra
+                ? $valor
+                : CategoriaCompra::tryFrom((string) $valor);
+
+            if ($categoria === null || ! $categoria->usaCatalogo()) {
+                return false;
+            }
+
+            $categorias[] = $categoria;
+        }
+
+        return $categorias !== [];
+    }
+
+    /**
+     * ¿Esta compra lleva su detalle AQUÍ? Sí siempre que no sea captura
+     * diferida (obra o repuesto), y también cuando la compra a bodega
+     * pidió explícitamente detallarse.
+     *
+     * La decisión es un interruptor y no una adivinanza a propósito:
+     * Filament no guarda lo que está oculto, así que esconder las
+     * pestañas "por si acaso" tiraba a la basura las líneas que alguien
+     * sí había escrito.
+     */
+    private static function llevaDetalleAhora(callable $get): bool
+    {
+        if (! self::capturaDiferida($get)) {
+            return true;
+        }
+
+        return (bool) $get('detallar_ahora');
+    }
+
+    /**
+     * Datos de la compra en TRES bloques, en el orden en que alguien con
+     * la factura en la mano los puede contestar (Mauricio 2026-09-10:
+     * "mejora el diseño para que sea fácil y entendible de llenar de
+     * manera rápida"):
+     *
+     *   1. ¿A dónde va?  — el destino manda: decide si lleva detalle.
+     *   2. La factura    — proveedor, fecha, total y foto. Con esto basta.
+     *   3. Otros datos   — COLAPSADO: flete, descuento, ISV, el detalle
+     *                      manual. Nada obligatorio vive aquí adentro, a
+     *                      propósito: si está cerrado no puede esconder
+     *                      un campo que frene el guardado.
+     */
     private static function tabDatos(): Tab
     {
         return Tab::make('Datos de la compra')
             ->icon('heroicon-o-shopping-cart')
             ->schema([
-                TextInput::make('codigo')
-                    ->label('Código')
-                    ->disabled()
-                    ->dehydrated(false)
-                    ->visible(fn (string $operation): bool => $operation === 'edit')
-                    ->prefixIcon('heroicon-o-hashtag')
-                    ->helperText('Se genera automáticamente: COM-2026-00001, ...'),
+                Hidden::make('requisicion_id'),
 
-                Select::make('proveedor_id')
-                    ->label('Proveedor')
-                    ->relationship('proveedor', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
-                    ->searchable()
-                    ->preload()
-                    ->required()
-                    ->live()
-                    // Hereda la condición de pago habitual del proveedor para
-                    // ahorrar clics. El usuario puede cambiarla en esta compra.
-                    ->afterStateUpdated(function (mixed $state, Set $set): void {
-                        if ($state === null) {
-                            return;
-                        }
+                self::seccionDestino(),
+                self::seccionFactura(),
+                self::seccionOtrosDatos(),
+            ])
+            ->columns(1);
+    }
 
-                        $proveedor = Proveedor::query()->find($state);
-
-                        if ($proveedor instanceof Proveedor) {
-                            $set('condicion_pago', $proveedor->condicion_pago->value);
-                        }
-                    })
-                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record)),
-
+    /**
+     * BLOQUE 1 — ¿A dónde va? Lo primero porque es lo que cambia el
+     * formulario: qué categorías trae la factura, si entra a bodega o cae
+     * directo en la obra, y qué día llega.
+     */
+    private static function seccionDestino(): Section
+    {
+        return Section::make('¿A dónde va?')
+            ->icon('heroicon-o-map-pin')
+            ->description('Lo primero: quién recibe esta compra.')
+            ->columns(2)
+            ->schema([
                 // Categorías (decisión Mauricio 2026-07-20): la factura
                 // real puede traer de VARIAS a la vez — se marcan TODAS y
                 // el formulario enseña las tabs que el conjunto pida.
                 Select::make('categorias')
-                    ->label('Categorías de la compra')
+                    ->label('¿Qué se compró?')
                     ->options(CategoriaCompra::options())
                     ->multiple()
                     ->default([CategoriaCompra::Materiales->value])
@@ -167,46 +297,8 @@ class CompraForm
                             $set('proyecto_id', null);
                         }
                     })
-                    ->helperText('Marcá TODAS las que traiga la factura. Materiales y Equipo usan su catálogo (MAT- / HE-) y mueven inventario; Taller y Oficina se escriben a mano en Líneas libres.'),
-
-                // Vínculo opcional con la reparación de una máquina: el
-                // gasto queda trazable y la fecha estimada del pedido
-                // alimenta la del mantenimiento (bitácora incluida).
-                Select::make('mantenimiento_id')
-                    ->label('Mantenimiento de máquina (opcional)')
-                    ->options(fn (): array => MantenimientoMaquina::query()
-                        ->where('estado', EstadoMantenimiento::EnProceso)
-                        ->with('maquina:id,nombre')
-                        ->orderByDesc('id')
-                        ->get()
-                        ->mapWithKeys(fn (MantenimientoMaquina $m): array => [$m->id => "{$m->codigo} — {$m->maquina->nombre}"])
-                        ->all())
-                    ->searchable()
-                    ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Taller))
-                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    ->helperText('Solo reparaciones en proceso. Amarra estos repuestos a la máquina.'),
-
-                // Pedidos con días de espera: ese día suena la campanita
-                // "el pedido debería llegar". Compra del mismo día: vacío.
-                //
-                // OBLIGATORIA en la entrega directa a obra que nace de una
-                // requisición (decisión Mauricio 2026-08-07): del otro lado
-                // hay un encargado que pidió el material para una fecha y
-                // necesita saber qué día llega de verdad — sobre todo si
-                // se adelanta o se atrasa.
-                DatePicker::make('fecha_estimada_llegada')
-                    ->label(fn (callable $get): string => self::entregaDirectaDeRequisicion($get)
-                        ? 'Fecha de entrega prometida por el proveedor'
-                        : 'Fecha estimada de llegada (pedidos)')
-                    ->native(false)
-                    ->minDate(fn (?Compra $record): ?string => $record === null ? today()->toDateString() : null)
-                    ->visible(fn (callable $get): bool => self::entregaDirectaDeRequisicion($get)
-                        || self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::EquipoConstruccion, CategoriaCompra::Oficina))
-                    ->required(fn (callable $get): bool => self::entregaDirectaDeRequisicion($get))
-                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
-                    ->helperText(fn (callable $get): string => self::entregaDirectaDeRequisicion($get)
-                        ? 'Obligatoria: es lo que le avisa a la obra qué día estar pendiente de recibir. Si después el proveedor la mueve, usá "Reprogramar llegada" — la obra se entera del adelanto o del atraso.'
-                        : 'Solo pedidos con espera: al Registrar queda "por recibir" y ese día avisa. Si se compró y recogió el mismo día, dejala vacía y usá "Confirmar (recibida)".'),
+                    ->helperText('Marcá TODAS las que traiga la factura. Materiales y Equipo salen del catálogo y mueven inventario; Taller y Oficina se escriben a mano.')
+                    ->columnSpanFull(),
 
                 Radio::make('destino_tipo')
                     ->label('Entrega en')
@@ -219,7 +311,7 @@ class CompraForm
                     ->dehydrated(false)
                     // En edición se deriva del registro guardado.
                     ->afterStateHydrated(function (Radio $component, ?Compra $record): void {
-                        if ($record !== null) {
+                        if ($record instanceof Compra) {
                             $component->state($record->esDirectaAObra() ? 'obra' : 'bodega');
                         }
                     })
@@ -270,7 +362,47 @@ class CompraForm
                     ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
                     ->helperText('El costo se imputa a esta obra al precio real de factura, sin pasar por bodega.'),
 
-                Hidden::make('requisicion_id'),
+                // Vínculo opcional con la reparación de una máquina: el
+                // gasto queda trazable y la fecha estimada del pedido
+                // alimenta la del mantenimiento (bitácora incluida).
+                Select::make('mantenimiento_id')
+                    ->label('Reparación de máquina (opcional)')
+                    ->options(fn (): array => MantenimientoMaquina::query()
+                        ->where('estado', EstadoMantenimiento::EnProceso)
+                        ->with('maquina:id,nombre')
+                        ->orderByDesc('id')
+                        ->get()
+                        ->mapWithKeys(fn (MantenimientoMaquina $m): array => [$m->id => "{$m->codigo} — {$m->maquina->nombre}"])
+                        ->all())
+                    ->searchable()
+                    ->live()
+                    ->visible(fn (callable $get): bool => self::incluye($get('categorias'), CategoriaCompra::Taller))
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    ->helperText('Solo reparaciones en proceso. Amarra estos repuestos a la máquina.')
+                    ->columnSpanFull(),
+
+                // Pedidos con días de espera: ese día suena la campanita
+                // "el pedido debería llegar". Compra del mismo día: vacío.
+                //
+                // OBLIGATORIA en la entrega directa a obra que nace de una
+                // requisición (decisión Mauricio 2026-08-07): del otro lado
+                // hay un encargado que pidió el material para una fecha y
+                // necesita saber qué día llega de verdad — sobre todo si
+                // se adelanta o se atrasa.
+                DatePicker::make('fecha_estimada_llegada')
+                    ->label(fn (callable $get): string => self::entregaDirectaDeRequisicion($get)
+                        ? 'Fecha de entrega prometida por el proveedor'
+                        : 'Fecha estimada de llegada (pedidos)')
+                    ->native(false)
+                    ->minDate(fn (?Compra $record): ?string => $record instanceof Compra ? null : today()->toDateString())
+                    ->visible(fn (callable $get): bool => self::entregaDirectaDeRequisicion($get)
+                        || self::incluye($get('categorias'), CategoriaCompra::Taller, CategoriaCompra::EquipoConstruccion, CategoriaCompra::Oficina))
+                    ->required(fn (callable $get): bool => self::entregaDirectaDeRequisicion($get))
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    ->helperText(fn (callable $get): string => self::entregaDirectaDeRequisicion($get)
+                        ? 'Obligatoria: es lo que le avisa a la obra qué día estar pendiente de recibir. Si después el proveedor la mueve, usá "Reprogramar llegada" — la obra se entera del adelanto o del atraso.'
+                        : 'Solo pedidos con espera: al Registrar queda "por recibir" y ese día avisa. Si se compró y recogió el mismo día, dejala vacía y usá "Confirmar (recibida)".')
+                    ->columnSpanFull(),
 
                 Placeholder::make('requisicion_enlazada')
                     ->label('Requisición enlazada')
@@ -280,7 +412,53 @@ class CompraForm
                         return $requisicion !== null ? $requisicion->codigo : '—';
                     })
                     ->visible(fn (callable $get): bool => $get('requisicion_id') !== null)
-                    ->helperText('Al confirmar, sus líneas quedarán despachadas a la obra (si la entrega es directa).'),
+                    ->helperText('Al confirmar, sus líneas quedarán despachadas a la obra (si la entrega es directa).')
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    /**
+     * BLOQUE 2 — La factura. En la vía rápida ESTO es toda la compra:
+     * proveedor, fecha, total y la foto. Nada de agregar renglones.
+     */
+    private static function seccionFactura(): Section
+    {
+        return Section::make('La factura')
+            ->icon('heroicon-o-document-text')
+            ->description(fn (callable $get): string => self::llevaDetalleAhora($get)
+                ? 'Los datos del documento. El desglose va en las pestañas de al lado.'
+                : 'Con el total y la foto basta para registrarla: el detalle lo escribe quien reciba.')
+            ->columns(2)
+            ->schema([
+                TextInput::make('codigo')
+                    ->label('Código')
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->visible(fn (string $operation): bool => $operation === 'edit')
+                    ->prefixIcon('heroicon-o-hashtag')
+                    ->helperText('Se genera automáticamente: COM-2026-00001, ...'),
+
+                Select::make('proveedor_id')
+                    ->label('Proveedor')
+                    ->relationship('proveedor', 'nombre', fn ($query) => $query->where('activo', true)->orderBy('nombre'))
+                    ->searchable()
+                    ->preload()
+                    ->required()
+                    ->live()
+                    // Hereda la condición de pago habitual del proveedor para
+                    // ahorrar clics. El usuario puede cambiarla en esta compra.
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        if ($state === null) {
+                            return;
+                        }
+
+                        $proveedor = Proveedor::query()->find($state);
+
+                        if ($proveedor instanceof Proveedor) {
+                            $set('condicion_pago', $proveedor->condicion_pago->value);
+                        }
+                    })
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record)),
 
                 DatePicker::make('fecha')
                     ->label('Fecha de compra')
@@ -288,13 +466,23 @@ class CompraForm
                     ->required()
                     ->native(false),
 
-                Select::make('condicion_pago')
-                    ->label('Condición de pago')
-                    ->options(CondicionPago::options())
-                    ->default(CondicionPago::Contado->value)
-                    ->required()
-                    ->native(false)
-                    ->helperText('Se hereda del proveedor al elegirlo. Crédito genera una cuenta por pagar con su plazo; contado no.'),
+                // Modo captura diferida: en vez de las líneas, el TOTAL
+                // que dice la factura. Ese total es contra el que quien
+                // recibe va a cuadrar lo que anote (Mauricio 2026-09-05:
+                // "que solo suba la foto de la factura y el bodeguero
+                // corrobore que todo llegó").
+                self::conSeparadorDeMiles(TextInput::make('total_factura'))
+                    ->label('Total de la factura')
+                    ->numeric()
+                    ->minValue(0)
+                    ->prefix('L.')
+                    ->visible(fn (callable $get): bool => ! self::llevaDetalleAhora($get))
+                    // Solo si NO hay detalle: quien capturó las líneas ya
+                    // dijo el total, pedirlo otra vez es papeleo.
+                    ->required(fn (callable $get): bool => ! self::llevaDetalleAhora($get))
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    ->helperText('Tal como viene impreso, con todo incluido. Hasta que lo anotado cuadre con este número, la mercadería no entra al inventario.')
+                    ->columnSpanFull(),
 
                 // Documento fiscal (decisión Mauricio 2026-07-19): opcional
                 // en borrador (a veces llega después), pero SIN él la compra
@@ -305,7 +493,22 @@ class CompraForm
                     ->options(TipoDocumentoFiscal::options())
                     ->native(false)
                     ->live()
-                    ->helperText('Qué emitió el proveedor. Se puede dejar vacío en borrador, pero es obligatorio para confirmar. El ISV va aparte: hay boletas sin ISV y facturas con él.'),
+                    // El ISV se deduce del documento: la factura es la
+                    // única que lo traslada. Se ajusta solo para que nadie
+                    // tenga que acordarse — y queda editable, porque hay
+                    // facturas exentas y de régimen simplificado.
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        $documento = is_string($state) ? TipoDocumentoFiscal::tryFrom($state) : null;
+
+                        self::fijarIsv($set, $documento?->trasladaIsv() ?? false);
+                    })
+                    ->helperText(fn (callable $get): string => self::llevaDetalleAhora($get)
+                        ? 'Qué emitió el proveedor. Se puede dejar vacío en borrador, pero es obligatorio para confirmar. Al elegirlo, el ISV de abajo se acomoda solo.'
+                        // En la vía rápida la compra se confirma sola al
+                        // capturar la recepción: sin documento fiscal eso
+                        // tronaría días después, con el bodeguero parado
+                        // frente a la mercadería. Se pide al Registrar.
+                        : 'Obligatorio para Registrar: esta compra se confirma sola cuando anoten lo que llegó.'),
 
                 TextInput::make('numero_factura')
                     ->label('N.º de factura')
@@ -316,37 +519,127 @@ class CompraForm
                         ? 'Obligatorio: el documento es factura.'
                         : null),
 
-                // Fotos del documento (WebP automático). Después de
-                // confirmar, se suben desde la acción "Fotos" de la tabla.
-                AccionFotosFactura::campo(),
+                // Vive acá, pegado al documento que lo decide: el ISV es
+                // una consecuencia de qué emitió el proveedor, no un dato
+                // suelto que alguien tenga que recordar en otra pestaña.
+                // El porcentaje viaja pegado al toggle porque el CHECK
+                // `aplica_isv = TRUE OR isv_porcentaje = 0` los amarra:
+                // apagar el ISV y dejar 15% es una fila que Postgres
+                // rechaza. Nadie lo teclea — lo fija fijarIsv().
+                Hidden::make('isv_porcentaje')->default(0),
 
-                TextInput::make('costo_envio')
+                Toggle::make('aplica_isv')
+                    ->label('Esta compra lleva ISV (15%)')
+                    // Apagado hasta que se sepa: mientras no se diga qué
+                    // documento emitió el proveedor, no hay nada que
+                    // permita afirmar que esta compra traslada impuesto
+                    // (Mauricio 2026-09-10).
+                    ->default(false)
+                    ->live()
+                    ->afterStateUpdated(function (mixed $state, Set $set): void {
+                        self::fijarIsv($set, $state === true);
+                    })
+                    ->helperText(function (callable $get): string {
+                        $valor = $get('tipo_documento_fiscal');
+                        $documento = is_string($valor) ? TipoDocumentoFiscal::tryFrom($valor) : null;
+
+                        if ($documento === null) {
+                            return 'Elegí arriba qué documento emitió el proveedor y esto se acomoda solo.';
+                        }
+
+                        return $documento->trasladaIsv()
+                            ? 'Encendido solo: la factura es el único documento que traslada ISV. Apagalo si es una factura exenta o de régimen simplificado.'
+                            : 'Apagado solo: '.mb_strtolower($documento->getLabel()).' no traslada ISV.';
+                    })
+                    ->columnSpanFull(),
+
+                Select::make('condicion_pago')
+                    ->label('Condición de pago')
+                    ->options(CondicionPago::options())
+                    ->default(CondicionPago::Contado->value)
+                    ->required()
+                    ->native(false)
+                    ->helperText('Se hereda del proveedor al elegirlo. Crédito genera una cuenta por pagar con su plazo; contado no.')
+                    ->columnSpanFull(),
+
+                // Fotos del documento (WebP automático). UNA sola vez en el
+                // formulario: en la vía rápida es el respaldo de lo que se
+                // compró, así que ahí es obligatoria.
+                AccionFotosFactura::campo()
+                    ->helperText(fn (callable $get): string => self::llevaDetalleAhora($get)
+                        ? 'Cualquier formato de imagen: se convierte a WebP automáticamente. Se archivan en el PDF mensual y luego se liberan del servidor.'
+                        : 'Obligatoria para Registrar: sin detalle escrito, la foto es el único respaldo de lo que se compró.'),
+
+                Placeholder::make('aviso_captura_diferida')
+                    ->hiddenLabel()
+                    ->visible(fn (callable $get): bool => ! self::llevaDetalleAhora($get))
+                    ->content(fn (callable $get): HtmlString => new HtmlString(
+                        '<div style="display:flex;gap:.625rem;align-items:flex-start;padding:.75rem .875rem;border-radius:.625rem;'
+                        .'font-size:.8125rem;line-height:1.5;color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe">'
+                        .'<span style="font-size:1rem;line-height:1.2">⚡</span><div>'
+                        .'<strong>Vía rápida:</strong> esta compra se registra sin detalle. '
+                        .($get('destino_tipo') === 'obra'
+                            ? 'Al llegar el camión, el <strong>encargado de la obra</strong> anota material por material lo que le bajaron.'
+                            : 'Al llegar, el <strong>bodeguero</strong> anota material por material lo que trajeron.')
+                        .' Ahí entra al inventario, y solo si lo anotado cuadra con el total.'
+                        .'</div></div>'
+                    ))
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    /**
+     * BLOQUE 3 — Otros datos, COLAPSADO. Todo lo que en la mayoría de las
+     * compras se queda como viene: flete, descuento y el interruptor para
+     * escribir el detalle a mano. Nada obligatorio adentro.
+     *
+     * El ISV NO vive acá: se decide con el documento fiscal, así que vive
+     * pegado a él en "La factura" (Mauricio 2026-09-10).
+     */
+    private static function seccionOtrosDatos(): Section
+    {
+        return Section::make('Otros datos')
+            ->icon('heroicon-o-adjustments-horizontal')
+            ->description('Flete, descuento y detalle manual. Casi nunca hay que tocarlos.')
+            ->collapsible()
+            ->collapsed()
+            ->columns(2)
+            ->schema([
+                Toggle::make('detallar_ahora')
+                    ->label('Escribir el detalle ahora')
+                    ->dehydrated(false)
+                    ->live()
+                    ->default(false)
+                    ->visible(fn (callable $get): bool => self::capturaDiferida($get))
+                    ->disabled(fn (?Compra $record): bool => self::compraBloqueada($record))
+                    // En edición se enciende solo si la compra YA tiene
+                    // detalle: si no, esconder las pestañas lo borraría.
+                    ->afterStateHydrated(function (Toggle $component, ?Compra $record): void {
+                        if ($record instanceof Compra) {
+                            $component->state($record->lineas()->exists());
+                        }
+                    })
+                    ->helperText('Normalmente no hace falta: lo anota quien recibe. Enciéndelo solo si ya tenés el desglose a mano.')
+                    ->columnSpanFull(),
+
+                self::conSeparadorDeMiles(TextInput::make('costo_envio'))
                     ->label('Costo de envío (flete)')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->prefix('L.')
-                    ->step('any')
                     ->live(debounce: 600)
                     ->helperText('Se reparte entre los materiales y forma parte de su costo (no es un gasto aparte).'),
 
-                TextInput::make('descuento')
+                self::conSeparadorDeMiles(TextInput::make('descuento'))
                     ->label('Descuento global')
                     ->numeric()
                     ->default(0)
                     ->minValue(0)
                     ->prefix('L.')
-                    ->step('any')
                     ->live(debounce: 600)
                     ->helperText('Descuento de la factura completa; se reparte entre los materiales.'),
-
-                Toggle::make('aplica_isv')
-                    ->label('Aplica ISV (15%)')
-                    ->default(true)
-                    ->live()
-                    ->columnSpanFull(),
-            ])
-            ->columns(2);
+            ]);
     }
 
     private static function tabLineas(): Tab
@@ -489,11 +782,10 @@ class CompraForm
                         // unitario se deduce solo (10,000 entre 1,000
                         // bloques = L 10 cada uno). Ligado en vivo con
                         // cantidad y precio; no se guarda: es captura.
-                        TextInput::make('total_linea')
+                        self::conSeparadorDeMiles(TextInput::make('total_linea'))
                             ->hiddenLabel()
                             ->numeric()
                             ->minValue(0)
-                            ->step('any')
                             ->prefix('L.')
                             ->placeholder('o total del renglón')
                             ->dehydrated(false)
@@ -655,11 +947,10 @@ class CompraForm
                         // unitario se deduce solo (10,000 entre 1,000
                         // bloques = L 10 cada uno). Ligado en vivo con
                         // cantidad y precio; no se guarda: es captura.
-                        TextInput::make('total_linea')
+                        self::conSeparadorDeMiles(TextInput::make('total_linea'))
                             ->hiddenLabel()
                             ->numeric()
                             ->minValue(0)
-                            ->step('any')
                             ->prefix('L.')
                             ->placeholder('o total del renglón')
                             ->dehydrated(false)
@@ -713,19 +1004,6 @@ class CompraForm
     }
 
     /**
-     * La línea libre nunca lleva catálogo ni destino propio.
-     *
-     *
-     * @return array<string, mixed>
-     */
-    /**
-     * ¿El conjunto de categorías marcado trae ALGUNA de las pedidas?
-     *
-     * El estado del multi-select llega como strings recién tecleado y
-     * como enums CategoriaCompra al hidratar una compra guardada (cast
-     * AsEnumCollection) — aquí se normaliza una sola vez.
-     */
-    /**
      * ¿Esta compra es la entrega directa a obra de una requisición?
      *
      * Es el caso en el que hay una obra esperando material: ahí la fecha
@@ -739,6 +1017,13 @@ class CompraForm
             && self::incluye($get('categorias'), CategoriaCompra::Materiales);
     }
 
+    /**
+     * ¿El conjunto de categorías marcado trae ALGUNA de las pedidas?
+     *
+     * El estado del multi-select llega como strings recién tecleado y
+     * como enums CategoriaCompra al hidratar una compra guardada (cast
+     * AsEnumCollection) — aquí se normaliza una sola vez.
+     */
     private static function incluye(mixed $estado, CategoriaCompra ...$buscadas): bool
     {
         if (! is_iterable($estado)) {
@@ -751,15 +1036,16 @@ class CompraForm
             $valores[] = $categoria instanceof CategoriaCompra ? $categoria->value : (string) $categoria;
         }
 
-        foreach ($buscadas as $buscada) {
-            if (in_array($buscada->value, $valores, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any($buscadas, fn ($buscada): bool => in_array($buscada->value, $valores, true));
     }
 
+    /**
+     * La línea libre nunca lleva catálogo ni destino propio.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>
+     */
     private static function normalizarLineaLibre(array $data): array
     {
         $data['material_id'] = null;
@@ -862,14 +1148,16 @@ class CompraForm
      */
     private static function aplicarTotalLinea(Set $set, callable $get): void
     {
-        $total = $get('total_linea');
+        // El total del renglón lleva separador de miles: se lee con
+        // self::monto(), que "100,000" lo devuelve como 100000.
+        $total = self::monto($get('total_linea'));
         $cantidad = $get('cantidad');
 
-        if (! is_numeric($total) || ! is_numeric($cantidad) || (float) $cantidad <= 0) {
+        if ($total === null || ! is_numeric($cantidad) || (float) $cantidad <= 0) {
             return;
         }
 
-        $set('precio_factura', number_format((float) $total / (float) $cantidad, 4, '.', ''));
+        $set('precio_factura', number_format($total / (float) $cantidad, 4, '.', ''));
         self::aplicarPrecioFactura($set, $get);
     }
 
@@ -953,10 +1241,17 @@ class CompraForm
         $isvLineas = 0.0;
 
         foreach (is_array($lineas) ? $lineas : [] as $linea) {
-            if (! is_array($linea) || ! is_numeric($linea['cantidad'] ?? null) || ! is_numeric($linea['costo_unitario'] ?? null)) {
+            if (! is_array($linea)) {
                 continue;
             }
 
+            if (! is_numeric($linea['cantidad'] ?? null)) {
+                continue;
+            }
+
+            if (! is_numeric($linea['costo_unitario'] ?? null)) {
+                continue;
+            }
             $gravada = $aplicaIsvLineas && ($linea['exento'] ?? false) !== true;
 
             // Con precio de factura, la línea se estima COMO EL SERVICE:
@@ -984,8 +1279,8 @@ class CompraForm
         // Flete − descuento: se prorratean por valor de línea (igual que el
         // Service), así el ISV estimado grava la porción del ajuste que cae
         // en líneas gravadas.
-        $flete = is_numeric($get('costo_envio')) ? (float) $get('costo_envio') : 0.0;
-        $descuento = is_numeric($get('descuento')) ? (float) $get('descuento') : 0.0;
+        $flete = self::monto($get('costo_envio')) ?? 0.0;
+        $descuento = self::monto($get('descuento')) ?? 0.0;
         $ajuste = $flete - $descuento;
 
         // El ajuste (flete − descuento) prorrateado a gravadas también
@@ -1109,17 +1404,17 @@ class CompraForm
                             ->content(fn (?Compra $record): string => $record?->estado->getLabel() ?? '—'),
                         Placeholder::make('subtotal_label')
                             ->label('Subtotal')
-                            ->content(fn (?Compra $record): string => $record !== null
+                            ->content(fn (?Compra $record): string => $record instanceof Compra
                                 ? 'L. '.number_format((float) $record->subtotal_cache, 2)
                                 : 'L. 0.00'),
                         Placeholder::make('isv_label')
                             ->label('ISV')
-                            ->content(fn (?Compra $record): string => $record !== null
+                            ->content(fn (?Compra $record): string => $record instanceof Compra
                                 ? 'L. '.number_format((float) $record->isv_cache, 2)
                                 : 'L. 0.00'),
                         Placeholder::make('total_label')
                             ->label('Total')
-                            ->content(fn (?Compra $record): string => $record !== null
+                            ->content(fn (?Compra $record): string => $record instanceof Compra
                                 ? 'L. '.number_format((float) $record->total_cache, 2)
                                 : 'L. 0.00'),
                     ])

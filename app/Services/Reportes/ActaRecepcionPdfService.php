@@ -24,11 +24,11 @@ use Illuminate\Support\Facades\View;
  * Es el documento físico del expediente de compras y el soporte del
  * reclamo: se imprime, se firma y se adjunta a la factura del proveedor.
  */
-final class ActaRecepcionPdfService
+final readonly class ActaRecepcionPdfService
 {
     public function __construct(
-        private readonly PdfRenderer $pdf,
-        private readonly AlcanceDestinoCompra $alcance,
+        private PdfRenderer $pdf,
+        private AlcanceDestinoCompra $alcance,
     ) {}
 
     /**
@@ -41,7 +41,7 @@ final class ActaRecepcionPdfService
     {
         $compra->loadMissing('lineas');
 
-        if ($paraUsuario === null || Roles::compra($paraUsuario)) {
+        if (! $paraUsuario instanceof User || Roles::compra($paraUsuario)) {
             return $compra->lineas->values();
         }
 
@@ -83,7 +83,7 @@ final class ActaRecepcionPdfService
      */
     public function generar(Compra $compra, ?User $paraUsuario = null): string
     {
-        $sufijo = $paraUsuario === null || Roles::compra($paraUsuario)
+        $sufijo = ! $paraUsuario instanceof User || Roles::compra($paraUsuario)
             ? 'completa'
             : "u{$paraUsuario->id}";
 

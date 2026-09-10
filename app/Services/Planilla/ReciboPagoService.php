@@ -22,9 +22,9 @@ use Illuminate\Support\Facades\View;
  * Diseño estándar de la casa — se ajustará al formato que el cliente
  * pase, sin tocar la tubería.
  */
-final class ReciboPagoService
+final readonly class ReciboPagoService
 {
-    public function __construct(private readonly PdfRenderer $pdf) {}
+    public function __construct(private PdfRenderer $pdf) {}
 
     /**
      * Renderiza el HTML de los recibos (sin generar el PDF). Testeable.

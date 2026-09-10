@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 
 /**
  * Solicitud de maquinaria — el encargado de obra pide "esta máquina para
@@ -91,6 +92,7 @@ class SolicitudMaquina extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -104,6 +106,7 @@ class SolicitudMaquina extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (SolicitudMaquina $solicitud): void {

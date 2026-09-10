@@ -26,7 +26,7 @@ use Stringable;
  */
 final readonly class Monto implements Stringable
 {
-    private const DECIMALES = 2;
+    private const int DECIMALES = 2;
 
     /** Valor en centavos para precisión. */
     private int $centavos;

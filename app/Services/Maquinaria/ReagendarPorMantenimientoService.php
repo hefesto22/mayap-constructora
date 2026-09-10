@@ -48,7 +48,7 @@ final class ReagendarPorMantenimientoService
             $dia = $agendado->fecha->format('d/m');
             $obra = $agendado->proyecto->nombre;
 
-            if ($sustituta !== null && ! $this->sustitutaOcupada($sustituta, $agendado)) {
+            if ($sustituta instanceof Maquina && ! $this->sustitutaOcupada($sustituta, $agendado)) {
                 $agendado->update(['maquina_id' => $sustituta->id]);
                 $transferidos++;
                 $detalle[] = "{$dia} · {$obra} → {$sustituta->nombre}";
@@ -58,7 +58,7 @@ final class ReagendarPorMantenimientoService
 
             $agendado->delete();
             $cancelados++;
-            $detalle[] = $sustituta !== null
+            $detalle[] = $sustituta instanceof Maquina
                 ? "{$dia} · {$obra} — cancelado (la sustituta ya estaba agendada ahí)"
                 : "{$dia} · {$obra} — cancelado";
         }

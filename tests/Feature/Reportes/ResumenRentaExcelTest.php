@@ -42,8 +42,8 @@ function rentaConPartes(): Proyecto
     $proyecto = Proyecto::factory()->renta()->create();
 
     $retro = Maquina::factory()->create([
-        'nombre'        => 'RETROEXCAVADORA JCB 3CX',
-        'jornada_horas' => 8,
+        'nombre'          => 'RETROEXCAVADORA JCB 3CX',
+        'horas_dia_renta' => 8,
     ]);
 
     ProyectoLineaRenta::factory()->porDia()->create([
@@ -93,7 +93,7 @@ test('el resumen compara pactado vs real por máquina con el extra facturable', 
 test('trabajar menos de lo pactado no genera extra (el mínimo es lo cotizado)', function (): void {
     $proyecto = Proyecto::factory()->renta()->create();
 
-    $maquina = Maquina::factory()->create(['jornada_horas' => 8]);
+    $maquina = Maquina::factory()->create(['horas_dia_renta' => 8]);
 
     ProyectoLineaRenta::factory()->create([
         'proyecto_id'     => $proyecto->id,

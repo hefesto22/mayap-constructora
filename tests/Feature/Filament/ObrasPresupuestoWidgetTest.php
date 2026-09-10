@@ -21,23 +21,23 @@ beforeEach(function (): void {
     $this->admin = User::factory()->create(['is_active' => true]);
     $this->admin->assignRole(Utils::getSuperAdminName());
 
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 });
 
 test('el widget de presupuesto renderiza sin error', function (): void {
-    Proyecto::factory()->count(2)->create(['subtotal_cache' => 50000]);
+    // enEjecucion: desde 2026-08-16 el KPI solo cuenta obras VIVAS — con
+    // Borrador contaba cotizaciones y decía "Obras sanas: 43".
+    Proyecto::factory()->enEjecucion()->count(2)->create(['subtotal_cache' => 50000]);
 
     Livewire::test(ObrasPresupuestoWidget::class)->assertSuccessful();
 });
 
 test('el widget cuenta una obra en riesgo cuando supera el 80%', function (): void {
-    $obra = Proyecto::factory()->create(['subtotal_cache' => 10000]);
+    $obra = Proyecto::factory()->enEjecucion()->create(['subtotal_cache' => 10000]);
     $bodega = Bodega::factory()->create();
     $material = Material::factory()->create();
 

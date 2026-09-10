@@ -8,6 +8,7 @@ use App\Enums\FaseMantenimiento;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Entrada de la bitácora de un mantenimiento — un diagnóstico o avance
@@ -41,6 +42,7 @@ class BitacoraMantenimiento extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [

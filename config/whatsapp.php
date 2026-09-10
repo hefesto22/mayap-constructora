@@ -34,4 +34,12 @@ return [
     // Segundos de espera por respuesta de Evolution.
     'timeout' => (int) env('WHATSAPP_TIMEOUT', 15),
 
+    /*
+     | Número de PRUEBAS (solo desarrollo). Si está lleno, TODO mensaje sale
+     | para ahí sin importar a quién iba dirigido — probar el flujo completo
+     | sin que le llegue nada a un cliente ni a un encargado real.
+     | En producción se deja VACÍO.
+     */
+    'redirigir_a' => env('WHATSAPP_REDIRIGIR_A'),
+
 ];

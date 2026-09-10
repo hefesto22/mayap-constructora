@@ -9,6 +9,7 @@ use App\Models\Maquina;
 use App\Services\Maquinaria\HojaDeVidaMaquinaService;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
+use Override;
 
 /**
  * Hoja de vida de la máquina (G5): el expediente completo — identificación,
@@ -28,6 +29,7 @@ class HojaDeVidaMaquina extends Page
         $this->record = $this->resolveRecord($record);
     }
 
+    #[Override]
     public function getTitle(): string
     {
         $maquina = $this->record;
@@ -40,6 +42,7 @@ class HojaDeVidaMaquina extends Page
     /**
      * @return array<string, mixed>
      */
+    #[Override]
     protected function getViewData(): array
     {
         /** @var Maquina $maquina */

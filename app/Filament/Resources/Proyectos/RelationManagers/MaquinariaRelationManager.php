@@ -9,6 +9,7 @@ use App\Models\ParteTrabajo;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Override;
 
 /**
  * Historial de MAQUINARIA del proyecto — responde "¿la máquina FUE?":
@@ -84,6 +85,7 @@ class MaquinariaRelationManager extends RelationManager
             ->paginated([25, 50]);
     }
 
+    #[Override]
     public function isReadOnly(): bool
     {
         return true;

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\DestinoSalidaMaquina;
 use Database\Factories\AgendaMaquinaFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Agenda de máquina — compromiso FUTURO simple: "la máquina llega a las X
@@ -33,6 +35,9 @@ use Illuminate\Support\Carbon;
  * @property int|null $user_id
  * @property Carbon|null $aviso_llegada_at
  * @property Carbon|null $llegada_confirmada_at
+ * @property numeric-string|null $horometro_llegada
+ * @property numeric-string|null $horometro_salida
+ * @property DestinoSalidaMaquina|null $destino_salida
  * @property int|null $llegada_confirmada_por
  * @property Carbon|null $salida_confirmada_at
  * @property int|null $salida_confirmada_por
@@ -64,6 +69,9 @@ class AgendaMaquina extends Model
         'aviso_llegada_at',
         'llegada_confirmada_at',
         'llegada_confirmada_por',
+        'horometro_llegada',
+        'horometro_salida',
+        'destino_salida',
         'salida_confirmada_at',
         'salida_confirmada_por',
         'no_llego_at',
@@ -95,12 +103,16 @@ class AgendaMaquina extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
             'fecha'                 => 'date',
             'aviso_llegada_at'      => 'datetime',
             'llegada_confirmada_at' => 'datetime',
+            'horometro_llegada'     => 'decimal:2',
+            'horometro_salida'      => 'decimal:2',
+            'destino_salida'        => DestinoSalidaMaquina::class,
             'salida_confirmada_at'  => 'datetime',
             'no_llego_at'           => 'datetime',
         ];

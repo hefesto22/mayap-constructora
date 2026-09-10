@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Override;
 
 /**
  * Reporte mensual de control — el PDF permanente de cada mes. Dos tipos
@@ -65,6 +66,7 @@ class ReporteFiscal extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [

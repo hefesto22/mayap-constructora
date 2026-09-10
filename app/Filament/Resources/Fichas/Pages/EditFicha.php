@@ -15,11 +15,13 @@ use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditFicha extends EditRecord
 {
     protected static string $resource = FichaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -86,13 +88,11 @@ class EditFicha extends EditRecord
                 Select::make('zona_destino_id')
                     ->label('Zona destino')
                     ->required()
-                    ->options(function (Ficha $record): array {
-                        return Zona::activas()
-                            ->where('id', '!=', $record->zona_id)
-                            ->orderBy('nombre')
-                            ->pluck('nombre', 'id')
-                            ->all();
-                    })
+                    ->options(fn (Ficha $record): array => Zona::activas()
+                        ->where('id', '!=', $record->zona_id)
+                        ->orderBy('nombre')
+                        ->pluck('nombre', 'id')
+                        ->all())
                     ->searchable()
                     ->preload()
                     ->helperText('Solo aparecen zonas activas distintas a la zona actual de la ficha.'),

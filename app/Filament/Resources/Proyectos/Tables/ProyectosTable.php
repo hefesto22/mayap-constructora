@@ -190,11 +190,9 @@ class ProyectosTable
                         DatePicker::make('emitido_desde')->native(false),
                         DatePicker::make('emitido_hasta')->native(false),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['emitido_desde'] ?? null, fn (Builder $q, $d): Builder => $q->whereDate('fecha_emision', '>=', $d))
-                            ->when($data['emitido_hasta'] ?? null, fn (Builder $q, $d): Builder => $q->whereDate('fecha_emision', '<=', $d));
-                    }),
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['emitido_desde'] ?? null, fn (Builder $q, $d): Builder => $q->whereDate('fecha_emision', '>=', $d))
+                        ->when($data['emitido_hasta'] ?? null, fn (Builder $q, $d): Builder => $q->whereDate('fecha_emision', '<=', $d))),
             ])
             ->recordActions([
                 ViewAction::make()->label('Costos'),
@@ -213,7 +211,7 @@ class ProyectosTable
                     ->icon('heroicon-o-play-circle')
                     ->color('primary')
                     ->button()
-                    ->visible(fn (?Proyecto $record): bool => $record !== null && in_array(
+                    ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && in_array(
                         $record->estado,
                         [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                         strict: true,

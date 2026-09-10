@@ -11,11 +11,13 @@ use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ListRequisiciones extends ListRecords
 {
     protected static string $resource = RequisicionResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -26,6 +28,7 @@ class ListRequisiciones extends ListRecords
     /**
      * Tabs de filtrado rápido por estado del flujo.
      */
+    #[Override]
     public function getTabs(): array
     {
         return [

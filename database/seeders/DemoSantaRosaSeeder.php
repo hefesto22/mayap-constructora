@@ -77,7 +77,7 @@ class DemoSantaRosaSeeder extends Seeder
 
         $casa = $this->crearProyectoCasa();
         $alcantarillado = $this->crearProyectoAlcantarillado();
-        $edificio = $this->crearProyectoEdificio();
+        $this->crearProyectoEdificio();
 
         // Obras vivas con su encargado de campo.
         foreach ([$casa, $alcantarillado] as $obra) {
@@ -214,7 +214,7 @@ class DemoSantaRosaSeeder extends Seeder
                     'anio'             => $anio,
                     'horometro_actual' => $horometro,
                     'tarifa_hora'      => $tarifa,
-                    'jornada_horas'    => '8.00',
+                    'horas_dia_renta'  => '8.00',
                     'estado'           => EstadoMaquina::Disponible->value,
                     'activo'           => true,
                 ],

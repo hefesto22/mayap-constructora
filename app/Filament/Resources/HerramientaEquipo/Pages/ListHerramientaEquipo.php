@@ -9,6 +9,7 @@ use App\Filament\Resources\Maquinas\MaquinaResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
+use Override;
 
 /**
  * Listado de herramienta y equipo — la cara B del toggle de Maquinaria:
@@ -18,6 +19,7 @@ class ListHerramientaEquipo extends ListRecords
 {
     protected static string $resource = HerramientaEquipoResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -25,6 +27,7 @@ class ListHerramientaEquipo extends ListRecords
         ];
     }
 
+    #[Override]
     public function getTabs(): array
     {
         return [
@@ -35,6 +38,7 @@ class ListHerramientaEquipo extends ListRecords
         ];
     }
 
+    #[Override]
     public function getDefaultActiveTab(): string|int|null
     {
         return 'herramienta';
@@ -43,6 +47,7 @@ class ListHerramientaEquipo extends ListRecords
     /**
      * La pestaña de maquinaria navega de regreso al catálogo de máquinas.
      */
+    #[Override]
     public function updatedActiveTab(): void
     {
         if ($this->activeTab === 'maquinas') {

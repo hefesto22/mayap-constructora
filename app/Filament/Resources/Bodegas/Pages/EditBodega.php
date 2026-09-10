@@ -8,11 +8,13 @@ use App\Filament\Resources\Bodegas\BodegaResource;
 use Exception;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditBodega extends EditRecord
 {
     protected static string $resource = BodegaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

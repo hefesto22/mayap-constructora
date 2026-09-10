@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -69,6 +70,7 @@ class Proveedor extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -92,6 +94,7 @@ class Proveedor extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (Proveedor $proveedor): void {

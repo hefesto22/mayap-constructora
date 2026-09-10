@@ -8,7 +8,10 @@ use App\Enums\DestinoAgendaFutura;
 use App\Enums\EstadoAsignacion;
 use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoMaquina;
+use App\Enums\LugarReparacion;
+use App\Enums\PrioridadMantenimiento;
 use App\Exceptions\Maquinaria\MantenimientoInvalidoException;
+use App\Filament\Resources\Mantenimientos\MantenimientoMaquinaResource;
 use App\Models\AgendaMaquina;
 use App\Models\AsignacionMaquina;
 use App\Models\BitacoraMantenimiento;
@@ -16,6 +19,7 @@ use App\Models\MantenimientoMaquina;
 use App\Models\Maquina;
 use App\Models\User;
 use App\Support\Roles;
+use Filament\Actions\Action as NotificationAction;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -50,8 +54,12 @@ final readonly class MantenimientoService
         ?string $fecha = null,
         ?string $notas = null,
         ?DestinoAgendaFutura $destinoAgenda = null,
+        ?LugarReparacion $lugar = null,
+        ?string $necesita = null,
+        ?int $proyectoId = null,
+        ?PrioridadMantenimiento $prioridad = null,
     ): MantenimientoMaquina {
-        return DB::transaction(function () use ($maquina, $motivo, $sustituta, $fecha, $notas, $destinoAgenda): MantenimientoMaquina {
+        return DB::transaction(function () use ($maquina, $motivo, $sustituta, $fecha, $notas, $destinoAgenda, $lugar, $necesita, $proyectoId, $prioridad): MantenimientoMaquina {
             $maquinaBloqueada = Maquina::query()
                 ->whereKey($maquina->getKey())
                 ->lockForUpdate()
@@ -67,13 +75,26 @@ final readonly class MantenimientoService
 
             $fechaInicio = $fecha ?? now()->toDateString();
 
+            // ¿La máquina se mueve? (decisión Mauricio 2026-09-05). Si la
+            // reparación es EN SITIO, la obra CONSERVA la máquina: no se
+            // corta la asignación, la agenda queda en pie y no hay
+            // sustituta que buscar — lo único que falta es que le lleven
+            // lo que necesita.
+            $enSitio = $lugar?->enSitio() ?? false;
+
             // Qué pasa con los agendados FUTUROS lo decide quien reporta
             // (decisión Mauricio 2026-07-22). Sin decisión explícita: con
             // sustituta se transfieren, sin ella se cancelan (lo clásico).
-            $destino = $destinoAgenda
-                ?? ($sustituta !== null ? DestinoAgendaFutura::Sustituta : DestinoAgendaFutura::Cancelar);
+            $destino = $enSitio
+                ? DestinoAgendaFutura::ReparacionHoy
+                : ($destinoAgenda
+                    ?? ($sustituta instanceof Maquina ? DestinoAgendaFutura::Sustituta : DestinoAgendaFutura::Cancelar));
 
-            if ($destino === DestinoAgendaFutura::Sustituta && $sustituta === null) {
+            if ($enSitio) {
+                $sustituta = null;
+            }
+
+            if ($destino === DestinoAgendaFutura::Sustituta && ! $sustituta instanceof Maquina) {
                 throw MantenimientoInvalidoException::faltaSustituta($maquinaBloqueada->codigo);
             }
 
@@ -90,9 +111,11 @@ final readonly class MantenimientoService
                 ->lockForUpdate()
                 ->first();
 
-            $obraId = $asignacionActiva?->proyecto_id;
+            $obraId = $proyectoId ?? $asignacionActiva?->proyecto_id;
 
-            if ($asignacionActiva !== null) {
+            // EN SITIO la asignación NO se corta: la máquina sigue en esa
+            // obra, solo que detenida hasta que llegue el repuesto.
+            if ($asignacionActiva !== null && ! $enSitio) {
                 // Una asignación nunca termina antes de empezar: si la avería
                 // es anterior a su inicio, se cierra en su fecha de inicio.
                 $fechaFinAsignacion = Carbon::parse($fechaInicio)->max($asignacionActiva->fecha_inicio);
@@ -109,7 +132,7 @@ final readonly class MantenimientoService
             // Sustitución: requiere conocer la obra (asignación activa previa).
             $asignacionSustituta = null;
 
-            if ($sustituta !== null) {
+            if ($sustituta instanceof Maquina) {
                 if ($obraId === null) {
                     throw MantenimientoInvalidoException::sinObraParaSustituir($maquinaBloqueada->codigo);
                 }
@@ -126,11 +149,24 @@ final readonly class MantenimientoService
                 'maquina_id'               => $maquinaBloqueada->id,
                 'fecha_inicio'             => $fechaInicio,
                 'motivo'                   => $motivo,
-                'asignacion_finalizada_id' => $asignacionActiva?->id,
+                'proyecto_id'              => $obraId,
+                'en_sitio'                 => $enSitio,
+                'necesita'                 => $necesita,
+                'asignacion_finalizada_id' => $enSitio ? null : $asignacionActiva?->id,
                 'asignacion_sustituta_id'  => $asignacionSustituta?->id,
                 'estado'                   => EstadoMantenimiento::EnProceso,
-                'notas'                    => $notas,
+                // Quien reporta dice si urge o puede esperar: es el que
+                // está viendo la máquina parada (2026-09-05).
+                'prioridad' => ($prioridad ?? PrioridadMantenimiento::Normal)->value,
+                'notas'     => $notas,
             ]);
+
+            // EN SITIO el aviso no es "se fue al taller": es un PEDIDO con
+            // dirección — qué llevar y a qué obra. Lo reciben maquinaria y
+            // recepción, que son quienes lo despachan.
+            if ($enSitio) {
+                $this->notificarReparacionEnSitio($mantenimiento, $maquinaBloqueada, $necesita);
+            }
 
             if ($destino->quedaEnPie()) {
                 // EMERGENCIA: la agenda queda EN PIE — la reparación sale
@@ -153,6 +189,63 @@ final readonly class MantenimientoService
 
             return $mantenimiento;
         });
+    }
+
+    /**
+     * "Ver la reparación": la campanita sin un botón que lleve al
+     * expediente obliga a buscarlo a mano en el listado (Mauricio
+     * 2026-09-05).
+     */
+    private function botonVerReparacion(MantenimientoMaquina $mantenimiento): NotificationAction
+    {
+        return NotificationAction::make('ver_reparacion')
+            ->label('Ver la reparación')
+            ->icon('heroicon-o-arrow-top-right-on-square')
+            ->url(MantenimientoMaquinaResource::getUrl('view', ['record' => $mantenimiento->getKey()]))
+            ->button();
+    }
+
+    /**
+     * Campanita de REPARACIÓN EN SITIO: la máquina no se movió, y lo que
+     * hace falta es que alguien le lleve algo. Va a maquinaria y a
+     * recepción — recepción es quien despacha — con el pedido y la obra a
+     * la que hay que llevarlo (decisión Mauricio 2026-09-05).
+     *
+     * notifyNow (síncrono): respeta la transacción del caller.
+     */
+    private function notificarReparacionEnSitio(
+        MantenimientoMaquina $mantenimiento,
+        Maquina $maquina,
+        ?string $necesita,
+    ): void {
+        $urge = $mantenimiento->prioridad === PrioridadMantenimiento::Urgente;
+        $mantenimiento->loadMissing('proyecto:id,nombre');
+        $obra = $mantenimiento->proyecto?->nombre;
+
+        $notificacion = Notification::make()
+            ->title(($urge ? 'URGENTE · ' : '')."{$maquina->nombre} averiada — se repara EN LA OBRA")
+            ->body(
+                ($obra !== null ? "Sigue en {$obra}. " : 'La máquina no se movió. ')
+                .(filled($necesita)
+                    ? "Necesita: {$necesita}. "
+                    : 'No se especificó qué necesita — confirma con el encargado antes de despachar. ')
+                .($urge
+                    ? 'El encargado lo marcó URGENTE: la obra está parada esperándolo.'
+                    : 'Puede esperar, pero la máquina no se puede agendar a otra obra mientras tanto.')
+            )
+            ->icon($urge ? 'heroicon-o-fire' : 'heroicon-o-wrench')
+            ->{$urge ? 'danger' : 'warning'}()
+            ->actions([$this->botonVerReparacion($mantenimiento)])
+            ->persistent();
+
+        // whereHas en vez del scope role(): no explota si el rol aún no
+        // existe (DB fresca de tests o seeds parciales).
+        User::query()
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::MAQUINARIA, Roles::RECEPCION, Roles::GERENCIA]))
+            ->where('is_active', true)
+            ->get()
+            ->unique('id')
+            ->each(fn (User $user) => $user->notifyNow($notificacion->toDatabase()));
     }
 
     /**
@@ -248,6 +341,135 @@ final readonly class MantenimientoService
     }
 
     /**
+     * NO SE PUDO REPARAR EN LA OBRA — la máquina sale al taller
+     * (Mauricio 2026-09-05).
+     *
+     * Es el segundo tiempo de la reparación en sitio: se intentó, no
+     * salió, y recién ahora la máquina deja la obra. Por eso todo lo que
+     * NO se hizo al reportar se hace aquí: se corta la asignación, se
+     * resuelve la agenda comprometida y queda escrito POR QUÉ no se pudo
+     * — que es lo que el taller necesita saber antes de que llegue.
+     */
+    public function escalarATaller(
+        MantenimientoMaquina $mantenimiento,
+        string $motivo,
+        ?Maquina $sustituta = null,
+        ?DestinoAgendaFutura $destinoAgenda = null,
+        ?int $userId = null,
+    ): MantenimientoMaquina {
+        return DB::transaction(function () use ($mantenimiento, $motivo, $sustituta, $destinoAgenda, $userId): MantenimientoMaquina {
+            $abierto = MantenimientoMaquina::query()
+                ->whereKey($mantenimiento->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $abierto->estado->esEnProceso()) {
+                throw MantenimientoInvalidoException::mantenimientoNoEnProceso($abierto->codigo);
+            }
+
+            $maquina = Maquina::query()->whereKey($abierto->maquina_id)->lockForUpdate()->firstOrFail();
+            $fecha = now()->toDateString();
+
+            $destino = $destinoAgenda
+                ?? ($sustituta instanceof Maquina ? DestinoAgendaFutura::Sustituta : DestinoAgendaFutura::Cancelar);
+
+            if ($destino === DestinoAgendaFutura::Sustituta && ! $sustituta instanceof Maquina) {
+                throw MantenimientoInvalidoException::faltaSustituta($maquina->codigo);
+            }
+
+            if ($destino->quedaEnPie()) {
+                $sustituta = null;
+            }
+
+            // Ahora SÍ la obra pierde la máquina: se corta la asignación
+            // que la reparación en sitio había dejado viva.
+            $asignacionActiva = AsignacionMaquina::query()
+                ->where('maquina_id', $maquina->id)
+                ->activas()
+                ->lockForUpdate()
+                ->first();
+
+            $obraId = $asignacionActiva->proyecto_id ?? $abierto->proyecto_id;
+
+            if ($asignacionActiva !== null) {
+                $asignacionActiva->estado = EstadoAsignacion::Finalizada;
+                $asignacionActiva->fecha_fin = Carbon::parse($fecha)->max($asignacionActiva->fecha_inicio);
+                $asignacionActiva->save();
+            }
+
+            $asignacionSustituta = null;
+
+            if ($sustituta instanceof Maquina) {
+                if ($obraId === null) {
+                    throw MantenimientoInvalidoException::sinObraParaSustituir($maquina->codigo);
+                }
+
+                $asignacionSustituta = $this->asignador->asignar(
+                    maquina: $sustituta,
+                    proyectoId: $obraId,
+                    fechaInicio: $fecha,
+                    notas: "Sustituye a {$maquina->codigo}: la reparación en obra no salió y se fue al taller.",
+                );
+            }
+
+            $abierto->forceFill([
+                'en_sitio'                 => false,
+                'asignacion_finalizada_id' => $asignacionActiva->id ?? $abierto->asignacion_finalizada_id,
+                'asignacion_sustituta_id'  => $asignacionSustituta->id ?? $abierto->asignacion_sustituta_id,
+                'notas'                    => trim(($abierto->notas !== null ? $abierto->notas."\n" : '')
+                    .'NO SE PUDO REPARAR EN LA OBRA: '.$motivo),
+            ])->save();
+
+            BitacoraMantenimiento::create([
+                'mantenimiento_maquina_id' => $abierto->id,
+                'fase'                     => $abierto->fase,
+                'detalle'                  => 'No se pudo reparar en la obra — sale al taller. Motivo: '.$motivo,
+                'user_id'                  => $userId,
+            ]);
+
+            if ($destino->quedaEnPie()) {
+                $enPie = $this->dejarAgendaEnPie($maquina, $fecha, $destino);
+
+                if ($enPie > 0) {
+                    $this->notificarAgendaEnPie($maquina, $destino, $enPie);
+                }
+            } else {
+                $agenda = $this->reagendador->resolver($maquina, $fecha, $sustituta);
+
+                if ($agenda['transferidos'] > 0 || $agenda['cancelados'] > 0) {
+                    $this->notificarAgendaResuelta($maquina, $agenda);
+                }
+            }
+
+            $this->notificarSalidaATaller($abierto, $maquina, $motivo);
+
+            return $abierto->refresh();
+        });
+    }
+
+    /**
+     * Campanita del escalado: la máquina que se iba a arreglar en la obra
+     * termina yendo al taller, y con el porqué.
+     */
+    private function notificarSalidaATaller(MantenimientoMaquina $mantenimiento, Maquina $maquina, string $motivo): void
+    {
+        $notificacion = Notification::make()
+            ->title("{$maquina->nombre} sale al taller — no se pudo reparar en la obra")
+            ->body("Motivo: {$motivo}")
+            ->icon('heroicon-o-wrench-screwdriver')
+            ->danger()
+            ->actions([$this->botonVerReparacion($mantenimiento)])
+            ->persistent();
+
+        User::query()
+            ->whereHas('roles', fn ($q) => $q->whereIn('name', [Roles::MAQUINARIA, Roles::RECEPCION, Roles::GERENCIA]))
+            ->where('is_active', true)
+            ->get()
+            ->unique('id')
+            ->each(fn (User $user) => $user->notifyNow($notificacion->toDatabase()));
+    }
+
+    /**
      * Finaliza el mantenimiento: la máquina vuelve a estar disponible y
      * la bitácora recibe la última entrada (cierre con fecha y hora).
      */
@@ -287,6 +509,64 @@ final readonly class MantenimientoService
                 $maquina->estado = EstadoMaquina::Disponible;
                 $maquina->save();
             }
+        });
+    }
+
+    /**
+     * Devuelve una máquina al parque DESDE el catálogo de Maquinaria —
+     * la salida del taller en el mismo lugar donde se ve el problema
+     * (decisión Mauricio 2026-08-16). Antes la única puerta vivía en el
+     * módulo Mantenimientos y una máquina "En mantenimiento" no tenía
+     * ninguna acción que la sacara.
+     *
+     * Cierra la reparación abierta por la MISMA puerta que la acción
+     * Finalizar (misma bitácora, misma regla de fechas). Si el estado
+     * quedó HUÉRFANO —en mantenimiento sin expediente abierto— la libera
+     * igual y lo deja anotado: ese callejón sin salida dejaba la máquina
+     * trabada para siempre.
+     *
+     * @return MantenimientoMaquina|null El expediente cerrado; null si no había ninguno.
+     */
+    public function marcarReparada(Maquina $maquina, ?string $fechaFin = null, ?int $userId = null): ?MantenimientoMaquina
+    {
+        return DB::transaction(function () use ($maquina, $fechaFin, $userId): ?MantenimientoMaquina {
+            $maquinaBloqueada = Maquina::query()
+                ->whereKey($maquina->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($maquinaBloqueada->estado !== EstadoMaquina::Mantenimiento) {
+                throw MantenimientoInvalidoException::maquinaNoEnTaller(
+                    $maquinaBloqueada->codigo,
+                    $maquinaBloqueada->estado,
+                );
+            }
+
+            $abierto = MantenimientoMaquina::query()
+                ->where('maquina_id', $maquinaBloqueada->id)
+                ->where('estado', EstadoMantenimiento::EnProceso->value)
+                ->orderByDesc('fecha_inicio')
+                ->lockForUpdate()
+                ->first();
+
+            if ($abierto !== null) {
+                $this->finalizar($abierto, $fechaFin, $userId);
+
+                return $abierto->refresh();
+            }
+
+            // Estado huérfano: sin expediente que cerrar, la liberación
+            // queda en el registro de actividad (quién y cuándo).
+            $maquinaBloqueada->estado = EstadoMaquina::Disponible;
+            $maquinaBloqueada->save();
+
+            activity('maquinaria')
+                ->performedOn($maquinaBloqueada)
+                ->withProperties(['fecha' => $fechaFin ?? now()->toDateString()])
+                ->event('liberada_sin_expediente')
+                ->log("{$maquinaBloqueada->codigo} volvió al parque sin expediente de reparación abierto");
+
+            return null;
         });
     }
 }

@@ -7,11 +7,13 @@ namespace App\Filament\Resources\AgendaMaquina\Pages;
 use App\Filament\Actions\AgendarMaquinasAction;
 use App\Filament\Resources\AgendaMaquina\AgendaMaquinaResource;
 use Filament\Resources\Pages\ManageRecords;
+use Override;
 
 class ManageAgendaMaquina extends ManageRecords
 {
     protected static string $resource = AgendaMaquinaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

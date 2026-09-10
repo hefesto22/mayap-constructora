@@ -42,14 +42,14 @@ use Spatie\Activitylog\Facades\CauserResolver;
  *     total_destino: string,
  * }
  */
-final class DuplicarProyectoService
+final readonly class DuplicarProyectoService
 {
     private const int SCALE_INTERNO = 12;
 
     private const int SCALE_FINAL = 2;
 
     public function __construct(
-        private readonly CalcularPrecioProyectoService $calculadorTotales = new CalcularPrecioProyectoService,
+        private CalcularPrecioProyectoService $calculadorTotales = new CalcularPrecioProyectoService,
     ) {}
 
     /**

@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Override;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -122,6 +123,7 @@ class Compra extends Model
         'subtotal_cache',
         'isv_cache',
         'total_cache',
+        'total_factura',
         'notas',
         'motivo_anulacion',
         'anulada_at',
@@ -133,6 +135,7 @@ class Compra extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -154,6 +157,7 @@ class Compra extends Model
             'subtotal_cache'         => 'decimal:2',
             'isv_cache'              => 'decimal:2',
             'total_cache'            => 'decimal:2',
+            'total_factura'          => 'decimal:2',
         ];
     }
 
@@ -168,6 +172,7 @@ class Compra extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (Compra $compra): void {
@@ -285,8 +290,11 @@ class Compra extends Model
      */
     public function usaCatalogo(): bool
     {
-        return $this->tiene(CategoriaCompra::Materiales)
-            || $this->tiene(CategoriaCompra::EquipoConstruccion);
+        if ($this->tiene(CategoriaCompra::Materiales)) {
+            return true;
+        }
+
+        return $this->tiene(CategoriaCompra::EquipoConstruccion);
     }
 
     /**
@@ -301,11 +309,120 @@ class Compra extends Model
     }
 
     /**
+     * ¿Las líneas se capturan al RECIBIR en vez de al registrar?
+     * (decisión Mauricio 2026-09-05).
+     *
+     * Sí para todo lo que alguien RECIBE: quien registra pone el total de
+     * la factura y la foto, y el detalle lo escribe quien tiene la
+     * mercadería enfrente — el bodeguero si va a bodega, el encargado si
+     * va directo a la obra. Con 50 facturas al día, pedirle las líneas al
+     * de la oficina es pedirle que adivine (Mauricio 2026-09-10: "así
+     * evitamos eso de que estén agregando y agregando").
+     *
+     * NO para el repuesto de una reparación: es una sola línea, va atada
+     * al mantenimiento y de ella cuelga el gasto de la máquina.
+     *
+     * NO tampoco para Taller y Oficina sueltos: esas líneas se escriben a
+     * mano porque no existen en el catálogo, así que no hay nada que el
+     * que recibe pueda "anotar" contra existencias.
+     */
+    public function capturaDiferida(): bool
+    {
+        if ($this->mantenimiento_id !== null) {
+            return false;
+        }
+
+        return $this->categorias->isNotEmpty()
+            && $this->categorias->every(
+                static fn (CategoriaCompra $categoria): bool => $categoria->usaCatalogo(),
+            );
+    }
+
+    /**
+     * Lo que dice la factura: el número declarado al registrar. Sin él,
+     * el total derivado de las líneas.
+     *
+     * @return numeric-string
+     */
+    public function totalDeclarado(): string
+    {
+        return number_format(
+            (float) ($this->total_factura ?? $this->total_cache),
+            2,
+            '.',
+            '',
+        );
+    }
+
+    /**
+     * Diferencia entre lo declarado en la factura y lo capturado en
+     * líneas. Cero = cuadra. Positivo = falta capturar.
+     *
+     * @return numeric-string
+     */
+    public function descuadre(): string
+    {
+        if ($this->total_factura === null) {
+            return '0.00';
+        }
+
+        $declarado = number_format((float) $this->total_factura, 2, '.', '');
+        $capturado = number_format((float) $this->total_cache, 2, '.', '');
+
+        return bcsub($declarado, $capturado, 2);
+    }
+
+    /**
+     * ¿Lo capturado coincide con la factura? Con un centavo de tolerancia
+     * por el redondeo del prorrateo.
+     */
+    public function totalesCoinciden(): bool
+    {
+        // El descuadre puede venir negativo (se capturó de más): lo que
+        // importa es su tamaño, no su signo. is_numeric antes de bccomp,
+        // que ltrim devuelve string a secas (regla de la casa).
+        $absoluto = ltrim($this->descuadre(), '-');
+
+        if (! is_numeric($absoluto)) {
+            return true;
+        }
+
+        return bccomp($absoluto, '0.01', 2) <= 0;
+    }
+
+    /**
+     * ¿La compra está esperando que el bodeguero capture lo que llegó?
+     */
+    public function esperandoCaptura(): bool
+    {
+        $this->loadMissing('lineas');
+
+        return $this->estado === EstadoCompra::PorRecibir
+            && $this->capturaDiferida()
+            && $this->lineas->isEmpty();
+    }
+
+    /**
      * ¿La compra se entrega directo a una obra (sin pasar por bodega)?
      */
     public function esDirectaAObra(): bool
     {
         return $this->proyecto_id !== null;
+    }
+
+    /**
+     * Destino de la CABECERA — bodega XOR obra, garantizado por CHECKs.
+     *
+     * Existe para la captura diferida: cuando la compra se registró con
+     * total y foto pero todavía sin detalle, no hay ninguna línea a la
+     * cual preguntarle su destino, y aun así hay que saber a quién le
+     * toca escribir lo que llegó.
+     */
+    public function destinoDeCabecera(): Ubicacion
+    {
+        return $this->esDirectaAObra()
+            ? Ubicacion::obra((int) $this->proyecto_id)
+            : Ubicacion::bodega($this->bodega_id);
     }
 
     /**
@@ -323,9 +440,7 @@ class Compra extends Model
             return Ubicacion::bodega($linea->bodega_id);
         }
 
-        return $this->esDirectaAObra()
-            ? Ubicacion::obra((int) $this->proyecto_id)
-            : Ubicacion::bodega($this->bodega_id);
+        return $this->destinoDeCabecera();
     }
 
     // ─── Cierre (conciliación final) ────────────────────────────────
@@ -377,7 +492,7 @@ class Compra extends Model
 
         $cuadradaEn = $this->cuadradaEn();
 
-        if ($cuadradaEn === null) {
+        if (! $cuadradaEn instanceof Carbon) {
             return true;
         }
 

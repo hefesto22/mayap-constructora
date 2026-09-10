@@ -39,12 +39,10 @@ test('enviar texto pega al endpoint correcto con la llave y el número normaliza
 
     $this->service->enviarTexto('9999-8888', 'Hola desde MAYAP');
 
-    Http::assertSent(function (Request $request): bool {
-        return $request->url() === 'http://evolution.test/message/sendText/mayap'
-            && $request->hasHeader('apikey', 'llave-secreta')
-            && $request['number'] === '50499998888'
-            && $request['text'] === 'Hola desde MAYAP';
-    });
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://evolution.test/message/sendText/mayap'
+        && $request->hasHeader('apikey', 'llave-secreta')
+        && $request['number'] === '50499998888'
+        && $request['text'] === 'Hola desde MAYAP');
 
     $this->assertDatabaseHas('activity_log', [
         'log_name' => 'whatsapp',
@@ -60,13 +58,11 @@ test('enviar imagen manda el PNG en base64 con su caption', function (): void {
 
     $this->service->enviarImagen('9999-8888', $ruta, 'Cotización PROY-2026-00006');
 
-    Http::assertSent(function (Request $request): bool {
-        return $request->url() === 'http://evolution.test/message/sendMedia/mayap'
-            && $request['mediatype'] === 'image'
-            && $request['media'] === base64_encode('PNG-FALSO')
-            && $request['caption'] === 'Cotización PROY-2026-00006'
-            && $request['fileName'] === 'cotizacion-test.png';
-    });
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://evolution.test/message/sendMedia/mayap'
+        && $request['mediatype'] === 'image'
+        && $request['media'] === base64_encode('PNG-FALSO')
+        && $request['caption'] === 'Cotización PROY-2026-00006'
+        && $request['fileName'] === 'cotizacion-test.png');
 });
 
 test('apagado o sin llave no intenta enviar nada', function (): void {
@@ -105,11 +101,36 @@ test('enviar documento manda el PDF en base64 con su caption', function (): void
 
     $this->service->enviarDocumento('9999-8888', $ruta, 'Cotización PROY-2026-00006');
 
-    Http::assertSent(function (Request $request): bool {
-        return $request->url() === 'http://evolution.test/message/sendMedia/mayap'
-            && $request['mediatype'] === 'document'
-            && $request['mimetype'] === 'application/pdf'
-            && $request['media'] === base64_encode('PDF-FALSO')
-            && $request['fileName'] === 'cotizacion-test.pdf';
-    });
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://evolution.test/message/sendMedia/mayap'
+        && $request['mediatype'] === 'document'
+        && $request['mimetype'] === 'application/pdf'
+        && $request['media'] === base64_encode('PDF-FALSO')
+        && $request['fileName'] === 'cotizacion-test.pdf');
+});
+
+test('con número de pruebas configurado, TODO sale a ese número', function (): void {
+    // Red de seguridad de desarrollo. Nació el 2026-08-07: la factory de
+    // usuarios inventa teléfonos con fake()->numerify('9#######'), que son
+    // números hondureños válidos, y la suite los estaba usando de verdad.
+    config()->set('whatsapp.enabled', true);
+    config()->set('whatsapp.api_key', 'llave-de-prueba');
+    config()->set('whatsapp.redirigir_a', '33012826');
+
+    Http::fake(['*' => Http::response(['key' => ['id' => 'X']], 200)]);
+
+    app(EnviarWhatsAppService::class)->enviarTexto('98765432', 'HOLA');
+
+    Http::assertSent(fn (Request $peticion): bool => $peticion['number'] === '50433012826');
+});
+
+test('sin número de pruebas el mensaje sale a su destinatario real', function (): void {
+    config()->set('whatsapp.enabled', true);
+    config()->set('whatsapp.api_key', 'llave-de-prueba');
+    config()->set('whatsapp.redirigir_a');
+
+    Http::fake(['*' => Http::response(['key' => ['id' => 'X']], 200)]);
+
+    app(EnviarWhatsAppService::class)->enviarTexto('98765432', 'HOLA');
+
+    Http::assertSent(fn (Request $peticion): bool => $peticion['number'] === '50498765432');
 });

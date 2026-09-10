@@ -77,4 +77,48 @@ final class RequisicionInvalidaException extends RequisicionException
             'Lo que falta es que la obra confirme la recepción.'
         );
     }
+
+    // ─── Revisión del pedido (resolución por renglón) ───────────────
+
+    /**
+     * Se guardó la revisión dejando un material sin contestar. Media
+     * respuesta es peor que ninguna: la obra queda esperando algo que
+     * nadie decidió.
+     */
+    public static function renglonSinResolver(string $material): self
+    {
+        return new self(
+            "Falta decidir qué pasa con {$material}: si sale de bodega, si se ".
+            'compra o si no se consiguió.'
+        );
+    }
+
+    public static function resolucionInvalida(string $valor): self
+    {
+        return new self(
+            "\"{$valor}\" no es una decisión válida para un renglón del pedido."
+        );
+    }
+
+    /**
+     * "No se consiguió" sin motivo deja a la obra adivinando por qué su
+     * material no llega. El CHECK de la tabla repite este candado.
+     */
+    public static function motivoNoDisponibleRequerido(string $material): self
+    {
+        return new self(
+            "Marcaste {$material} como \"no se consiguió\": escribí por qué. Es lo ".
+            'único que la obra va a poder leer cuando vea que ese material no le llega.'
+        );
+    }
+
+    /**
+     * Se quiso despachar de bodega más de lo que falta del renglón.
+     */
+    public static function despachoExcedePendiente(string $material, string $cantidad, string $pendiente): self
+    {
+        return new self(
+            "De {$material} solo faltan {$pendiente}: no se pueden despachar {$cantidad}."
+        );
+    }
 }

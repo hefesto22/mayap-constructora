@@ -26,10 +26,10 @@ use Illuminate\Support\Facades\DB;
  *    que los presupuestados — CalcularPrecioProyectoService ya sabe
  *    sumar líneas de renta cuando el tipo es renta).
  */
-final class AgregarLineaRentaService
+final readonly class AgregarLineaRentaService
 {
     public function __construct(
-        private readonly CalcularPrecioProyectoService $calculadora,
+        private CalcularPrecioProyectoService $calculadora,
     ) {}
 
     public function agregar(

@@ -9,6 +9,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Solicitudes de maquinaria del proyecto — parte del historial: quién
@@ -65,6 +66,7 @@ class SolicitudesMaquinaRelationManager extends RelationManager
             ->paginated([25, 50]);
     }
 
+    #[Override]
     public function isReadOnly(): bool
     {
         return true;

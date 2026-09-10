@@ -11,6 +11,7 @@ use App\Filament\Resources\Mantenimientos\Actions\AccionCambiarPrioridad;
 use App\Filament\Resources\Mantenimientos\Actions\AccionFinalizarMantenimiento;
 use App\Filament\Resources\Mantenimientos\Actions\AccionRegistrarAvance;
 use App\Models\MantenimientoMaquina;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -33,11 +34,12 @@ class MantenimientosTable
                     ->searchable()
                     ->sortable()
                     ->icon('heroicon-o-truck')
-                    ->limit(30),
+                    ->limit(22)
+                    ->tooltip(fn (MantenimientoMaquina $record): string => $record->maquina->nombre),
                 TextColumn::make('motivo')
                     ->label('Motivo')
-                    ->limit(40)
-                    ->wrap(),
+                    ->limit(24)
+                    ->tooltip(fn (MantenimientoMaquina $record): string => $record->motivo),
                 TextColumn::make('estado')
                     ->label('Estado')
                     ->badge()
@@ -110,11 +112,18 @@ class MantenimientosTable
                     ->searchable()
                     ->preload(),
             ])
+            // Menú ⋮ fijo: con el motivo largo la tabla se ancha y
+            // "Finalizar" terminaba fuera de pantalla — la reparación
+            // parecía imposible de cerrar (corregido 2026-08-16).
             ->recordActions([
-                ViewAction::make(),
-                AccionRegistrarAvance::make(),
-                AccionCambiarPrioridad::make(),
-                AccionFinalizarMantenimiento::make(),
+                ActionGroup::make([
+                    ViewAction::make(),
+                    AccionRegistrarAvance::make(),
+                    AccionCambiarPrioridad::make(),
+                    AccionFinalizarMantenimiento::make(),
+                ])
+                    ->label('Acciones')
+                    ->tooltip('Acciones'),
             ])
             ->paginated([25, 50, 100]);
     }

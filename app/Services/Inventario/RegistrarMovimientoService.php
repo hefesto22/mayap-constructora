@@ -308,10 +308,10 @@ final class RegistrarMovimientoService
             $saldoDestino = null;
 
             // ─── Lado ORIGEN: retiro proporcional ──────────────────
-            if ($tipo->tieneOrigen() && $origen !== null) {
+            if ($tipo->tieneOrigen() && $origen instanceof Ubicacion) {
                 $existenciaOrigen = $this->existenciaBloqueada($materialId, $origen, crear: false);
 
-                if ($existenciaOrigen === null) {
+                if (! $existenciaOrigen instanceof Existencia) {
                     throw new StockInsuficienteException(
                         materialId: $materialId,
                         ubicacion: $origen->descripcion(),
@@ -356,7 +356,7 @@ final class RegistrarMovimientoService
             }
 
             // ─── Lado DESTINO: alta del valor correspondiente ──────
-            if ($tipo->tieneDestino() && $destino !== null) {
+            if ($tipo->tieneDestino() && $destino instanceof Ubicacion) {
                 $existenciaDestino = $this->existenciaBloqueada($materialId, $destino, crear: true);
 
                 $existenciaDestino->cantidad = bcadd((string) $existenciaDestino->cantidad, $cantidad, self::SCALE_CANTIDAD);
@@ -384,7 +384,7 @@ final class RegistrarMovimientoService
 
             $movimiento = new MovimientoInventario($atributos);
 
-            if ($referencia !== null) {
+            if ($referencia instanceof Model) {
                 $movimiento->referencia()->associate($referencia);
             }
 
@@ -415,17 +415,15 @@ final class RegistrarMovimientoService
             throw MovimientoInvalidoException::cantidadInvalida($cantidad);
         }
 
-        if ($tipo->defineCostoPropio()) {
-            if ($costoPropio === null || bccomp($costoPropio, '0', self::SCALE_CANTIDAD) < 0) {
-                throw MovimientoInvalidoException::costoNegativo((string) $costoPropio);
-            }
+        if ($tipo->defineCostoPropio() && ($costoPropio === null || bccomp($costoPropio, '0', self::SCALE_CANTIDAD) < 0)) {
+            throw MovimientoInvalidoException::costoNegativo((string) $costoPropio);
         }
 
         if ($tipo->requiereMotivo() && ($motivo === null || trim($motivo) === '')) {
             throw MovimientoInvalidoException::motivoRequerido($tipo->getLabel());
         }
 
-        if ($origen !== null && $destino !== null && $origen->esIgualA($destino)) {
+        if ($origen instanceof Ubicacion && $destino instanceof Ubicacion && $origen->esIgualA($destino)) {
             throw MovimientoInvalidoException::mismaUbicacion($origen->descripcion());
         }
     }

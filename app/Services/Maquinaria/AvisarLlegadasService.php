@@ -46,6 +46,11 @@ final readonly class AvisarLlegadasService
             ->with(['maquina:id,nombre', 'proyecto:id,nombre'])
             ->whereDate('fecha', $ahora->toDateString())
             ->whereNull('aviso_llegada_at')
+            // Lo que ya pasó no avisa: si el encargado confirmó la
+            // llegada temprano (o marcó que no llegó), el aviso de
+            // "prepará el acceso" solo hace ruido (2026-08-16).
+            ->whereNull('llegada_confirmada_at')
+            ->whereNull('no_llego_at')
             ->whereNotNull('hora_entrada')
             ->whereBetween('hora_entrada', [$ahora->format('H:i:s'), $limite->format('H:i:s')])
             ->get();

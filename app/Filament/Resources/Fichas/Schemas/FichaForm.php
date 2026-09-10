@@ -386,9 +386,7 @@ class FichaForm
                 Placeholder::make('resumen_en_vivo')
                     ->hiddenLabel()
                     ->columnSpanFull()
-                    ->content(function (Get $get): HtmlString {
-                        return self::renderResumenFicha($get);
-                    }),
+                    ->content(fn (Get $get): HtmlString => self::renderResumenFicha($get)),
             ])
             ->collapsible()
             ->collapsed(false)
@@ -472,7 +470,7 @@ class FichaForm
             .'</tbody></table></div>';
 
         $precioBox = '<div style="margin-top:14px;border:2px solid #059669;border-radius:12px;background:rgba(5,150,105,0.10);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
-            .'<span style="text-transform:uppercase;letter-spacing:0.08em;font-size:0.75rem;font-weight:700;color:#059669;">Precio de venta por '.htmlspecialchars($unidadCodigo).'</span>'
+            .'<span style="text-transform:uppercase;letter-spacing:0.08em;font-size:0.75rem;font-weight:700;color:#059669;">Precio de venta por '.htmlspecialchars((string) $unidadCodigo).'</span>'
             .'<span style="font-size:2rem;font-weight:800;color:#059669;font-variant-numeric:tabular-nums;">L '.$precioVenta.'</span>'
             .'</div>';
 
@@ -498,13 +496,13 @@ class FichaForm
                     ->schema([
                         Placeholder::make('subtotal_cache_label')
                             ->label('Subtotal (mat + MO + HE + ind)')
-                            ->content(fn (?Ficha $record): string => $record !== null
+                            ->content(fn (?Ficha $record): string => $record instanceof Ficha
                                 ? 'L '.number_format((float) $record->subtotal_cache, 2)
                                 : '—'),
 
                         Placeholder::make('precio_venta_cache_label')
                             ->label('Precio venta')
-                            ->content(fn (?Ficha $record): string => $record !== null
+                            ->content(fn (?Ficha $record): string => $record instanceof Ficha
                                 ? 'L '.number_format((float) $record->precio_venta_cache, 2)
                                 : '—'),
 
@@ -529,7 +527,7 @@ class FichaForm
                         Placeholder::make('lineas_count_label')
                             ->label('Líneas de composición')
                             ->content(function (?Ficha $record): string {
-                                if ($record === null) {
+                                if (! $record instanceof Ficha) {
                                     return '—';
                                 }
                                 $count = $record->lineas()->count();

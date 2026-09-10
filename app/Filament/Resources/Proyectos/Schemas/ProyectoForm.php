@@ -121,9 +121,7 @@ class ProyectoForm
                         TextInput::make('telefono')->label('Teléfono')->tel(),
                         TextInput::make('email')->label('Email')->email(),
                     ])
-                    ->createOptionUsing(function (array $data): int {
-                        return Cliente::create([...$data, 'activo' => true])->id;
-                    }),
+                    ->createOptionUsing(fn (array $data): int => Cliente::create([...$data, 'activo' => true])->id),
 
                 Select::make('encargados')
                     ->label('Encargados de obra')
@@ -259,9 +257,9 @@ class ProyectoForm
         return Tab::make('Control de materiales')
             ->icon('heroicon-o-cube')
             // Solo presupuestados: una renta no tiene fichas ni materiales.
-            ->visible(fn (?Proyecto $record): bool => $record !== null && ! $record->esRenta())
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && ! $record->esRenta())
             ->badge(function (?Proyecto $record): ?string {
-                if ($record === null) {
+                if (! $record instanceof Proyecto) {
                     return null;
                 }
 
@@ -282,7 +280,7 @@ class ProyectoForm
                             ->columnSpanFull()
                             ->content(fn (?Proyecto $record): HtmlString => new HtmlString(
                                 view('filament.proyectos.control-materiales', [
-                                    'filas' => $record !== null
+                                    'filas' => $record instanceof Proyecto
                                         ? app(PresupuestoMaterialesProyectoService::class)->porProyecto($record->id)
                                         : collect(),
                                 ])->render()
@@ -298,10 +296,10 @@ class ProyectoForm
             ->icon('heroicon-o-check-circle')
             // Solo presupuestados: una renta no lleva avance físico. En
             // crear reacciona en vivo al selector de tipo.
-            ->visible(fn (?Proyecto $record, Get $get): bool => $record !== null
+            ->visible(fn (?Proyecto $record, Get $get): bool => $record instanceof Proyecto
                 ? ! $record->esRenta()
                 : $get('tipo') !== TipoProyecto::RentaMaquinaria->value)
-            ->badge(fn (?Proyecto $record): ?string => $record !== null
+            ->badge(fn (?Proyecto $record): ?string => $record instanceof Proyecto
                 ? $record->avance_fisico_cache.'%'
                 : null)
             ->schema([
@@ -358,7 +356,7 @@ class ProyectoForm
                     ->label('Estado actual')
                     ->visible(fn (string $operation): bool => $operation === 'edit')
                     ->content(function (?Proyecto $record): HtmlString {
-                        if ($record === null) {
+                        if (! $record instanceof Proyecto) {
                             return new HtmlString('—');
                         }
 
@@ -474,7 +472,7 @@ class ProyectoForm
         // NOTA DE ESTILOS: HTML dentro del panel Filament — su CSS compilado
         // NO incluye clases Tailwind arbitrarias, por eso todo va inline
         // (colores translúcidos funcionan en tema claro y oscuro).
-        if ($record === null || $record->renglones()->count() === 0) {
+        if (! $record instanceof Proyecto || $record->renglones()->count() === 0) {
             return new HtmlString(
                 '<div style="text-align:center; opacity:.55; padding:24px 0;">'
                 .'Guardá el proyecto y agregá renglones en la tabla de Composición (abajo) para ver el resumen.'
@@ -508,8 +506,8 @@ class ProyectoForm
      */
     private static function renderPanelEjecucion(?Proyecto $record): HtmlString
     {
-        if ($record === null || $record->fecha_inicio === null) {
-            $mensaje = $record !== null && $record->estado === EstadoProyecto::Aprobada
+        if (! $record instanceof Proyecto || $record->fecha_inicio === null) {
+            $mensaje = $record instanceof Proyecto && $record->estado === EstadoProyecto::Aprobada
                 ? 'Proyecto aprobado y listo para arrancar. Usá el botón <strong>"Iniciar proyecto"</strong> en la cabecera para definir la fecha de inicio y el plazo.'
                 : 'La ejecución se habilita cuando el proyecto está <strong>Aprobado</strong>. Primero envialo y registrá la aprobación del cliente.';
 
@@ -583,7 +581,7 @@ class ProyectoForm
      */
     private static function renderAnticipoBloque(?Proyecto $record): string
     {
-        if ($record === null || ! $record->anticipo_recibido) {
+        if (! $record instanceof Proyecto || ! $record->anticipo_recibido) {
             return '<div style="margin-top:16px; font-size:.875rem; opacity:.55;">Sin anticipo registrado.</div>';
         }
 

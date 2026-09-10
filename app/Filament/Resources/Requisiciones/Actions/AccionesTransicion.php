@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Requisiciones\Actions;
 
 use App\Enums\EstadoRequisicion;
+use App\Enums\ResolucionLinea;
+use App\Exceptions\Inventario\StockInsuficienteException;
+use App\Exceptions\Requisiciones\RequisicionInvalidaException;
 use App\Filament\Resources\Compras\CompraResource;
 use App\Models\Bodega;
 use App\Models\Existencia;
@@ -21,12 +24,16 @@ use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\HtmlString;
 
 /**
  * Acciones de transición de una requisición — cada una llama al
@@ -115,62 +122,308 @@ final class AccionesTransicion
     }
 
     /**
-     * Autorizada / RequisicionCompra → Despachada. Elige la bodega de la que
-     * sale el material; descuenta stock real con WAC. Si no hay stock, el
-     * Service la manda a Requisición de compra.
+     * REVISIÓN DEL PEDIDO (Mauricio, 2026-09-10) — reemplaza al viejo
+     * "Despachar", que era todo o nada.
+     *
+     * "El bodeguero confirma si hay en bodega y salen de ahí; si no hay y
+     * se compraron, le llegarán; si no hay y no se pudo comprar, se marca
+     * que ese no le llegará."
+     *
+     * Una sola pantalla, un renglón por material, tres botones. Cada fila
+     * ya llega contestada según la existencia real de la bodega, así que
+     * el caso normal es leer y apretar Guardar.
      */
-    public static function despachar(): Action
+    public static function revisarPedido(): Action
     {
-        return Action::make('despachar')
-            ->label('Despachar')
-            ->icon('heroicon-o-truck')
+        return Action::make('revisar_pedido')
+            ->label('Revisar pedido')
+            ->icon('heroicon-o-clipboard-document-check')
             ->color('warning')
             ->visible(fn (Requisicion $record): bool => in_array(
                 $record->estado,
                 [EstadoRequisicion::Autorizada, EstadoRequisicion::RequisicionCompra],
                 strict: true,
             ) && self::puede(Permisos::DESPACHAR_REQUISICION))
-            ->modalHeading('Despachar a obra')
-            ->modalSubmitActionLabel('Despachar')
+            ->modalHeading('¿Qué hay para este pedido?')
+            ->modalDescription('Material por material: lo que hay sale hoy, lo que se compró le va a llegar, y lo que no se consiguió se cierra con su motivo.')
+            ->modalSubmitActionLabel('Guardar la revisión')
+            ->modalWidth('6xl')
+            ->fillForm(self::prellenarRevision())
             ->schema([
                 Select::make('bodega_id')
-                    ->label('Bodega de salida')
-                    ->options(function (): array {
-                        $query = Bodega::query()->where('activo', true)->orderBy('nombre');
-
-                        // El usuario solo despacha desde SUS bodegas (Fase 2).
-                        $user = auth()->user();
-
-                        if ($user instanceof User) {
-                            $query->visibleParaUsuario($user);
-                        }
-
-                        return $query->pluck('nombre', 'id')->all();
-                    })
+                    ->label('Bodega desde la que sale')
+                    ->options(self::bodegasDelUsuario(...))
+                    ->default(self::bodegaPorDefecto(...))
                     ->required()
-                    ->native(false),
-                Textarea::make('nota')->label('Nota (opcional)')->rows(2),
+                    ->live()
+                    ->native(false)
+                    ->helperText('Si la cambiás, la columna "En bodega" se actualiza sola — revisá que las marcas sigan cuadrando.')
+                    ->columnSpanFull(),
+
+                Repeater::make('lineas')
+                    ->hiddenLabel()
+                    ->addable(false)
+                    ->deletable(false)
+                    ->reorderable(false)
+                    ->columnSpanFull()
+                    ->table([
+                        TableColumn::make('Material'),
+                        TableColumn::make('Pedido / en bodega')->width('190px'),
+                        TableColumn::make('¿Qué hacemos?')->width('330px'),
+                        TableColumn::make('Sale')->width('120px'),
+                        TableColumn::make('¿Por qué no le llega?'),
+                    ])
+                    ->schema([
+                        Hidden::make('linea_id'),
+                        Hidden::make('material_id'),
+                        Hidden::make('material'),
+                        Hidden::make('pendiente'),
+
+                        // OJO con el nombre: en Filament el ESTADO de un
+                        // Placeholder es su propio contenido, así que uno
+                        // llamado 'material' que lea $get('material') se
+                        // pide el estado a sí mismo y recursa hasta agotar
+                        // la memoria. El dato vive en el Hidden de arriba;
+                        // este componente solo lo pinta.
+                        Placeholder::make('material_nombre')
+                            ->hiddenLabel()
+                            ->content(fn (callable $get): HtmlString => new HtmlString(
+                                '<span style="font-weight:600">'.e((string) $get('material')).'</span>'
+                            )),
+
+                        // Se pinta en vivo contra la bodega elegida arriba:
+                        // el número que decide es el de ESA bodega, no la
+                        // suma de todas.
+                        Placeholder::make('disponibilidad')
+                            ->hiddenLabel()
+                            ->content(fn (callable $get): HtmlString => self::insigniaDisponibilidad(
+                                (string) $get('pendiente'),
+                                self::existenciaEnBodega($get('../../bodega_id'), $get('material_id')),
+                            )),
+
+                        ToggleButtons::make('resolucion')
+                            ->hiddenLabel()
+                            ->options(ResolucionLinea::options())
+                            ->colors(ResolucionLinea::colores())
+                            ->icons(ResolucionLinea::iconos())
+                            ->grouped()
+                            ->required()
+                            ->live(),
+
+                        // Ojo: Filament no guarda lo que está oculto, y acá
+                        // eso JUEGA A FAVOR — cada renglón manda al Service
+                        // exactamente el dato que su decisión necesita.
+                        TextInput::make('cantidad')
+                            ->hiddenLabel()
+                            ->numeric()
+                            ->minValue(0)
+                            ->step('any')
+                            ->required()
+                            ->visible(fn (callable $get): bool => $get('resolucion') === ResolucionLinea::Bodega->value)
+                            ->helperText('Si sale menos, el resto queda por comprar.'),
+
+                        TextInput::make('nota')
+                            ->hiddenLabel()
+                            ->placeholder('Ej: no hay en ninguna ferretería de la zona')
+                            ->maxLength(255)
+                            ->required()
+                            ->visible(fn (callable $get): bool => $get('resolucion') === ResolucionLinea::NoDisponible->value),
+                    ]),
+
+                Textarea::make('nota_general')
+                    ->label('Nota para la bitácora (opcional)')
+                    ->rows(2)
+                    ->columnSpanFull(),
             ])
             ->action(function (Requisicion $record, array $data): void {
-                app(TransicionarRequisicionService::class)->despachar(
-                    $record,
-                    Ubicacion::bodega((int) $data['bodega_id']),
-                    self::userId(),
-                    is_string($data['nota'] ?? null) ? $data['nota'] : null,
-                );
-
-                if ($record->fresh()?->estado === EstadoRequisicion::RequisicionCompra) {
+                try {
+                    $estado = app(TransicionarRequisicionService::class)->resolverDisponibilidad(
+                        $record,
+                        Ubicacion::bodega((int) $data['bodega_id']),
+                        self::decisionesPorLinea($data),
+                        self::userId(),
+                        is_string($data['nota_general'] ?? null) ? $data['nota_general'] : null,
+                    );
+                } catch (RequisicionInvalidaException|StockInsuficienteException $e) {
                     Notification::make()
-                        ->title('Sin stock suficiente')
-                        ->body('La requisición pasó a Requisición de compra. Registrá la entrada y volvé a despachar.')
-                        ->warning()
+                        ->title('No se guardó la revisión')
+                        ->body($e->getMessage())
+                        ->danger()
+                        ->persistent()
                         ->send();
 
                     return;
                 }
 
-                Notification::make()->title('Material despachado a obra')->success()->send();
+                self::avisarResultado($estado);
             });
+    }
+
+    /**
+     * Cada renglón nace contestado con lo que dice la existencia real: hay
+     * → sale de bodega; no hay → se compra. Así el bodeguero corrige la
+     * excepción en vez de teclear el caso normal.
+     *
+     * @return Closure(Requisicion): array<string, mixed>
+     */
+    private static function prellenarRevision(): Closure
+    {
+        return function (Requisicion $record): array {
+            $bodegaId = self::bodegaPorDefecto();
+
+            $lineas = $record->lineas()->with('material:id,codigo,nombre,consumo_inmediato')->get();
+
+            return [
+                'bodega_id' => $bodegaId,
+                'lineas'    => $lineas
+                    ->map(function (RequisicionLinea $linea) use ($bodegaId): array {
+                        $pendiente = $linea->pendiente();
+                        $existencia = self::existenciaEnBodega($bodegaId, $linea->material_id);
+
+                        // El consumible no almacenable (agua de pipa) nunca
+                        // está en bodega: su camino normal ES la compra.
+                        $alcanza = ! $linea->material->consumo_inmediato
+                            && bccomp($existencia, $pendiente, 4) >= 0;
+
+                        return [
+                            'linea_id'    => $linea->id,
+                            'material_id' => $linea->material_id,
+                            'material'    => $linea->material->codigo.' — '.$linea->material->nombre,
+                            'pendiente'   => $pendiente,
+                            'resolucion'  => $alcanza
+                                ? ResolucionLinea::Bodega->value
+                                : ResolucionLinea::Comprar->value,
+                            'cantidad' => Cantidad::sinCeros($pendiente),
+                            'nota'     => null,
+                        ];
+                    })
+                    ->all(),
+            ];
+        };
+    }
+
+    /**
+     * Traduce el repeater al mapa que consume el Service.
+     *
+     * @param array<string, mixed> $data
+     *
+     * @return array<int, array{resolucion?: string, cantidad?: string|null, nota?: string|null}>
+     */
+    private static function decisionesPorLinea(array $data): array
+    {
+        /** @var array<int, array<string, mixed>> $lineas */
+        $lineas = $data['lineas'] ?? [];
+
+        $decisiones = [];
+
+        foreach ($lineas as $fila) {
+            $decisiones[(int) ($fila['linea_id'] ?? 0)] = [
+                'resolucion' => is_string($fila['resolucion'] ?? null) ? $fila['resolucion'] : '',
+                'cantidad'   => isset($fila['cantidad']) && is_numeric($fila['cantidad'])
+                    ? (string) $fila['cantidad']
+                    : null,
+                'nota' => is_string($fila['nota'] ?? null) ? $fila['nota'] : null,
+            ];
+        }
+
+        return $decisiones;
+    }
+
+    /**
+     * El mensaje dice lo que la obra va a ver, no el nombre del estado.
+     */
+    private static function avisarResultado(EstadoRequisicion $estado): void
+    {
+        match ($estado) {
+            EstadoRequisicion::Despachada => Notification::make()
+                ->title('Todo salió de bodega')
+                ->body('El material va en camino a la obra.')
+                ->success()
+                ->send(),
+
+            EstadoRequisicion::RequisicionCompra => Notification::make()
+                ->title('Falta comprar lo que no había')
+                ->body('Lo que sí había ya salió de bodega. Administración queda avisada de lo que hay que comprar.')
+                ->warning()
+                ->send(),
+
+            EstadoRequisicion::Rechazada => Notification::make()
+                ->title('A esta obra no le llega nada de este pedido')
+                ->body('Ningún material se consiguió. El motivo de cada uno quedó escrito para el que lo pidió.')
+                ->danger()
+                ->send(),
+
+            default => Notification::make()->title('Revisión guardada')->success()->send(),
+        };
+    }
+
+    /**
+     * Existencia de un material en UNA bodega concreta (la elegida en el
+     * modal), como numeric-string.
+     */
+    private static function existenciaEnBodega(mixed $bodegaId, mixed $materialId): string
+    {
+        if (! is_numeric($bodegaId) || ! is_numeric($materialId)) {
+            return '0';
+        }
+
+        $cantidad = Existencia::query()
+            ->where('bodega_id', (int) $bodegaId)
+            ->where('material_id', (int) $materialId)
+            ->value('cantidad');
+
+        return is_numeric($cantidad) ? (string) $cantidad : '0';
+    }
+
+    /**
+     * "Pide 100 · hay 40" con el color del veredicto: verde si alcanza,
+     * ámbar si hay pero no alcanza, rojo si no hay nada.
+     */
+    private static function insigniaDisponibilidad(string $pendiente, string $existencia): HtmlString
+    {
+        $alcanza = bccomp($existencia, $pendiente, 4) >= 0;
+        $hayAlgo = bccomp($existencia, '0', 4) > 0;
+
+        [$color, $fondo, $borde] = match (true) {
+            $alcanza => ['#166534', '#f0fdf4', '#bbf7d0'],
+            $hayAlgo => ['#92400e', '#fffbeb', '#fde68a'],
+            default  => ['#991b1b', '#fef2f2', '#fecaca'],
+        };
+
+        return new HtmlString(
+            '<div style="display:inline-flex;flex-direction:column;gap:.125rem;padding:.3rem .55rem;border-radius:.4rem;'
+            ."font-size:.75rem;line-height:1.3;color:{$color};background:{$fondo};border:1px solid {$borde}\">"
+            .'<span>Pide <strong>'.e(Cantidad::sinCeros($pendiente)).'</strong></span>'
+            .'<span>Hay <strong>'.e(Cantidad::sinCeros($existencia)).'</strong>'
+            .($alcanza ? ' ✓' : ($hayAlgo ? ' — no alcanza' : ' — no hay')).'</span></div>'
+        );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function bodegasDelUsuario(): array
+    {
+        $query = Bodega::query()->where('activo', true)->orderBy('nombre');
+
+        // El usuario solo despacha desde SUS bodegas (Fase 2).
+        $user = auth()->user();
+
+        if ($user instanceof User) {
+            $query->visibleParaUsuario($user);
+        }
+
+        /** @var array<int, string> $bodegas */
+        $bodegas = $query->pluck('nombre', 'id')->all();
+
+        return $bodegas;
+    }
+
+    private static function bodegaPorDefecto(): ?int
+    {
+        $ids = array_keys(self::bodegasDelUsuario());
+
+        return $ids === [] ? null : (int) $ids[0];
     }
 
     /**
@@ -465,10 +718,6 @@ final class AccionesTransicion
     }
 
     /**
-     * Id del usuario autenticado normalizado a ?int (el contrato de Auth
-     * devuelve int|string|null; nuestros usuarios usan id entero).
-     */
-    /**
      * ¿El usuario tiene este permiso del flujo? (pestaña Personalizados
      * de Roles — todo administrable desde el panel, nunca por rol fijo).
      */
@@ -535,10 +784,17 @@ final class AccionesTransicion
             return false;
         }
 
-        return $user->hasAnyRole([Roles::GERENCIA, Utils::getSuperAdminName()])
-            || $record->proyecto->esEncargado($user);
+        if ($user->hasAnyRole([Roles::GERENCIA, Utils::getSuperAdminName()])) {
+            return true;
+        }
+
+        return $record->proyecto->esEncargado($user);
     }
 
+    /**
+     * Id del usuario autenticado normalizado a ?int (el contrato de Auth
+     * devuelve int|string|null; nuestros usuarios usan id entero).
+     */
     private static function userId(): ?int
     {
         $id = auth()->id();

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 
 /**
  * Consumo de combustible de una máquina en una obra (vía su asignación).
@@ -26,6 +27,8 @@ use Illuminate\Support\Facades\DB;
  * @property string $precio_litro
  * @property string $costo_cache
  * @property string|null $operador
+ * @property int|null $operador_id
+ * @property-read Operador|null $operadorRegistrado
  * @property string|null $notas
  * @property int|null $user_id
  * @property Carbon|null $created_at
@@ -52,6 +55,7 @@ class ConsumoCombustible extends Model
         'precio_litro',
         'costo_cache',
         'operador',
+        'operador_id',
         'notas',
         'user_id',
     ];
@@ -59,6 +63,7 @@ class ConsumoCombustible extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -71,6 +76,7 @@ class ConsumoCombustible extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (ConsumoCombustible $consumo): void {
@@ -112,6 +118,18 @@ class ConsumoCombustible extends Model
     }
 
     // ─── Relaciones ────────────────────────────────────────────────
+
+    /**
+     * El operador del catálogo, cuando se eligió de la lista. El campo
+     * `operador` guarda igual el NOMBRE tal cual quedó ese día: si a la
+     * persona la renombran después, la historia no se reescribe.
+     *
+     * @return BelongsTo<Operador, $this>
+     */
+    public function operadorRegistrado(): BelongsTo
+    {
+        return $this->belongsTo(Operador::class, 'operador_id');
+    }
 
     /**
      * @return BelongsTo<AsignacionMaquina, $this>

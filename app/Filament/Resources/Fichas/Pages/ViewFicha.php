@@ -7,11 +7,13 @@ namespace App\Filament\Resources\Fichas\Pages;
 use App\Filament\Resources\Fichas\FichaResource;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
+use Override;
 
 class ViewFicha extends ViewRecord
 {
     protected static string $resource = FichaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

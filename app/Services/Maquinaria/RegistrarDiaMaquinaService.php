@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Maquinaria;
 
 use App\Enums\EstadoAsignacion;
+use App\Enums\ModalidadTrabajo;
 use App\Exceptions\Maquinaria\MaquinariaException;
 use App\Models\AsignacionMaquina;
 use App\Models\ConsumoCombustible;
@@ -25,20 +26,27 @@ use App\Models\ParteTrabajo;
  * resto se registra igual (con 30 máquinas, abortar todo por una fila
  * sería contraproducente).
  */
-final class RegistrarDiaMaquinaService
+final readonly class RegistrarDiaMaquinaService
 {
     public function __construct(
-        private readonly RegistrarParteService $partes,
-        private readonly RegistrarConsumoCombustibleService $combustible,
+        private RegistrarParteService $partes,
+        private RegistrarConsumoCombustibleService $combustible,
     ) {}
 
     /**
      * Registra el día completo. Filas sin horas NI litros se ignoran
      * (la máquina no trabajó — el hueco del calendario lo dice).
      *
+     * La MODALIDAD viaja en la fila (decisión Mauricio 2026-08-16): sin
+     * ella el parte nacía siempre en 'horas' y una renta por viajes o
+     * por km cobraba 0 de excedente, además de dejar el kilometraje de
+     * la máquina congelado.
+     *
      * @param list<array<string, mixed>> $filas Cada fila: asignacion_id,
      *                                          horas, motivo_extra, litros,
-     *                                          precio_litro, operador.
+     *                                          precio_litro, operador,
+     *                                          operador_id, modalidad, viajes,
+     *                                          km_recorridos, actividad.
      *
      * @return array{partes: int, consumos: int, saltados: list<string>}
      */
@@ -57,9 +65,9 @@ final class RegistrarDiaMaquinaService
             }
 
             $etiqueta = $asignacion->maquina->nombre;
-            $horas = self::numero($fila['horas'] ?? null);
-            $litros = self::numero($fila['litros'] ?? null);
-            $precioLitro = self::numero($fila['precio_litro'] ?? null);
+            $horas = $this->numero($fila['horas'] ?? null);
+            $litros = $this->numero($fila['litros'] ?? null);
+            $precioLitro = $this->numero($fila['precio_litro'] ?? null);
 
             if ($horas !== null) {
                 try {
@@ -67,9 +75,14 @@ final class RegistrarDiaMaquinaService
                         asignacion: $asignacion,
                         horas: $horas,
                         fecha: $fecha,
-                        motivoHorasExtra: self::texto($fila['motivo_extra'] ?? null),
-                        operador: self::texto($fila['operador'] ?? null),
+                        motivoHorasExtra: $this->texto($fila['motivo_extra'] ?? null),
+                        operador: $this->texto($fila['operador'] ?? null),
                         userId: $userId,
+                        modalidad: $this->modalidad($fila['modalidad'] ?? null),
+                        kmRecorridos: $this->numero($fila['km_recorridos'] ?? null),
+                        viajes: $this->entero($fila['viajes'] ?? null),
+                        actividad: $this->texto($fila['actividad'] ?? null),
+                        operadorId: $this->entero($fila['operador_id'] ?? null),
                     );
                     $partes++;
                 } catch (MaquinariaException $e) {
@@ -90,7 +103,8 @@ final class RegistrarDiaMaquinaService
                         litros: $litros,
                         precioLitro: $precioLitro,
                         fecha: $fecha,
-                        operador: self::texto($fila['operador'] ?? null),
+                        operador: $this->texto($fila['operador'] ?? null),
+                        operadorId: $this->entero($fila['operador_id'] ?? null),
                         userId: $userId,
                     );
                     $consumos++;
@@ -114,7 +128,9 @@ final class RegistrarDiaMaquinaService
     public function filasDelDia(string $fecha): array
     {
         $asignaciones = AsignacionMaquina::query()
-            ->with(['maquina:id,nombre', 'proyecto:id,nombre'])
+            // operador_habitual_id VA en el select: sin él la fila del día
+            // nacería sin operador aunque la máquina tenga uno fijo.
+            ->with(['maquina:id,nombre,operador_habitual_id', 'proyecto:id,nombre'])
             ->where('estado', EstadoAsignacion::Activa->value)
             ->get()
             ->sortBy(fn (AsignacionMaquina $a): string => $a->maquina->nombre)
@@ -156,7 +172,8 @@ final class RegistrarDiaMaquinaService
                 'precio_litro'  => $ultimoPrecio,
                 'motivo_extra'  => null,
                 'operador'      => null,
-                'ya_registrado' => $marcas === [] ? '' : implode(' · ', $marcas),
+                'operador_id'   => $a->maquina->operador_habitual_id,
+                'ya_registrado' => implode(' · ', $marcas),
             ];
         })->all());
     }
@@ -180,12 +197,32 @@ final class RegistrarDiaMaquinaService
             : null;
     }
 
-    private static function texto(mixed $valor): ?string
+    /**
+     * Con qué unidad se cobra el día. Sin dato: horas — el default
+     * histórico de la captura y de la mayoría de las máquinas.
+     */
+    private function modalidad(mixed $valor): ModalidadTrabajo
+    {
+        if ($valor instanceof ModalidadTrabajo) {
+            return $valor;
+        }
+
+        return is_string($valor)
+            ? ModalidadTrabajo::tryFrom($valor) ?? ModalidadTrabajo::Horas
+            : ModalidadTrabajo::Horas;
+    }
+
+    private function entero(mixed $valor): ?int
+    {
+        return is_numeric($valor) && (int) $valor > 0 ? (int) $valor : null;
+    }
+
+    private function texto(mixed $valor): ?string
     {
         return is_string($valor) && trim($valor) !== '' ? $valor : null;
     }
 
-    private static function numero(mixed $valor): ?string
+    private function numero(mixed $valor): ?string
     {
         if ($valor === null || $valor === '' || ! is_numeric($valor)) {
             return null;

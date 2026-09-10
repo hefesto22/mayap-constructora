@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Filament\Widgets;
 
+use App\Enums\EstadoProyecto;
 use App\Enums\NivelPresupuesto;
 use App\Filament\Support\CostoObra;
 use App\Models\Proyecto;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Override;
 
 /**
  * Resumen de obras según el consumo de su presupuesto. Es la alerta que pidió
@@ -24,13 +26,18 @@ class ObrasPresupuestoWidget extends StatsOverviewWidget
     /**
      * @return array<int, Stat>
      */
+    #[Override]
     protected function getStats(): array
     {
         $sano = 0;
         $riesgo = 0;
         $sobregirado = 0;
 
+        // Obras VIVAS con presupuesto (2026-08-16): sin el filtro de
+        // estado el KPI contaba cotizaciones nunca aprobadas y obras
+        // cerradas — "Obras sanas: 43" con 3 obras reales.
         Proyecto::query()
+            ->whereIn('estado', [EstadoProyecto::EnEjecucion->value, EstadoProyecto::Pausada->value])
             ->where('subtotal_cache', '>', 0)
             ->get()
             ->each(function (Proyecto $proyecto) use (&$sano, &$riesgo, &$sobregirado): void {

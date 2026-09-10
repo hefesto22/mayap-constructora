@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\AgendaMaquina;
 
+use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoProyecto;
-use App\Filament\Forms\Components\RangoFechas;
 use App\Filament\Resources\AgendaMaquina\Pages\ManageAgendaMaquina;
+use App\Filament\Resources\AgendaMaquina\Tables\AgendaMaquinaTable;
 use App\Models\AgendaMaquina;
 use App\Models\MantenimientoMaquina;
 use App\Models\Maquina;
 use App\Models\Proyecto;
 use BackedEnum;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Field;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Fieldset;
@@ -26,6 +27,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Agenda de máquina — compromisos FUTUROS por día y horas. Se crea desde
@@ -45,6 +47,7 @@ class AgendaMaquinaResource extends Resource
 
     protected static ?int $navigationSort = 5;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Maquinaria';
@@ -142,13 +145,19 @@ class AgendaMaquinaResource extends Resource
                 ->columns(1)
                 ->columnSpanFull()
                 ->schema([
-                    RangoFechas::make('fechas')
-                        ->label('Fechas')
+                    // UN SOLO DÍA: el de la llegada (Mauricio, 2026-09-04).
+                    // Agendar un rango era pedir una predicción que nunca se
+                    // cumple. La máquina queda en la obra desde que el
+                    // encargado marca que llegó hasta que marca que terminó,
+                    // así que el calendario no decide cuánto se queda.
+                    DatePicker::make('fechas')
+                        ->label('Día de llegada')
                         ->required()
-                        ->rule('array')
+                        ->native(false)
                         ->live()
-                        // Si el rango nuevo mete a una máquina ya seleccionada en
-                        // su mantenimiento, se quita sola de la selección.
+                        ->helperText('La máquina queda en esa obra hasta que el encargado registre la salida. No hay que estimar cuántos días se queda.')
+                        // Si el día elegido cae dentro de un mantenimiento de
+                        // una máquina ya seleccionada, se quita sola.
                         ->afterStateUpdated(function (mixed $state, Get $get, Set $set): void {
                             $bloqueadas = array_keys(self::bloqueosPorMantenimiento($state));
                             $seleccion = array_map(intval(...), (array) $get('maquina_ids'));
@@ -171,15 +180,6 @@ class AgendaMaquinaResource extends Resource
                                 ->required()
                                 ->helperText('A esta hora llegará el aviso de "confirma la llegada".'),
 
-                            Toggle::make('excluir_domingos')
-                                ->label('Excluir domingos')
-                                ->default(true)
-                                ->inline(false)
-                                ->visible(function (Get $get): bool {
-                                    $fechas = $get('fechas');
-
-                                    return is_array($fechas) && count($fechas) >= 2 && $fechas[0] !== $fechas[1];
-                                }),
                         ])
                         ->columnSpanFull(),
                 ]),
@@ -194,38 +194,82 @@ class AgendaMaquinaResource extends Resource
     }
 
     /**
-     * Máquinas cuyo mantenimiento TOCA el rango de fechas elegido, con la
-     * razón legible para el label ("en taller hasta el 17/07"). Memoizado
-     * por request con once(): disableOptionWhen lo consulta por cada
-     * opción del select y la query debe correr una sola vez.
+     * Máquinas con una reparación ABIERTA que toca el rango elegido, con
+     * la razón legible para el label ("en taller desde el 17/07").
+     * Memoizado por request con once(): disableOptionWhen lo consulta por
+     * cada opción del select y la query debe correr una sola vez.
+     *
+     * Solo bloquea el mantenimiento EN PROCESO — misma regla que el
+     * calendario: compromisos, no historia. Antes miraba el rango de
+     * CUALQUIER mantenimiento, así que el día en que la reparación se
+     * cerraba (fecha_fin = hoy) la máquina ya estaba Disponible pero
+     * seguía saliendo "en taller" y deshabilitada (2026-08-16). El
+     * rango sigue mandando dentro de las abiertas: con salida prevista
+     * bloquea hasta ese día, no para siempre.
      *
      * @return array<int, string> [maquina_id => razón]
      */
+    /**
+     * Normaliza lo que llega del formulario a [desde, hasta].
+     *
+     * Desde 2026-09-04 el campo es UN día (el de la llegada), pero se sigue
+     * aceptando el array de dos fechas para no romper llamadas viejas ni el
+     * drag del calendario.
+     *
+     * @return array{0: string|null, 1: string|null}
+     */
+    private static function rangoDe(mixed $fechas): array
+    {
+        if (is_string($fechas) && $fechas !== '') {
+            return [$fechas, $fechas];
+        }
+
+        if (is_array($fechas) && is_string($fechas[0] ?? null)) {
+            return [$fechas[0], is_string($fechas[1] ?? null) ? $fechas[1] : $fechas[0]];
+        }
+
+        return [null, null];
+    }
+
     public static function bloqueosPorMantenimiento(mixed $fechas): array
     {
-        if (! is_array($fechas) || ! is_string($fechas[0] ?? null)) {
+        [$desde, $hasta] = self::rangoDe($fechas);
+
+        if ($desde === null || $hasta === null) {
             return [];
         }
 
-        $desde = $fechas[0];
-        $hasta = is_string($fechas[1] ?? null) ? $fechas[1] : $desde;
-
         return once(fn (): array => MantenimientoMaquina::query()
+            ->where('estado', EstadoMantenimiento::EnProceso->value)
             ->whereDate('fecha_inicio', '<=', $hasta)
             ->where(fn (Builder $q) => $q->whereNull('fecha_fin')->orWhereDate('fecha_fin', '>=', $desde))
-            ->get(['maquina_id', 'fecha_inicio', 'fecha_fin'])
+            ->get(['maquina_id', 'fecha_inicio', 'fecha_fin', 'en_sitio'])
             ->groupBy('maquina_id')
             ->map(function ($mantenimientos): string {
-                $abierto = $mantenimientos->firstWhere('fecha_fin', null);
+                // ABIERTA = la que NO tiene fecha de salida. La condición
+                // estaba invertida (firstWhere('fecha_fin') devuelve la que
+                // SÍ la tiene): con una reparación de verdad abierta
+                // —justo lo que dejan las reparaciones en sitio— caía al
+                // max() de una columna toda nula y reventaba.
+                $abierta = $mantenimientos->first(
+                    fn (MantenimientoMaquina $m): bool => $m->fecha_fin === null,
+                );
 
-                if ($abierto !== null) {
-                    return 'en taller desde el '.$abierto->fecha_inicio->format('d/m').' (sin fecha de salida)';
+                if ($abierta !== null) {
+                    // En sitio la máquina NO está en el taller: está
+                    // parada en la obra esperando su repuesto.
+                    return $abierta->en_sitio
+                        ? 'averiada en obra desde el '.$abierta->fecha_inicio->format('d/m').' (esperando reparación)'
+                        : 'en taller desde el '.$abierta->fecha_inicio->format('d/m').' (sin fecha de salida)';
                 }
 
-                /** @var Carbon $fin */
+                // Reparación EN PROCESO con salida prevista: bloquea
+                // hasta ese día, no para siempre.
                 $fin = $mantenimientos->max('fecha_fin');
 
-                return 'en taller hasta el '.$fin->format('d/m');
+                return $fin instanceof Carbon
+                    ? 'en taller hasta el '.$fin->format('d/m')
+                    : 'en taller (sin fecha de salida)';
             })
             ->all());
     }
@@ -241,12 +285,11 @@ class AgendaMaquinaResource extends Resource
      */
     public static function compromisosPorAgenda(mixed $fechas): array
     {
-        if (! is_array($fechas) || ! is_string($fechas[0] ?? null)) {
+        [$desde, $hasta] = self::rangoDe($fechas);
+
+        if ($desde === null || $hasta === null) {
             return [];
         }
-
-        $desde = $fechas[0];
-        $hasta = is_string($fechas[1] ?? null) ? $fechas[1] : $desde;
 
         return once(fn (): array => AgendaMaquina::query()
             ->with('proyecto:id,nombre')
@@ -284,13 +327,13 @@ class AgendaMaquinaResource extends Resource
     {
         $ids = array_values(array_filter(array_map(intval(...), $maquinaIds)));
 
-        if (count($ids) !== 1 || ! is_array($fechas) || ! is_string($fechas[0] ?? null)) {
+        [$desde, $hasta] = self::rangoDe($fechas);
+
+        if (count($ids) !== 1 || $desde === null || $hasta === null) {
             return [];
         }
 
         $maquinaId = $ids[0];
-        $desde = $fechas[0];
-        $hasta = is_string($fechas[1] ?? null) ? $fechas[1] : $desde;
 
         return once(fn (): array => AgendaMaquina::query()
             ->where('maquina_id', $maquinaId)
@@ -321,17 +364,20 @@ class AgendaMaquinaResource extends Resource
         return $opciones;
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
-        return Tables\AgendaMaquinaTable::configure($table);
+        return AgendaMaquinaTable::configure($table);
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['maquina:id,codigo,nombre', 'proyecto:id,nombre', 'user:id,name']);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -339,6 +385,7 @@ class AgendaMaquinaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['maquina.nombre', 'proyecto.nombre'];

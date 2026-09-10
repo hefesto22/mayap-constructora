@@ -9,11 +9,13 @@ use App\Filament\Resources\AsignacionesMaquina\Actions\AccionRegistrarCombustibl
 use App\Filament\Resources\AsignacionesMaquina\Actions\AccionRegistrarParte;
 use App\Filament\Resources\AsignacionesMaquina\AsignacionMaquinaResource;
 use Filament\Resources\Pages\ViewRecord;
+use Override;
 
 class ViewAsignacionMaquina extends ViewRecord
 {
     protected static string $resource = AsignacionMaquinaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

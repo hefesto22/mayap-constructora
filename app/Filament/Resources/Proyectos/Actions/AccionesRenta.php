@@ -49,7 +49,7 @@ final class AccionesRenta
             ->label('Aprobar renta')
             ->icon('heroicon-o-check-badge')
             ->color('success')
-            ->visible(fn (?Proyecto $record): bool => $record !== null
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto
                 && $record->esRenta()
                 && in_array($record->estado, [EstadoProyecto::Borrador, EstadoProyecto::Enviada], strict: true)
                 && self::puede(Permisos::INICIAR_PROYECTO))
@@ -103,7 +103,7 @@ final class AccionesRenta
             ->label('Extender renta')
             ->icon('heroicon-o-plus-circle')
             ->color('warning')
-            ->visible(fn (?Proyecto $record): bool => $record !== null
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto
                 && $record->esRenta()
                 && in_array($record->estado, [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada], strict: true)
                 && self::puede(Permisos::AJUSTAR_PLAZO_PROYECTO))
@@ -238,13 +238,13 @@ final class AccionesRenta
             return;
         }
 
-        $vigente = $proyecto === null
-            ? null
-            : ProyectoLineaRenta::query()
+        $vigente = $proyecto instanceof Proyecto
+            ? ProyectoLineaRenta::query()
                 ->where('proyecto_id', $proyecto->id)
                 ->where('maquina_id', (int) $maquinaId)
                 ->latest('id')
-                ->value('unidad');
+                ->value('unidad')
+            : null;
 
         $unidad = $vigente !== null
             ? self::unidadDe($vigente)

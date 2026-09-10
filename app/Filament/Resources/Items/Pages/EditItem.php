@@ -7,11 +7,13 @@ namespace App\Filament\Resources\Items\Pages;
 use App\Filament\Resources\Items\ItemResource;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditItem extends EditRecord
 {
     protected static string $resource = ItemResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

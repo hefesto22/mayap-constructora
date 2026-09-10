@@ -24,6 +24,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Gasto que la obra ya arrastraba ANTES de entrar al sistema.
@@ -48,6 +49,7 @@ class CostosArranqueRelationManager extends RelationManager
      * Solo obras heredadas y presupuestadas: una renta de maquinaria no
      * arrastra costo de obra, y una obra nacida en el sistema tampoco.
      */
+    #[Override]
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return $ownerRecord instanceof Proyecto
@@ -59,6 +61,7 @@ class CostosArranqueRelationManager extends RelationManager
      * Se congela cuando la obra deja de estar viva o si falta el permiso:
      * este dato toca el margen directamente.
      */
+    #[Override]
     public function isReadOnly(): bool
     {
         $owner = $this->getOwnerRecord();

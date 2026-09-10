@@ -28,6 +28,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Override;
 
 /**
  * Líneas de renta del proyecto (solo tipo renta_maquinaria): máquina ×
@@ -49,6 +50,7 @@ class LineasRentaRelationManager extends RelationManager
     /**
      * Solo visible en proyectos tipo renta.
      */
+    #[Override]
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
         return $ownerRecord instanceof Proyecto && $ownerRecord->esRenta();
@@ -58,6 +60,7 @@ class LineasRentaRelationManager extends RelationManager
      * Solo se pueden tocar líneas en Borrador; después la tabla queda
      * de solo lectura y las extensiones entran por su acción.
      */
+    #[Override]
     public function isReadOnly(): bool
     {
         $owner = $this->getOwnerRecord();
@@ -204,7 +207,7 @@ class LineasRentaRelationManager extends RelationManager
                     ->step(0.5)
                     ->minValue(0.5)
                     ->required()
-                    ->suffix(fn (Get $get): string => self::sufijoCantidad($get('unidad'))),
+                    ->suffix(fn (Get $get): string => $this->sufijoCantidad($get('unidad'))),
 
                 TextInput::make('tarifa')
                     ->label('Tarifa')
@@ -212,7 +215,7 @@ class LineasRentaRelationManager extends RelationManager
                     ->step(0.01)
                     ->minValue(0)
                     ->prefix('L')
-                    ->suffix(fn (Get $get): string => self::sufijoTarifa($get('unidad')))
+                    ->suffix(fn (Get $get): string => $this->sufijoTarifa($get('unidad')))
                     ->helperText('Se sugiere la del catálogo. Ajustable si se pactó otra.'),
 
                 DatePicker::make('fecha_llegada')
@@ -251,7 +254,7 @@ class LineasRentaRelationManager extends RelationManager
     /**
      * Sufijo del campo cantidad según la unidad elegida.
      */
-    private static function sufijoCantidad(mixed $unidad): string
+    private function sufijoCantidad(mixed $unidad): string
     {
         return (UnidadRenta::tryFrom((string) $unidad) ?? UnidadRenta::Hora)->sufijoCantidad();
     }
@@ -259,7 +262,7 @@ class LineasRentaRelationManager extends RelationManager
     /**
      * Sufijo del campo tarifa según la unidad elegida.
      */
-    private static function sufijoTarifa(mixed $unidad): string
+    private function sufijoTarifa(mixed $unidad): string
     {
         return (UnidadRenta::tryFrom((string) $unidad) ?? UnidadRenta::Hora)->sufijoTarifa();
     }

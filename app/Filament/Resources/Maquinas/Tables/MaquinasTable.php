@@ -7,10 +7,15 @@ namespace App\Filament\Resources\Maquinas\Tables;
 use App\Enums\AlertaMantenimiento;
 use App\Enums\EstadoMaquina;
 use App\Enums\TipoMaquina;
+use App\Filament\Resources\Mantenimientos\MantenimientoMaquinaResource;
 use App\Filament\Resources\Maquinas\Actions\AccionEnviarAMantenimiento;
+use App\Filament\Resources\Maquinas\Actions\AccionLiberarDeObra;
+use App\Filament\Resources\Maquinas\Actions\AccionMarcarReparada;
 use App\Filament\Resources\Maquinas\MaquinaResource;
 use App\Models\Maquina;
+use App\Models\PlanMantenimiento;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -28,9 +33,8 @@ class MaquinasTable
     {
         return $table
             // Para pintar "Trabajando · OBRA" y la alerta de mantenimiento
-            // sin N+1: el agendado de HOY confirmado y los planes viajan
-            // con cada fila.
-            ->modifyQueryUsing(fn ($query) => $query->with(['agendaHoyConfirmada.proyecto:id,nombre', 'planesMantenimiento']))
+            // sin N+1: la estadía abierta y los planes viajan con cada fila.
+            ->modifyQueryUsing(fn ($query) => $query->with(['agendaHoyConfirmada.proyecto:id,nombre', 'planesMantenimiento', 'mantenimientoEnProceso', 'asignacionActiva.proyecto:id,nombre']))
             ->columns([
                 TextColumn::make('codigo')
                     ->label('Código')
@@ -66,7 +70,7 @@ class MaquinasTable
                     ->state(function (Maquina $record): string {
                         $plan = $record->planPeorAlerta();
 
-                        if ($plan === null) {
+                        if (! $plan instanceof PlanMantenimiento) {
                             return 'Sin plan';
                         }
 
@@ -97,9 +101,10 @@ class MaquinasTable
                     ->formatStateUsing(fn (EstadoMaquina $state, Maquina $record): string => $record->trabajandoHoy()
                         ? 'Trabajando · '.Str::limit((string) $record->obraDondeTrabajaHoy(), 22)
                         : $state->getLabel())
-                    ->tooltip(fn (Maquina $record): ?string => $record->trabajandoHoy()
-                        ? 'Llegada confirmada hoy a las '.$record->agendaHoyConfirmada?->llegada_confirmada_at?->format('g:i A').' en '.$record->obraDondeTrabajaHoy()
-                        : null)
+                    ->tooltip(fn (Maquina $record): ?string => self::pistaDeEstado($record))
+                    // En mantenimiento el badge lleva AL expediente: la
+                    // máquina deja de ser un callejón sin salida.
+                    ->url(fn (Maquina $record): ?string => self::enlaceDelTaller($record))
                     ->sortable(),
                 ToggleColumn::make('activo')
                     ->label('Activa')
@@ -120,23 +125,87 @@ class MaquinasTable
                     ->trueLabel('Activas')
                     ->falseLabel('Inactivas'),
             ])
+            // Menú ⋮ fijo al final: con la tabla ancha la última acción
+            // quedaba fuera de pantalla y la máquina en el taller
+            // parecía no tener salida (corregido 2026-08-16).
             ->recordActions([
-                Action::make('hoja_de_vida')
-                    ->label('Hoja de vida')
-                    ->icon('heroicon-o-identification')
-                    ->color('gray')
-                    ->url(fn (Maquina $record): string => MaquinaResource::getUrl(
-                        'hoja-de-vida',
-                        ['record' => $record],
-                    )),
-                EditAction::make(),
-                AccionEnviarAMantenimiento::make(),
-                DeleteAction::make(),
+                ActionGroup::make([
+                    Action::make('hoja_de_vida')
+                        ->label('Hoja de vida')
+                        ->icon('heroicon-o-identification')
+                        ->color('gray')
+                        ->url(fn (Maquina $record): string => MaquinaResource::getUrl(
+                            'hoja-de-vida',
+                            ['record' => $record],
+                        )),
+                    EditAction::make(),
+                    AccionEnviarAMantenimiento::make(),
+                    AccionMarcarReparada::make(),
+                    AccionLiberarDeObra::make(),
+                    DeleteAction::make(),
+                ])
+                    ->label('Acciones')
+                    ->tooltip('Acciones'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Qué cuenta el badge de estado al pasar el mouse: la obra donde
+     * trabaja hoy, o en qué va la reparación que la tiene parada.
+     */
+    private static function pistaDeEstado(Maquina $record): ?string
+    {
+        if ($record->trabajandoHoy()) {
+            $llegada = $record->agendaHoyConfirmada?->llegada_confirmada_at;
+
+            // La estadía puede llevar días abierta: "llegó hoy a las 7"
+            // sería mentira el jueves de la máquina que llegó el lunes.
+            return $llegada?->isToday() ?? false
+                ? 'Llegada confirmada hoy a las '.$llegada->format('g:i A').' en '.$record->obraDondeTrabajaHoy()
+                : 'En '.$record->obraDondeTrabajaHoy().' desde el '.$llegada?->format('d/m/Y');
+        }
+
+        if ($record->estado === EstadoMaquina::Asignada) {
+            $asignacion = $record->asignacionActiva;
+
+            return $asignacion === null
+                ? 'Asignada sin asignación abierta — usa "Liberar de la obra" para devolverla al parque.'
+                : "{$asignacion->codigo} · en {$asignacion->proyecto->nombre} desde el {$asignacion->fecha_inicio->format('d/m/Y')}";
+        }
+
+        if ($record->estado !== EstadoMaquina::Mantenimiento) {
+            return null;
+        }
+
+        $taller = $record->mantenimientoEnProceso;
+
+        if ($taller === null) {
+            return 'En el taller sin reparación abierta — usa "Marcar como reparada" para devolverla al parque.';
+        }
+
+        return "{$taller->codigo} · en el taller desde el {$taller->fecha_inicio->format('d/m/Y')}"
+            ." · fase: {$taller->fase->getLabel()} · prioridad: {$taller->prioridad->getLabel()}";
+    }
+
+    /**
+     * El expediente de la reparación que tiene parada a la máquina (solo
+     * para quien puede verlo; misma regla que el calendario).
+     */
+    private static function enlaceDelTaller(Maquina $record): ?string
+    {
+        if ($record->estado !== EstadoMaquina::Mantenimiento || $record->mantenimientoEnProceso === null) {
+            return null;
+        }
+
+        if (! (auth()->user()?->can('View:MantenimientoMaquina') ?? false)) {
+            return null;
+        }
+
+        return MantenimientoMaquinaResource::getUrl('view', ['record' => $record->mantenimientoEnProceso]);
     }
 }

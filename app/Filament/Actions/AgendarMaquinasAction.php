@@ -28,42 +28,34 @@ final class AgendarMaquinasAction
             ->label('Agendar máquinas')
             ->icon('heroicon-o-calendar-days')
             ->modalHeading('Agendar maquinaria')
-            ->modalDescription('Compromete una o varias máquinas a una obra por un rango de días.')
+            ->modalDescription('Manda una o varias máquinas a una obra para el día que llegan. Se quedan ahí hasta que el encargado registre la salida.')
             ->modalWidth('3xl')
             ->modalSubmitActionLabel('Agendar')
             ->visible(fn (): bool => auth()->user()?->can('Create:AgendaMaquina') ?? false)
             ->schema(AgendaMaquinaResource::camposAgendar())
-            // El drag del calendario manda desde/hasta como arguments; el
-            // botón normal cae en los defaults (mañana a las 8:00, un día).
-            ->fillForm(function (array $arguments): array {
-                $desde = $arguments['desde'] ?? today()->addDay()->toDateString();
-                $hasta = $arguments['hasta'] ?? $desde;
-
-                return [
-                    'maquina_ids' => [],
-                    'proyecto_id' => null,
-                    // El drag manda el rango; un click = un solo día.
-                    'fechas' => $hasta > $desde ? [$desde, $hasta] : [$desde],
-                    // 8:00 AM: hora estándar de llegada (y del aviso
-                    // "confirma la llegada").
-                    'hora_entrada'     => '08:00',
-                    'excluir_domingos' => true,
-                    'notas'            => null,
-                ];
-            })
+            // El drag del calendario manda desde/hasta como arguments; se
+            // toma solo el PRIMER día — el de la llegada. Cuánto se queda la
+            // máquina lo decide el encargado al registrar la salida, no el
+            // calendario.
+            ->fillForm(fn (array $arguments): array => [
+                'maquina_ids' => [],
+                'proyecto_id' => null,
+                'fechas'      => $arguments['desde'] ?? today()->addDay()->toDateString(),
+                // 8:00 AM: hora estándar de llegada (y del aviso
+                // "confirma la llegada").
+                'hora_entrada' => '08:00',
+                'notas'        => null,
+            ])
             ->action(function (array $data): void {
-                /** @var list<string> $fechas */
-                $fechas = array_values((array) ($data['fechas'] ?? []));
-                $desde = $fechas[0] ?? today()->addDay()->toDateString();
-                $hasta = $fechas[1] ?? $desde;
+                $dia = is_string($data['fechas'] ?? null) && $data['fechas'] !== ''
+                    ? $data['fechas']
+                    : today()->addDay()->toDateString();
 
                 try {
                     $resultado = app(AgendarMaquinaService::class)->agendarLote(
                         maquinaIds: array_values(array_map(intval(...), (array) $data['maquina_ids'])),
                         proyectoId: (int) $data['proyecto_id'],
-                        desde: $desde,
-                        hasta: $hasta,
-                        excluirDomingos: (bool) ($data['excluir_domingos'] ?? true),
+                        dia: $dia,
                         notas: $data['notas'] ?? null,
                         userId: is_numeric(auth()->id()) ? (int) auth()->id() : null,
                         horaEntrada: Carbon::parse((string) ($data['hora_entrada'] ?? '08:00'))->format('H:i:s'),

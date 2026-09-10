@@ -102,7 +102,7 @@ final class AccionesEjecucion
             ->color('success')
             // Rentas NO: su anticipo es un COBRO contra la CxC
             // (AccionCobrarProyecto) — una sola puerta de dinero por tipo.
-            ->visible(fn (?Proyecto $record): bool => $record !== null && ! $record->esRenta() && in_array(
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && ! $record->esRenta() && in_array(
                 $record->estado,
                 [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                 strict: true,
@@ -151,7 +151,7 @@ final class AccionesEjecucion
             ->label('Ajustar plazo')
             ->icon('heroicon-o-calendar-days')
             ->color('warning')
-            ->visible(fn (?Proyecto $record): bool => $record !== null && in_array(
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && in_array(
                 $record->estado,
                 [EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                 strict: true,
@@ -263,7 +263,7 @@ final class AccionesEjecucion
             ->label('Finalizar')
             ->icon('heroicon-o-check-circle')
             ->color('success')
-            ->visible(fn (?Proyecto $record): bool => $record !== null && in_array(
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && in_array(
                 $record->estado,
                 [EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                 strict: true,
@@ -321,7 +321,7 @@ final class AccionesEjecucion
             ->label('Cancelar')
             ->icon('heroicon-o-no-symbol')
             ->color('danger')
-            ->visible(fn (?Proyecto $record): bool => $record !== null && in_array(
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && in_array(
                 $record->estado,
                 [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                 strict: true,
@@ -359,7 +359,7 @@ final class AccionesEjecucion
             ->label('Agregar gasto anterior')
             ->icon('heroicon-o-archive-box-arrow-down')
             ->color('warning')
-            ->visible(fn (?Proyecto $record): bool => $record !== null && ! $record->esRenta() && in_array(
+            ->visible(fn (?Proyecto $record): bool => $record instanceof Proyecto && ! $record->esRenta() && in_array(
                 $record->estado,
                 [EstadoProyecto::Aprobada, EstadoProyecto::EnEjecucion, EstadoProyecto::Pausada],
                 strict: true,

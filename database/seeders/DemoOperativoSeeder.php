@@ -136,7 +136,7 @@ class DemoOperativoSeeder extends Seeder
             'nombre'           => 'EXCAVADORA CAT 320',
             'marca'            => 'CATERPILLAR',
             'tarifa_hora'      => 1800,
-            'jornada_horas'    => 8,
+            'horas_dia_renta'  => 8,
             'horometro_actual' => 1200,
         ]);
 

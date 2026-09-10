@@ -20,6 +20,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 use Spatie\Activitylog\Models\Activity;
 
 class ActivityLogResource extends Resource
@@ -34,11 +35,13 @@ class ActivityLogResource extends Resource
 
     protected static ?int $navigationSort = 99;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Administración';
     }
 
+    #[Override]
     public static function canCreate(): bool
     {
         return false;
@@ -49,21 +52,25 @@ class ActivityLogResource extends Resource
      * (gestionable desde la pantalla de Roles). El super_admin pasa por
      * el Gate::before de Shield.
      */
+    #[Override]
     public static function canViewAny(): bool
     {
         return auth()->user()?->can('ViewAny:Activity') ?? false;
     }
 
+    #[Override]
     public static function canEdit($record): bool
     {
         return false;
     }
 
+    #[Override]
     public static function canDelete($record): bool
     {
         return false;
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return $table
@@ -102,7 +109,7 @@ class ActivityLogResource extends Resource
                     ->options(fn () => Activity::distinct()
                         ->whereNotNull('subject_type')
                         ->pluck('subject_type')
-                        ->mapWithKeys(fn ($type) => [$type => class_basename($type)])
+                        ->mapWithKeys(fn ($type): array => [$type => class_basename($type)])
                         ->toArray()),
                 Filter::make('created_at')
                     ->indicateUsing(function (array $data): ?string {
@@ -116,11 +123,9 @@ class ActivityLogResource extends Resource
                         DatePicker::make('from')->label('Desde'),
                         DatePicker::make('until')->label('Hasta'),
                     ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query
-                            ->when($data['from'] ?? null, fn (Builder $query, $date) => $query->whereDate('created_at', '>=', $date))
-                            ->when($data['until'] ?? null, fn (Builder $query, $date) => $query->whereDate('created_at', '<=', $date));
-                    }),
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['from'] ?? null, fn (Builder $query, $date) => $query->whereDate('created_at', '>=', $date))
+                        ->when($data['until'] ?? null, fn (Builder $query, $date) => $query->whereDate('created_at', '<=', $date))),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -128,6 +133,7 @@ class ActivityLogResource extends Resource
             ->toolbarActions([]);
     }
 
+    #[Override]
     public static function infolist(Schema $schema): Schema
     {
         return $schema
@@ -176,6 +182,7 @@ class ActivityLogResource extends Resource
             ]);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [

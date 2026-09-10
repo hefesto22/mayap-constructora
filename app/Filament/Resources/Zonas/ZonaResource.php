@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Override;
 
 class ZonaResource extends Resource
 {
@@ -30,31 +31,37 @@ class ZonaResource extends Resource
 
     protected static ?int $navigationSort = 20;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Catálogos';
     }
 
+    #[Override]
     public static function getNavigationLabel(): string
     {
         return 'Zonas';
     }
 
+    #[Override]
     public static function getBreadcrumb(): string
     {
         return 'Zonas';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return ZonaForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return ZonasTable::configure($table);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -64,6 +71,7 @@ class ZonaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

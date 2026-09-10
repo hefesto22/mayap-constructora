@@ -11,11 +11,13 @@ use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ListProyectos extends ListRecords
 {
     protected static string $resource = ProyectoResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [
@@ -39,7 +41,7 @@ class ListProyectos extends ListRecords
      * La primera tab (En ejecución) es la activa por defecto.
      * El filtro de Zona en la tabla permite cruzar dimensiones.
      */
-    private const ORDEN_PRIORIDAD = [
+    private const array ORDEN_PRIORIDAD = [
         EstadoProyecto::EnEjecucion,
         EstadoProyecto::Pausada,
         EstadoProyecto::Aprobada,
@@ -51,6 +53,7 @@ class ListProyectos extends ListRecords
         EstadoProyecto::Cancelada,
     ];
 
+    #[Override]
     public function getTabs(): array
     {
         // Conteos con el MISMO scoping del listado (estados permitidos y

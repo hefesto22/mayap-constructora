@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\DB;
  * máquina es la más importante. Única puerta — deja constancia en la
  * bitácora (fecha, hora y quién) y avisa por campanita al taller.
  */
-final class CambiarPrioridadMantenimientoService
+final readonly class CambiarPrioridadMantenimientoService
 {
-    public function __construct(private readonly NotificadorMantenimiento $notificador) {}
+    public function __construct(private NotificadorMantenimiento $notificador) {}
 
     public function cambiar(
         MantenimientoMaquina $mantenimiento,

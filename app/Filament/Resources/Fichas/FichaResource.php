@@ -17,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class FichaResource extends Resource
 {
@@ -32,26 +33,31 @@ class FichaResource extends Resource
 
     protected static ?int $navigationSort = 40;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Fichas APU';
     }
 
+    #[Override]
     public static function getNavigationLabel(): string
     {
         return 'Fichas APU';
     }
 
+    #[Override]
     public static function getBreadcrumb(): string
     {
         return 'Fichas APU';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return FichaForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return FichasTable::configure($table);
@@ -65,6 +71,7 @@ class FichaResource extends Resource
      * cuando realmente se accede a la relación, así que en el listado
      * (que no toca lineas) no se penaliza.
      */
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -75,6 +82,7 @@ class FichaResource extends Resource
             ->withCount('lineas');
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -85,6 +93,7 @@ class FichaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

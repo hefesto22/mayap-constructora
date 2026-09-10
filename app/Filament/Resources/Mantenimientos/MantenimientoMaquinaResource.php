@@ -16,6 +16,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Mantenimientos de máquinas — SOLO LECTURA + acciones "Registrar avance"
@@ -38,26 +39,31 @@ class MantenimientoMaquinaResource extends Resource
 
     protected static ?int $navigationSort = 40;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Maquinaria';
     }
 
+    #[Override]
     public static function canCreate(): bool
     {
         return false;
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return MantenimientosTable::configure($table);
     }
 
+    #[Override]
     public static function infolist(Schema $schema): Schema
     {
         return MantenimientoInfolist::configure($schema);
     }
 
+    #[Override]
     public static function getRelations(): array
     {
         return [
@@ -65,12 +71,14 @@ class MantenimientoMaquinaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['maquina:id,codigo,nombre', 'asignacionSustituta:id,codigo']);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -79,6 +87,7 @@ class MantenimientoMaquinaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'maquina.nombre'];

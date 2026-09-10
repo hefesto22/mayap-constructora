@@ -115,3 +115,40 @@ test('tras reparar, la máquina se puede reasignar a una obra', function (): voi
     expect($asignacion->estado)->toBe(EstadoAsignacion::Activa)
         ->and($maquina->fresh()->estado)->toBe(EstadoMaquina::Asignada);
 });
+
+/*
+| Salida del taller desde el catálogo de Maquinaria (2026-08-16): la
+| máquina "En mantenimiento" no tenía ninguna acción que la sacara.
+*/
+
+test('marcar reparada cierra el expediente abierto y devuelve la máquina al parque', function (): void {
+    $maquina = Maquina::factory()->create();
+    $mantenimiento = $this->service->enviarAMantenimiento($maquina, motivo: 'VIBRADOR NO ENCIENDE');
+
+    $cerrado = $this->service->marcarReparada($maquina->fresh());
+
+    expect($cerrado?->id)->toBe($mantenimiento->id)
+        ->and($cerrado?->estado)->toBe(EstadoMantenimiento::Finalizado)
+        ->and($cerrado?->fecha_fin)->not->toBeNull()
+        // El cierre queda en la bitácora, igual que por la puerta vieja.
+        ->and($cerrado?->bitacoras()->count())->toBe(1)
+        ->and($maquina->fresh()->estado)->toBe(EstadoMaquina::Disponible);
+});
+
+test('marcar reparada libera la máquina aunque el estado haya quedado huérfano', function (): void {
+    // En mantenimiento SIN expediente abierto: antes quedaba trabada
+    // para siempre porque ninguna pantalla podía devolverla.
+    $maquina = Maquina::factory()->enMantenimiento()->create();
+
+    $cerrado = $this->service->marcarReparada($maquina);
+
+    expect($cerrado)->toBeNull()
+        ->and($maquina->fresh()->estado)->toBe(EstadoMaquina::Disponible);
+});
+
+test('marcar reparada rechaza una máquina que no está en el taller', function (): void {
+    $maquina = Maquina::factory()->create(['estado' => EstadoMaquina::Disponible->value]);
+
+    expect(fn () => $this->service->marcarReparada($maquina))
+        ->toThrow(MantenimientoInvalidoException::class);
+});

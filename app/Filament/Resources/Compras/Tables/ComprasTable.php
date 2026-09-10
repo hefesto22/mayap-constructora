@@ -13,8 +13,11 @@ use App\Filament\Resources\Compras\Actions\AccionFotosFactura;
 use App\Filament\Resources\Compras\Actions\AccionReprogramarLlegada;
 use App\Models\Compra;
 use App\Models\CompraLinea;
+use App\Models\Material;
 use App\Models\User;
+use App\Services\Compras\AlcanceDestinoCompra;
 use App\Services\Compras\AnularCompraService;
+use App\Services\Compras\CapturarRecepcionService;
 use App\Services\Compras\CompletarCompraService;
 use App\Services\Compras\ConfirmarCompraService;
 use App\Services\Compras\CorregirRecepcionService;
@@ -28,15 +31,19 @@ use App\Support\Roles;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Repeater\TableColumn;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
 
 class ComprasTable
 {
@@ -232,6 +239,119 @@ class ComprasTable
                             ->success()
                             ->send();
                     }),
+                // CAPTURA DE RECEPCIÓN (Mauricio 2026-09-05, extendida a
+                // obra el 2026-09-10): la compra llegó sin detalle porque
+                // quien la registró tenía 50 facturas encima. Acá lo
+                // escribe QUIEN RECIBE —el bodeguero o el encargado de la
+                // obra— con la mercadería enfrente y la foto de la factura
+                // al lado, y hasta que cuadre con el total no entra al
+                // inventario.
+                Action::make('capturar_recepcion')
+                    ->label('Anotar lo que llegó')
+                    ->icon('heroicon-o-inbox-arrow-down')
+                    ->color('warning')
+                    ->visible(function (Compra $record): bool {
+                        $user = auth()->user();
+
+                        if (! $user instanceof User || ! $record->esperandoCaptura()) {
+                            return false;
+                        }
+
+                        // Le toca a quien recibe, no a quien compró: el
+                        // bodeguero de ESA bodega o el encargado de ESA obra.
+                        return $user->can(Permisos::VERIFICAR_RECEPCION_COMPRA)
+                            && app(AlcanceDestinoCompra::class)
+                                ->alcanzaDestino($user, $record->destinoDeCabecera());
+                    })
+                    ->disabled(fn (Compra $record): bool => $record->fecha_estimada_llegada?->gt(today()) === true)
+                    ->tooltip(fn (Compra $record): ?string => $record->fecha_estimada_llegada?->gt(today()) === true
+                        ? 'El proveedor entrega el '.$record->fecha_estimada_llegada->format('d/m/Y').'.'
+                        : null)
+                    ->modalHeading(fn (Compra $record): string => $record->esDirectaAObra()
+                        ? '¿Qué llegó a la obra?'
+                        : '¿Qué llegó a bodega?')
+                    ->modalDescription('Anota material por material lo que trajeron, con el precio de la factura. Cuando la suma cuadre con el total, entra al inventario.')
+                    ->modalSubmitActionLabel('Guardar y meter a inventario')
+                    ->modalWidth('4xl')
+                    ->fillForm(fn (Compra $record): array => ['lineas' => [[]]])
+                    ->schema(fn (Compra $record): array => [
+                        Placeholder::make('factura')
+                            ->hiddenLabel()
+                            ->content(new HtmlString(
+                                '<div style="padding:.75rem 1rem;border-radius:.5rem;background:#eff6ff;border:1px solid #bfdbfe;font-size:.875rem;line-height:1.5">'
+                                .'La factura dice <strong>L. '.number_format((float) $record->totalDeclarado(), 2).'</strong>'
+                                .' · '.e($record->proveedor->nombre ?? 'proveedor')
+                                .($record->numero_factura !== null ? ' · Nº '.e($record->numero_factura) : '')
+                                .'<br><span style="color:#1e40af">Lo que anotes tiene que sumar exactamente ese total.</span></div>'
+                            ))
+                            ->columnSpanFull(),
+
+                        Repeater::make('lineas')
+                            ->hiddenLabel()
+                            ->addActionLabel('Agregar material')
+                            ->minItems(1)
+                            ->table([
+                                TableColumn::make('Material'),
+                                TableColumn::make('Cantidad'),
+                                TableColumn::make('Precio unitario'),
+                                TableColumn::make('Exento'),
+                            ])
+                            ->schema([
+                                Select::make('material_id')
+                                    ->options(fn (): array => Material::query()
+                                        ->where('activo', true)
+                                        ->orderBy('nombre')
+                                        ->pluck('nombre', 'id')
+                                        ->all())
+                                    ->searchable()
+                                    ->required(),
+
+                                TextInput::make('cantidad')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->step('any')
+                                    ->required(),
+
+                                TextInput::make('precio_factura')
+                                    ->numeric()
+                                    ->minValue(0)
+                                    ->step('any')
+                                    ->prefix('L.')
+                                    ->required(),
+
+                                Toggle::make('exento')
+                                    ->inline(false),
+                            ])
+                            ->columnSpanFull(),
+                    ])
+                    ->action(function (Compra $record, array $data): void {
+                        /** @var User $user */
+                        $user = auth()->user();
+
+                        try {
+                            app(CapturarRecepcionService::class)->capturar(
+                                $record,
+                                array_values($data['lineas'] ?? []),
+                                $user,
+                            );
+                        } catch (CompraException $e) {
+                            Notification::make()
+                                ->title('No se pudo guardar lo que llegó')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Entró a inventario')
+                            ->body("{$record->codigo}: lo anotado cuadró con la factura y la mercadería ya está en existencias.")
+                            ->success()
+                            ->send();
+                    }),
+
                 Action::make('verificar_recepcion')
                     ->label('Verificar recepción')
                     ->icon('heroicon-o-clipboard-document-check')

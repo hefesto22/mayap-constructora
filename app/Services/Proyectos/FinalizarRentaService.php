@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Proyectos;
 
+use App\Enums\ModalidadTrabajo;
 use App\Enums\UnidadRenta;
 use App\Exceptions\Proyectos\RentaInvalidaException;
 use App\Models\CuentaPorCobrar;
@@ -38,15 +39,15 @@ use Illuminate\Support\Facades\DB;
  * La transición de estado la hace CambiarEstadoEjecucionService (misma
  * máquina de estados que cualquier proyecto).
  */
-final class FinalizarRentaService
+final readonly class FinalizarRentaService
 {
     private const int SCALE = 2;
 
     private const int SCALE_INTERNO = 6;
 
     public function __construct(
-        private readonly CambiarEstadoEjecucionService $estados,
-        private readonly AjustarCuentaPorCobrarService $ajustes,
+        private CambiarEstadoEjecucionService $estados,
+        private AjustarCuentaPorCobrarService $ajustes,
     ) {}
 
     /**
@@ -101,12 +102,24 @@ final class FinalizarRentaService
 
             $maquina = $primera->maquina;
 
+            // TODAS las dimensiones que este proyecto le cobra a ESTA
+            // máquina. Un día que ya se cobra como viajes o km no vuelve
+            // a cobrarse como horas (2026-08-16): el parte registra las
+            // horas del día en TODAS las modalidades, así que sumarlas
+            // en la dimensión "horas" facturaba el mismo día dos veces.
+            $dimensionesCobradas = $lineas
+                ->map(fn (ProyectoLineaRenta $l): string => $l->unidad->dimension())
+                ->unique()
+                ->values()
+                ->all();
+
             foreach ($lineas->groupBy(fn (ProyectoLineaRenta $l): string => $l->unidad->dimension()) as $dimension => $lineasDim) {
                 [$pactadas, $reales, $tarifa] = $this->pactadoRealYTarifa(
                     (string) $dimension,
                     $lineasDim,
                     $proyecto->id,
                     (int) $maquinaId,
+                    $dimensionesCobradas,
                 );
 
                 $exceso = bccomp($reales, $pactadas, self::SCALE) > 0
@@ -147,11 +160,17 @@ final class FinalizarRentaService
      * o km) para una máquina del proyecto.
      *
      * @param Collection<int, ProyectoLineaRenta> $lineasDim
+     * @param list<string> $dimensionesCobradas Todas las dimensiones que el proyecto le cobra a esta máquina.
      *
      * @return array{0: string, 1: string, 2: string}
      */
-    private function pactadoRealYTarifa(string $dimension, Collection $lineasDim, int $proyectoId, int $maquinaId): array
-    {
+    private function pactadoRealYTarifa(
+        string $dimension,
+        Collection $lineasDim,
+        int $proyectoId,
+        int $maquinaId,
+        array $dimensionesCobradas,
+    ): array {
         $ultima = $lineasDim->sortByDesc('id')->first();
 
         if ($dimension === 'horas') {
@@ -163,7 +182,7 @@ final class FinalizarRentaService
 
             return [
                 $pactadas,
-                $this->realesDeMaquina($proyectoId, $maquinaId, 'horas'),
+                $this->realesDeMaquina($proyectoId, $maquinaId, 'horas', $dimensionesCobradas),
                 $ultima !== null ? $this->tarifaHorariaVigente($ultima) : '0.00',
             ];
         }
@@ -178,7 +197,7 @@ final class FinalizarRentaService
 
         return [
             $pactadas,
-            $this->realesDeMaquina($proyectoId, $maquinaId, $dimension),
+            $this->realesDeMaquina($proyectoId, $maquinaId, $dimension, $dimensionesCobradas),
             $ultima !== null ? (string) $ultima->tarifa_snapshot : '0.00',
         ];
     }
@@ -192,19 +211,34 @@ final class FinalizarRentaService
      * DENTRO de ese total (RegistrarParteService lo deriva restando la
      * jornada). Sumar las dos contaba doble el excedente e inflaba el
      * extra facturado al cliente — corregido el 2026-08-07.
+     *
+     * Y OJO con las horas frente a las otras dimensiones: el parte anota
+     * las horas del día en TODAS las modalidades. Si el proyecto además
+     * le cobra viajes o km a esta máquina, esos partes YA se facturan
+     * por su dimensión y sus horas quedan fuera del conteo — si no, un
+     * día de 9 h y 10 viajes se cobraba por los dos lados (2026-08-16).
+     *
+     * @param list<string> $dimensionesCobradas
      */
-    private function realesDeMaquina(int $proyectoId, int $maquinaId, string $dimension): string
+    private function realesDeMaquina(int $proyectoId, int $maquinaId, string $dimension, array $dimensionesCobradas = []): string
     {
         $partes = ParteTrabajo::query()
             ->whereHas('asignacion', static function ($query) use ($proyectoId, $maquinaId): void {
                 $query->where('proyecto_id', $proyectoId)
                     ->where('maquina_id', $maquinaId);
             })
-            ->get(['horas', 'viajes', 'km_recorridos']);
+            ->get(['horas', 'viajes', 'km_recorridos', 'modalidad']);
+
+        $otrasCobradas = array_values(array_diff($dimensionesCobradas, [$dimension]));
 
         $total = '0';
 
         foreach ($partes as $parte) {
+            if ($dimension === 'horas'
+                && in_array($this->dimensionDelParte($parte), $otrasCobradas, strict: true)) {
+                continue;
+            }
+
             $total = match ($dimension) {
                 'viajes' => bcadd($total, (string) ($parte->viajes ?? 0), self::SCALE),
                 'km'     => bcadd($total, (string) ($parte->km_recorridos ?? '0'), self::SCALE),
@@ -213,6 +247,19 @@ final class FinalizarRentaService
         }
 
         return $total;
+    }
+
+    /**
+     * En qué dimensión se factura el día de un parte. El flete se cobra
+     * por el tiempo que tomó, así que cuenta como horas.
+     */
+    private function dimensionDelParte(ParteTrabajo $parte): string
+    {
+        return match ($parte->modalidad) {
+            ModalidadTrabajo::Viajes      => 'viajes',
+            ModalidadTrabajo::Kilometraje => 'km',
+            default                       => 'horas',
+        };
     }
 
     /**
@@ -227,7 +274,7 @@ final class FinalizarRentaService
 
         $linea->loadMissing('maquina');
 
-        $jornada = (string) $linea->maquina->jornada_horas;
+        $jornada = (string) $linea->maquina->horas_dia_renta;
 
         if (bccomp($jornada, '0', self::SCALE) <= 0) {
             return (string) $linea->tarifa_snapshot;

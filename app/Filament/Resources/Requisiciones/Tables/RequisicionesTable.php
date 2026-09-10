@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Resources\Requisiciones\Tables;
 
 use App\Enums\EstadoRequisicion;
+use App\Enums\ResolucionLinea;
 use App\Filament\Resources\Requisiciones\Actions\AccionesTransicion;
 use App\Models\Requisicion;
 use Filament\Actions\EditAction;
@@ -12,12 +13,17 @@ use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class RequisicionesTable
 {
     public static function configure(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withCount([
+                'lineas as no_llegan_count' => fn ($q) => $q
+                    ->where('resolucion', ResolucionLinea::NoDisponible->value),
+            ]))
             ->columns([
                 TextColumn::make('codigo')
                     ->label('Código')
@@ -49,6 +55,21 @@ class RequisicionesTable
                     ->counts('lineas')
                     ->badge()
                     ->color('gray'),
+                // "Ese no te llega" (Mauricio 2026-09-10): la peor noticia
+                // de un pedido no puede estar escondida adentro. Se cuenta
+                // en la misma consulta — nada de una query por fila.
+                TextColumn::make('no_llegan_count')
+                    ->label('No llegan')
+                    ->badge()
+                    ->color('danger')
+                    ->icon('heroicon-o-x-circle')
+                    ->tooltip('Materiales que no se consiguieron: a la obra no le van a llegar.')
+                    // Cero no se pinta: un badge rojo con "0" asusta sin
+                    // motivo. Sin nada que reportar, la celda va vacía.
+                    ->formatStateUsing(fn (mixed $state): ?string => is_numeric($state) && (int) $state > 0
+                        ? (string) $state
+                        : null)
+                    ->placeholder('—'),
                 TextColumn::make('fecha_necesaria')
                     ->label('Necesaria')
                     ->date('d/M/Y')
@@ -107,7 +128,7 @@ class RequisicionesTable
                 AccionesTransicion::reprogramar(),
                 AccionesTransicion::registrarEntrada(),
                 AccionesTransicion::verificarLlegada(),
-                AccionesTransicion::despachar(),
+                AccionesTransicion::revisarPedido(),
                 AccionesTransicion::marcarEnTransito(),
                 AccionesTransicion::recibir(),
                 AccionesTransicion::conciliar(),

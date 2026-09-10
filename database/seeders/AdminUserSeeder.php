@@ -30,11 +30,11 @@ class AdminUserSeeder extends Seeder
      * Credenciales por defecto SOLO para desarrollo local.
      * Memorables para acelerar el setup al clonar la plantilla.
      */
-    private const DEFAULT_EMAIL = 'admin@gmail.com';
+    private const string DEFAULT_EMAIL = 'admin@gmail.com';
 
-    private const DEFAULT_PASSWORD = '12345678';
+    private const string DEFAULT_PASSWORD = '12345678';
 
-    private const DEFAULT_NAME = 'Administrador';
+    private const string DEFAULT_NAME = 'Administrador';
 
     public function run(): void
     {

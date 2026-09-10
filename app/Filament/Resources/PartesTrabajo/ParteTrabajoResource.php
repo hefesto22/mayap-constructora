@@ -12,6 +12,7 @@ use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Partes de trabajo — vista global SOLO LECTURA del cobro por horas de
@@ -32,21 +33,25 @@ class ParteTrabajoResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Maquinaria';
     }
 
+    #[Override]
     public static function canCreate(): bool
     {
         return false;
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return PartesTrabajoTable::configure($table);
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -57,6 +62,7 @@ class ParteTrabajoResource extends Resource
             ]);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -64,6 +70,7 @@ class ParteTrabajoResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo'];

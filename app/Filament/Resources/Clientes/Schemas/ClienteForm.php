@@ -149,7 +149,7 @@ class ClienteForm
                             ->label('Cantidad de proyectos')
                             ->disabled()
                             ->dehydrated(false)
-                            ->default(fn (?Cliente $record): string => $record !== null
+                            ->default(fn (?Cliente $record): string => $record instanceof Cliente
                                 ? (string) $record->proyectos()->count()
                                 : '—'),
 

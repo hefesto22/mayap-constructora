@@ -18,11 +18,11 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * viajes o km), listo para trabajarlo y reenviarlo. Los números salen
  * de ResumenRentaService (única fuente).
  */
-final class ResumenRentaExport implements FromArray, ShouldAutoSize, WithStyles, WithTitle
+final readonly class ResumenRentaExport implements FromArray, ShouldAutoSize, WithStyles, WithTitle
 {
     public function __construct(
-        private readonly Proyecto $proyecto,
-        private readonly ResumenRentaService $servicio,
+        private Proyecto $proyecto,
+        private ResumenRentaService $servicio,
     ) {}
 
     /**

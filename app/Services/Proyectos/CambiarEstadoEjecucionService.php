@@ -8,6 +8,7 @@ use App\Enums\EstadoProyecto;
 use App\Exceptions\Proyectos\DatosEjecucionInvalidosException;
 use App\Exceptions\Proyectos\TransicionEstadoInvalidaException;
 use App\Models\Proyecto;
+use App\Services\Maquinaria\LiberarMaquinariaDeObraService;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,8 +28,12 @@ use Illuminate\Support\Facades\DB;
  * El cambio de estado y motivos quedan auditados automáticamente por
  * el trait LogsActivity del modelo (logOnlyDirty incluye estos campos).
  */
-final class CambiarEstadoEjecucionService
+final readonly class CambiarEstadoEjecucionService
 {
+    public function __construct(
+        private LiberarMaquinariaDeObraService $maquinaria,
+    ) {}
+
     /**
      * En ejecución → Pausada. Requiere motivo.
      */
@@ -78,6 +83,9 @@ final class CambiarEstadoEjecucionService
 
                 return ['fecha_fin_real' => $fin];
             },
+            function (Proyecto $fresco): void {
+                $this->soltarMaquinaria($fresco);
+            },
         );
     }
 
@@ -111,6 +119,9 @@ final class CambiarEstadoEjecucionService
 
                 return $extra;
             },
+            function (Proyecto $fresco): void {
+                $this->soltarMaquinaria($fresco);
+            },
         );
     }
 
@@ -119,10 +130,11 @@ final class CambiarEstadoEjecucionService
      * persiste el estado destino + los campos extra calculados.
      *
      * @param Closure(Proyecto): array<string, mixed> $extras
+     * @param (Closure(Proyecto): void)|null $despues Efectos DENTRO de la misma transacción (liberar maquinaria).
      */
-    private function transicionar(Proyecto $proyecto, EstadoProyecto $destino, Closure $extras): Proyecto
+    private function transicionar(Proyecto $proyecto, EstadoProyecto $destino, Closure $extras, ?Closure $despues = null): Proyecto
     {
-        return DB::transaction(function () use ($proyecto, $destino, $extras): Proyecto {
+        return DB::transaction(function () use ($proyecto, $destino, $extras, $despues): Proyecto {
             $fresco = Proyecto::query()
                 ->lockForUpdate()
                 ->findOrFail($proyecto->id);
@@ -140,7 +152,29 @@ final class CambiarEstadoEjecucionService
                 ...$extras($fresco),
             ])->save();
 
-            return $fresco->refresh();
+            $fresco->refresh();
+
+            if ($despues instanceof Closure) {
+                $despues($fresco);
+            }
+
+            return $fresco;
         });
+    }
+
+    /**
+     * La obra cerrada suelta su maquinaria: asignaciones activas
+     * finalizadas, máquinas de vuelta al parque y agendados futuros
+     * cancelados, con campanita a quien gestiona el equipo.
+     */
+    private function soltarMaquinaria(Proyecto $proyecto): void
+    {
+        $fecha = ($proyecto->fecha_fin_real ?? Carbon::today())->toDateString();
+
+        $resumen = $this->maquinaria->liberar($proyecto, $fecha);
+
+        if ($resumen['liberadas'] !== [] || $resumen['cancelados'] > 0) {
+            $this->maquinaria->notificar($proyecto, $resumen);
+        }
     }
 }

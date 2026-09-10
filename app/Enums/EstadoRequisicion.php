@@ -36,10 +36,17 @@ use Filament\Support\Contracts\HasLabel;
  *    OrigenDespacho de la requisición (decisión Mauricio 2026-08-07, bug
  *    de REQ-2026-00005: se despachó por compra directa y aun así el
  *    sistema ofreció "Marcar en tránsito" — y alguien lo apretó).
- *  - `RequisicionCompra` es un estado INTERNO: la bodega no tenía stock,
- *    se notifica a Administración. Cuando el stock entra (vía
- *    RegistrarMovimientoService::entradaCompra) se puede Despachar.
- *    NO se acopla todavía al módulo de Compras (Fase B).
+ *  - `RequisicionCompra` es un estado INTERNO: falta comprar algo de lo
+ *    que la obra pidió, y se notifica a Administración. Cuando el stock
+ *    entra (vía RegistrarMovimientoService::entradaCompra) se puede
+ *    Despachar. NO se acopla todavía al módulo de Compras (Fase B).
+ *  - Desde 2026-09-10 el estado de la CABECERA se deduce de lo que se
+ *    decidió en cada renglón (ver ResolucionLinea y
+ *    TransicionarRequisicionService::resolverDisponibilidad): queda algo
+ *    por llegar → RequisicionCompra; nada por llegar pero algo salió →
+ *    Despachada; nada por llegar y nada salió → Rechazada. Antes bastaba
+ *    UN material sin stock para frenar el pedido completo, y la obra
+ *    esperaba el cemento que sí había por culpa de unos clavos que no.
  *  - El despacho mueve stock real bodega→obra valorado con el WAC.
  *  - En la recepción se compara cantidad_despachada vs cantidad_recibida:
  *    si cuadran → Cerrada; si no → Discrepancia (se sabe dónde y quién).

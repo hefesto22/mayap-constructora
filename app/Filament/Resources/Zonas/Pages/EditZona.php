@@ -13,6 +13,7 @@ use Filament\Actions\DeleteAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditZona extends EditRecord
 {
@@ -20,6 +21,7 @@ class EditZona extends EditRecord
 
     protected static string $resource = ZonaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

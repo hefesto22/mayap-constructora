@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -69,9 +70,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property bool $aplica_isv
  * @property string $isv_porcentaje
  * @property string|null $notas
- * @property string $subtotal_cache
- * @property string $isv_cache
- * @property string $total_cache
+ * @property numeric-string $subtotal_cache
+ * @property numeric-string $isv_cache
+ * @property numeric-string $total_cache
  * @property string|null $anticipo_monto
  * @property Carbon|null $anticipo_fecha
  * @property bool $anticipo_recibido
@@ -179,6 +180,7 @@ class Proyecto extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -250,6 +252,7 @@ class Proyecto extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (Proyecto $proyecto): void {

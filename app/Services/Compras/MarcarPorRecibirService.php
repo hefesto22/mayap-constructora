@@ -43,8 +43,34 @@ final readonly class MarcarPorRecibirService
 
         $compra->loadMissing('lineas');
 
+        // CAPTURA DIFERIDA (Mauricio 2026-09-05): la compra que va a
+        // bodega se registra SIN detalle — total de la factura y foto. Las
+        // líneas las escribe el bodeguero al recibir, que es quien tiene
+        // la mercadería enfrente. A cambio se exigen las dos cosas que
+        // hacen auditable ese vacío: el total contra el que se cuadrará y
+        // el respaldo de lo que se pidió.
         if ($compra->lineas->isEmpty()) {
-            throw CompraNoConfirmableException::sinLineas($compra->codigo);
+            if (! $compra->capturaDiferida()) {
+                throw CompraNoConfirmableException::sinLineas($compra->codigo);
+            }
+
+            if ($compra->total_factura === null || bccomp((string) $compra->total_factura, '0', 2) <= 0) {
+                throw CompraNoConfirmableException::sinTotalDeFactura($compra->codigo);
+            }
+
+            if ($compra->fotos_factura === null || $compra->fotos_factura === []) {
+                throw CompraNoConfirmableException::sinFotoDeFactura($compra->codigo);
+            }
+
+            // Y el documento fiscal, que normalmente se pide al confirmar:
+            // esta compra se CONFIRMA SOLA cuando quien recibe anote lo que
+            // llegó. Si falta, tronaría días después con el bodeguero
+            // parado frente a la mercadería y sin poder arreglarlo. Se
+            // exige acá, que es cuando alguien todavía tiene la factura en
+            // la mano.
+            if ($compra->tipo_documento_fiscal === null) {
+                throw CompraNoConfirmableException::sinDocumentoFiscal($compra->codigo);
+            }
         }
 
         // Entrega directa a obra que nace de una requisición: la fecha
@@ -67,7 +93,7 @@ final readonly class MarcarPorRecibirService
         // Destinos a obra: obra viva + material presupuestado (o permiso
         // de comprar fuera de presupuesto). Fail fast, antes de avisar.
         // Las compras libres no tienen destinos de obra que validar.
-        if (! $compra->esLibre()) {
+        if (! $compra->esLibre() && $compra->lineas->isNotEmpty()) {
             $this->destinos->validar($compra, $userId !== null ? User::find($userId) : null);
         }
 
@@ -89,7 +115,9 @@ final readonly class MarcarPorRecibirService
             $compra->save();
 
             // Campanita DENTRO de la transacción: rollback = sin avisos.
-            if ($compra->esLibre()) {
+            if ($compra->esperandoCaptura()) {
+                $this->notificador->esperandoCaptura($compra, $userId);
+            } elseif ($compra->esLibre()) {
                 $this->notificador->pedidoLibreRegistrado($compra, $userId);
             } else {
                 $this->notificador->porRecibir($compra, $userId);

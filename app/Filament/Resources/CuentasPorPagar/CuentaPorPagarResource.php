@@ -16,6 +16,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Cuentas por pagar — SOLO LECTURA + acción Abonar. La cuenta nace al
@@ -36,26 +37,31 @@ class CuentaPorPagarResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Compras';
     }
 
+    #[Override]
     public static function canCreate(): bool
     {
         return false;
     }
 
+    #[Override]
     public static function infolist(Schema $schema): Schema
     {
         return CuentaPorPagarInfolist::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return CuentasPorPagarTable::configure($table);
     }
 
+    #[Override]
     public static function getRelations(): array
     {
         return [
@@ -63,12 +69,14 @@ class CuentaPorPagarResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['compra:id,codigo', 'proveedor:id,nombre']);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -77,6 +85,7 @@ class CuentaPorPagarResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['compra.codigo', 'proveedor.nombre'];

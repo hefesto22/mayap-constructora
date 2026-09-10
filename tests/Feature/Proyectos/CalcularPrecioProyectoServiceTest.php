@@ -169,6 +169,10 @@ test('100 renglones con valores variados acumulan sin pérdida de precisión', f
     $resultado = $this->service->recalcular($proyecto);
 
     // Tolerancia de centavo por redondeos acumulados (típico en ERPs).
+    // Sin `(string)`: `Proyecto::$subtotal_cache` está anotado `numeric-string`
+    // —es una columna decimal(14,2)— y castearlo a string ANCHA el tipo, que es
+    // justo lo que `bcsub()` no acepta. PHPStan sí sabe que `(string) $float` es
+    // numérico; que `(string) $string` lo sea, no.
     $diferencia = bcsub($resultado->subtotal_cache, $totalEsperado, 2);
     expect((float) $diferencia)->toBeGreaterThanOrEqual(-0.01);
     expect((float) $diferencia)->toBeLessThanOrEqual(0.01);

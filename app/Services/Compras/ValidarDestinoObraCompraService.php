@@ -11,6 +11,7 @@ use App\Models\Compra;
 use App\Models\CompraLinea;
 use App\Models\Proyecto;
 use App\Models\User;
+use App\Services\Requisiciones\PresupuestoMaterial;
 use App\Services\Requisiciones\PresupuestoMaterialesProyectoService;
 use App\Support\Permisos;
 
@@ -82,13 +83,16 @@ final readonly class ValidarDestinoObraCompraService
                 // Solo los MATERIALES de construcción tienen presupuesto
                 // de obra: las líneas libres (gasto directo) y la
                 // herramienta/equipo (va por Maquinaria) pasan de largo.
-                if ($linea->material === null || $linea->material->categoria !== CategoriaItem::Materiales) {
+                if ($linea->material === null) {
                     continue;
                 }
 
+                if ($linea->material->categoria !== CategoriaItem::Materiales) {
+                    continue;
+                }
                 $presupuesto = $this->presupuesto->paraMaterial($obraId, $linea->material_id);
 
-                if ($presupuesto === null || bccomp($presupuesto->presupuestado, '0', 4) <= 0) {
+                if (! $presupuesto instanceof PresupuestoMaterial || bccomp($presupuesto->presupuestado, '0', 4) <= 0) {
                     throw CompraNoConfirmableException::materialNoPresupuestado(
                         $compra->codigo,
                         $linea->nombreLinea(),

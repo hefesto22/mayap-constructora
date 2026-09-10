@@ -12,6 +12,7 @@ use App\Models\MovimientoInventario;
 use App\Models\Proyecto;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
+use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
 use App\Services\Requisiciones\TransicionarRequisicionService;
@@ -213,6 +214,81 @@ test('rechazar lleva la requisición a estado terminal Rechazada', function (): 
     expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::Rechazada)
         ->and($requisicion->fresh()->estado->esTerminal())->toBeTrue();
 });
+
+// ─── Fecha necesaria vencida → reprogramar antes de autorizar ───────
+
+test('autorizar con la fecha necesaria vencida es rechazado', function (): void {
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
+    // CHECK requisiciones_fechas_coherentes: necesaria >= solicitud,
+    // así que un pedido vencido también retrodata su solicitud.
+    $requisicion->update(['fecha_solicitud' => today()->subDays(10), 'fecha_necesaria' => today()->subDays(3)]);
+
+    $this->service->autorizar($requisicion);
+})->throws(RequisicionInvalidaException::class, 'ya venció');
+
+test('la fecha necesaria de HOY todavía se puede autorizar', function (): void {
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
+    $requisicion->update(['fecha_necesaria' => today()]);
+
+    $this->service->autorizar($requisicion);
+
+    expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::Autorizada);
+});
+
+test('reprogramar actualiza la fecha y deja bitácora con responsable y motivo', function (): void {
+    $material = Material::factory()->create();
+    $usuario = User::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
+    $requisicion->update(['fecha_solicitud' => today()->subDays(10), 'fecha_necesaria' => today()->subDays(5)]);
+
+    $nueva = today()->addDays(3);
+    $this->service->reprogramar($requisicion->fresh(), $nueva, 'La obra estuvo parada por lluvia', $usuario->id);
+
+    $requisicion = $requisicion->fresh();
+    expect($requisicion->fecha_necesaria->toDateString())->toBe($nueva->toDateString())
+        // El estado NO cambia: sigue Solicitada, ahora autorizable.
+        ->and($requisicion->estado)->toBe(EstadoRequisicion::Solicitada)
+        ->and($requisicion->fechaNecesariaVencida())->toBeFalse();
+
+    $transicion = $requisicion->transiciones()->latest('id')->first();
+    expect($transicion->estado_origen)->toBe(EstadoRequisicion::Solicitada)
+        ->and($transicion->estado_destino)->toBe(EstadoRequisicion::Solicitada)
+        ->and($transicion->user_id)->toBe($usuario->id)
+        ->and($transicion->nota)->toContain('reprogramada')
+        ->and($transicion->nota)->toContain('La obra estuvo parada por lluvia');
+
+    // Y ya se puede autorizar normal.
+    $this->service->autorizar($requisicion);
+    expect($requisicion->fresh()->estado)->toBe(EstadoRequisicion::Autorizada);
+});
+
+test('reprogramar hacia una fecha pasada es rechazado', function (): void {
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
+    $requisicion->update(['fecha_solicitud' => today()->subDays(10), 'fecha_necesaria' => today()->subDays(5)]);
+
+    $this->service->reprogramar($requisicion->fresh(), today()->subDay(), 'motivo válido');
+})->throws(RequisicionInvalidaException::class, 'hoy o una fecha futura');
+
+test('reprogramar sin motivo es rechazado', function (): void {
+    $material = Material::factory()->create();
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
+    $requisicion->update(['fecha_solicitud' => today()->subDays(10), 'fecha_necesaria' => today()->subDays(5)]);
+
+    $this->service->reprogramar($requisicion->fresh(), today()->addDay(), '   ');
+})->throws(RequisicionInvalidaException::class, 'motivo');
+
+test('solo una requisición Solicitada se puede reprogramar', function (): void {
+    $material = Material::factory()->create();
+    $this->inventario->entradaCompra($material->id, $this->bodegaU, '50', '10');
+    $requisicion = crearRequisicion($this->proyecto, [['material' => $material, 'solicitada' => 10]]);
+
+    $this->service->autorizar($requisicion);
+
+    $this->service->reprogramar($requisicion->fresh(), today()->addDay(), 'ya no aplica');
+})->throws(RequisicionInvalidaException::class, 'solo una requisición Solicitada');
 
 test('cada transición registra un renglón en la bitácora con su responsable', function (): void {
     $material = Material::factory()->create();

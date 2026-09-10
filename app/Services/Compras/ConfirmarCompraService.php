@@ -233,7 +233,7 @@ final readonly class ConfirmarCompraService
 
                 // La requisición despacha lo que LLEGÓ, no lo facturado.
                 $compradoParaLaObra = $compra->lineas
-                    ->filter(fn ($linea): bool => $this->destinoDeLinea($compra, $linea)
+                    ->filter(fn (CompraLinea $linea): bool => $this->destinoDeLinea($compra, $linea)
                         ->esIgualA(Ubicacion::obra($obraRequisicion)))
                     ->groupBy('material_id')
                     ->map(fn ($lineas): string => (string) $lineas->sum(

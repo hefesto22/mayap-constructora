@@ -52,7 +52,7 @@ function montarObraConCemento(): array
     return [$proyecto, $cemento];
 }
 
-test('calcula el presupuestado desde las fichas: cantidad renglón × rendimiento', function () {
+test('calcula el presupuestado desde las fichas: cantidad renglón × rendimiento', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     $pm = app(PresupuestoMaterialesProyectoService::class)
@@ -65,7 +65,7 @@ test('calcula el presupuestado desde las fichas: cantidad renglón × rendimient
         ->and($pm->excedido())->toBeFalse();
 });
 
-test('resta lo solicitado en requisiciones del disponible', function () {
+test('resta lo solicitado en requisiciones del disponible', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     $req = Requisicion::factory()->paraProyecto($proyecto)->create();
@@ -81,7 +81,7 @@ test('resta lo solicitado en requisiciones del disponible', function () {
         ->and($pm->excedido())->toBeFalse();
 });
 
-test('la cantidad autorizada manda sobre la solicitada cuando existe', function () {
+test('la cantidad autorizada manda sobre la solicitada cuando existe', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     $req = Requisicion::factory()->paraProyecto($proyecto)->create();
@@ -100,7 +100,7 @@ test('la cantidad autorizada manda sobre la solicitada cuando existe', function 
         ->and($pm->disponible())->toBe('240.0000');
 });
 
-test('detecta el exceso cuando lo solicitado supera lo presupuestado', function () {
+test('detecta el exceso cuando lo solicitado supera lo presupuestado', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     $req = Requisicion::factory()->paraProyecto($proyecto)->create();
@@ -116,7 +116,7 @@ test('detecta el exceso cuando lo solicitado supera lo presupuestado', function 
         ->and($pm->disponible())->toBe('-50.0000');
 });
 
-test('las requisiciones rechazadas NO cuentan contra el presupuesto', function () {
+test('las requisiciones rechazadas NO cuentan contra el presupuesto', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     $rechazada = Requisicion::factory()
@@ -134,7 +134,7 @@ test('las requisiciones rechazadas NO cuentan contra el presupuesto', function (
         ->and($pm->disponible())->toBe('300.0000');
 });
 
-test('material pedido pero NO presupuestado aparece como fuera de presupuesto', function () {
+test('material pedido pero NO presupuestado aparece como fuera de presupuesto', function (): void {
     [$proyecto] = montarObraConCemento();
 
     $arena = Material::factory()->create(['nombre' => 'ARENA DE RÍO']);
@@ -152,7 +152,7 @@ test('material pedido pero NO presupuestado aparece como fuera de presupuesto', 
         ->and($pm->porcentajeComprometido())->toBe('999.99');
 });
 
-test('suma múltiples renglones y múltiples requisiciones del mismo material', function () {
+test('suma múltiples renglones y múltiples requisiciones del mismo material', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     // Segundo renglón: 50 unidades × misma ficha (3/u) = +150 presupuestado.
@@ -178,7 +178,7 @@ test('suma múltiples renglones y múltiples requisiciones del mismo material', 
         ->and($pm->disponible())->toBe('400.0000');
 });
 
-test('herramienta y equipo NO entra al presupuesto de materiales (va por Maquinaria)', function () {
+test('herramienta y equipo NO entra al presupuesto de materiales (va por Maquinaria)', function (): void {
     [$proyecto] = montarObraConCemento();
 
     // La misma ficha del proyecto consume una retroexcavadora (equipo).
@@ -204,7 +204,7 @@ test('herramienta y equipo NO entra al presupuesto de materiales (va por Maquina
     expect($presupuesto->has($retro->id))->toBeFalse();
 });
 
-test('la compra directa a obra SIN requisición cuenta contra el presupuesto', function () {
+test('la compra directa a obra SIN requisición cuenta contra el presupuesto', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     // 40 bolsas compradas directo a la obra, sin requisición previa.
@@ -226,7 +226,7 @@ test('la compra directa a obra SIN requisición cuenta contra el presupuesto', f
         ->and($pm->disponible())->toBe('260.0000');
 });
 
-test('la compra directa CON requisición no duplica el conteo', function () {
+test('la compra directa CON requisición no duplica el conteo', function (): void {
     [$proyecto, $cemento] = montarObraConCemento();
 
     // Requisición de 50 autorizada…
@@ -259,7 +259,7 @@ test('la compra directa CON requisición no duplica el conteo', function () {
         ->and($pm->disponible())->toBe('250.0000');
 });
 
-test('no mezcla materiales entre proyectos distintos', function () {
+test('no mezcla materiales entre proyectos distintos', function (): void {
     [$proyectoA, $cemento] = montarObraConCemento();
     $proyectoB = Proyecto::factory()->create();
 

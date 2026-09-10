@@ -22,11 +22,9 @@ beforeEach(function (): void {
     $this->admin = User::factory()->create(['is_active' => true]);
     $this->admin->assignRole(Utils::getSuperAdminName());
 
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 
@@ -40,7 +38,7 @@ test('ParteTrabajoResource: lista global renderiza sin error', function (): void
 });
 
 test('la acción Registrar parte (horómetro) crea el parte y avanza el horómetro', function (): void {
-    $maquina = Maquina::factory()->create(['horometro_actual' => 100, 'jornada_horas' => 8]);
+    $maquina = Maquina::factory()->create(['horometro_actual' => 100, 'horas_dia_renta' => 8]);
     $asignacion = app(AsignarMaquinaService::class)->asignar($maquina, $this->obra->id, tarifaPactada: '1500');
 
     Livewire::test(ListAsignacionesMaquina::class)
@@ -60,7 +58,7 @@ test('la acción Registrar parte (horómetro) crea el parte y avanza el horómet
 });
 
 test('la acción Registrar parte (manual) crea el parte sin tocar el horómetro', function (): void {
-    $maquina = Maquina::factory()->create(['horometro_actual' => 300, 'jornada_horas' => 8]);
+    $maquina = Maquina::factory()->create(['horometro_actual' => 300, 'horas_dia_renta' => 8]);
     $asignacion = app(AsignarMaquinaService::class)->asignar($maquina, $this->obra->id, tarifaPactada: '1000');
 
     Livewire::test(ListAsignacionesMaquina::class)

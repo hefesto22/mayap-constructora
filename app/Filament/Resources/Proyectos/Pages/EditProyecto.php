@@ -23,11 +23,13 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditProyecto extends EditRecord
 {
     protected static string $resource = ProyectoResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

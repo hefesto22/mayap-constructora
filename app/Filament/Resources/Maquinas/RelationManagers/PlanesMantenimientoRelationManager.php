@@ -24,6 +24,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Planes de mantenimiento preventivo de la máquina — "cambio de aceite
@@ -51,6 +52,7 @@ class PlanesMantenimientoRelationManager extends RelationManager
         'CAMBIO DE FILTROS',
     ];
 
+    #[Override]
     public function form(Schema $schema): Schema
     {
         $owner = $this->getOwnerRecord();
@@ -108,7 +110,7 @@ class PlanesMantenimientoRelationManager extends RelationManager
                 ->minValue(0)
                 ->step('any')
                 ->suffix('h')
-                ->default(fn (): ?string => $maquina !== null ? (string) $maquina->horometro_actual : null)
+                ->default(fn (): ?string => $maquina instanceof Maquina ? (string) $maquina->horometro_actual : null)
                 ->helperText('Lectura del reloj cuando se hizo. Por defecto: la actual.'),
 
             TextInput::make('km_ultimo_cambio')

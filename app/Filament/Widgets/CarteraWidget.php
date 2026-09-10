@@ -9,6 +9,7 @@ use App\Models\Cobro;
 use App\Models\CuentaPorCobrar;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Override;
 
 /**
  * Cartera de clientes en el Escritorio — cierra el ciclo de cobranza:
@@ -25,6 +26,7 @@ class CarteraWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Cartera de clientes';
 
+    #[Override]
     public static function canView(): bool
     {
         return auth()->user()?->can('ViewAny:CuentaPorCobrar') ?? false;
@@ -33,6 +35,7 @@ class CarteraWidget extends StatsOverviewWidget
     /**
      * @return array<int, Stat>
      */
+    #[Override]
     protected function getStats(): array
     {
         $datos = self::datos();

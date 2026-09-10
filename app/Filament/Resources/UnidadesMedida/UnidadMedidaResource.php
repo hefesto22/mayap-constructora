@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Override;
 
 class UnidadMedidaResource extends Resource
 {
@@ -30,31 +31,37 @@ class UnidadMedidaResource extends Resource
 
     protected static ?int $navigationSort = 10;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Catálogos';
     }
 
+    #[Override]
     public static function getNavigationLabel(): string
     {
         return 'Unidades de medida';
     }
 
+    #[Override]
     public static function getBreadcrumb(): string
     {
         return 'Unidades de medida';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return UnidadMedidaForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return UnidadesMedidaTable::configure($table);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -64,6 +71,7 @@ class UnidadMedidaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

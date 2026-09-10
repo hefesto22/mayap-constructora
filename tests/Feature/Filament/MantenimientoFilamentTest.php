@@ -24,11 +24,9 @@ beforeEach(function (): void {
     $this->admin = User::factory()->create(['is_active' => true]);
     $this->admin->assignRole(Utils::getSuperAdminName());
 
-    Gate::before(function ($user): ?bool {
-        return $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
-            ? true
-            : null;
-    });
+    Gate::before(fn ($user): ?bool => $user instanceof User && $user->hasRole(Utils::getSuperAdminName())
+        ? true
+        : null);
 
     $this->actingAs($this->admin);
 });
@@ -78,4 +76,23 @@ test('la acción Finalizar mantenimiento devuelve la máquina a disponible', fun
 
     expect($mantenimiento->fresh()->estado)->toBe(EstadoMantenimiento::Finalizado)
         ->and($maquina->fresh()->estado)->toBe(EstadoMaquina::Disponible);
+});
+
+test('la acción Marcar como reparada saca la máquina del taller desde Maquinaria', function (): void {
+    $maquina = Maquina::factory()->create();
+    $mantenimiento = app(MantenimientoService::class)->enviarAMantenimiento($maquina, motivo: 'VIBRADOR NO ENCIENDE');
+
+    Livewire::test(ListMaquinas::class)
+        ->callTableAction('marcar_reparada', $maquina, ['fecha_fin' => now()->toDateString()])
+        ->assertHasNoTableActionErrors();
+
+    expect($mantenimiento->fresh()->estado)->toBe(EstadoMantenimiento::Finalizado)
+        ->and($maquina->fresh()->estado)->toBe(EstadoMaquina::Disponible);
+});
+
+test('Marcar como reparada no se ofrece en una máquina que no está en el taller', function (): void {
+    $maquina = Maquina::factory()->create(['estado' => EstadoMaquina::Disponible->value]);
+
+    Livewire::test(ListMaquinas::class)
+        ->assertTableActionHidden('marcar_reparada', $maquina);
 });

@@ -42,7 +42,7 @@ final class ImageOptimizer
         string $directory,
         int $quality = 85,
     ): string {
-        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $extension = strtolower($file->getClientOriginalExtension());
 
         // SVG: vectorial, no se convierte. Se guarda tal cual.
         if ($extension === 'svg') {
@@ -80,7 +80,7 @@ final class ImageOptimizer
         string $directory,
         int $size = 64,
     ): string {
-        $extension = strtolower((string) $file->getClientOriginalExtension());
+        $extension = strtolower($file->getClientOriginalExtension());
 
         // ICO y SVG se guardan tal cual.
         if (in_array($extension, ['ico', 'svg'], true)) {

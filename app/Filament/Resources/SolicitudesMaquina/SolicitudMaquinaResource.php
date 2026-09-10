@@ -38,6 +38,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Solicitudes de maquinaria — el encargado pide "esta máquina para tal
@@ -59,6 +60,7 @@ class SolicitudMaquinaResource extends Resource
 
     protected static ?int $navigationSort = 6;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Maquinaria';
@@ -224,6 +226,7 @@ class SolicitudMaquinaResource extends Resource
             ->all()));
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return $table
@@ -399,6 +402,7 @@ class SolicitudMaquinaResource extends Resource
      * Vista de UNA solicitud — a donde aterriza la campanita: qué se
      * pidió, para cuándo, en qué quedó y quién la resolvió.
      */
+    #[Override]
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
@@ -459,6 +463,7 @@ class SolicitudMaquinaResource extends Resource
         ]);
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
@@ -474,6 +479,7 @@ class SolicitudMaquinaResource extends Resource
         return $query;
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -482,6 +488,7 @@ class SolicitudMaquinaResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'maquina.nombre', 'proyecto.nombre'];

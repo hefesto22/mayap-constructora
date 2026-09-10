@@ -7,6 +7,7 @@ namespace App\Services\Maquinaria;
 use App\Exceptions\Maquinaria\CombustibleInvalidoException;
 use App\Models\AsignacionMaquina;
 use App\Models\ConsumoCombustible;
+use App\Models\Operador;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -30,6 +31,7 @@ final class RegistrarConsumoCombustibleService
         string $precioLitro,
         ?string $fecha = null,
         ?string $operador = null,
+        ?int $operadorId = null,
         ?int $userId = null,
         ?string $notas = null,
     ): ConsumoCombustible {
@@ -37,7 +39,7 @@ final class RegistrarConsumoCombustibleService
             throw CombustibleInvalidoException::cantidadInvalida($litros);
         }
 
-        return DB::transaction(function () use ($asignacion, $litros, $precioLitro, $fecha, $operador, $userId, $notas): ConsumoCombustible {
+        return DB::transaction(function () use ($asignacion, $litros, $precioLitro, $fecha, $operador, $operadorId, $userId, $notas): ConsumoCombustible {
             $asignacionBloqueada = AsignacionMaquina::query()
                 ->whereKey($asignacion->getKey())
                 ->lockForUpdate()
@@ -55,9 +57,12 @@ final class RegistrarConsumoCombustibleService
                 'cantidad_litros'       => $litros,
                 'precio_litro'          => $precioLitro,
                 'costo_cache'           => $costo,
-                'operador'              => $operador,
-                'notas'                 => $notas,
-                'user_id'               => $userId,
+                'operador'              => $operador ?? ($operadorId !== null
+                    ? Operador::query()->whereKey($operadorId)->value('nombre')
+                    : null),
+                'operador_id' => $operadorId,
+                'notas'       => $notas,
+                'user_id'     => $userId,
             ]);
         });
     }

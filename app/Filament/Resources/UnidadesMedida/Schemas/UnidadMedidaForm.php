@@ -67,7 +67,7 @@ class UnidadMedidaForm
                                 ->schema([
                                     Placeholder::make('items_count')
                                         ->label('Items que la usan')
-                                        ->content(fn (?UnidadMedida $record): string => $record !== null
+                                        ->content(fn (?UnidadMedida $record): string => $record instanceof UnidadMedida
                                             ? (string) $record->items()->count()
                                             : '—'),
                                     Placeholder::make('creada_at')
@@ -76,7 +76,7 @@ class UnidadMedidaForm
                                     Placeholder::make('cambios_registrados')
                                         ->label('Cambios registrados')
                                         ->content(function (?UnidadMedida $record): string {
-                                            if ($record === null) {
+                                            if (! $record instanceof UnidadMedida) {
                                                 return '—';
                                             }
 

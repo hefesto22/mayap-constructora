@@ -52,7 +52,7 @@ class MaterialForm
         return Tab::make('Identificación')
             ->icon('heroicon-o-identification')
             ->schema([
-                $categoriaFija !== null
+                $categoriaFija instanceof CategoriaItem
                     ? Hidden::make('categoria')
                         ->default($categoriaFija->value)
                         ->dehydrated()
@@ -143,7 +143,7 @@ class MaterialForm
                         Placeholder::make('items_vinculados')
                             ->label('Precios por zona vinculados')
                             ->content(function (?Material $record): string {
-                                if ($record === null) {
+                                if (! $record instanceof Material) {
                                     return '—';
                                 }
 
@@ -155,7 +155,7 @@ class MaterialForm
                         Placeholder::make('cambios_registrados')
                             ->label('Cambios registrados')
                             ->content(function (?Material $record): string {
-                                if ($record === null) {
+                                if (! $record instanceof Material) {
                                     return '—';
                                 }
 

@@ -16,6 +16,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 class ItemResource extends Resource
 {
@@ -31,26 +32,31 @@ class ItemResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Catálogos';
     }
 
+    #[Override]
     public static function getNavigationLabel(): string
     {
         return 'Base de precios';
     }
 
+    #[Override]
     public static function getBreadcrumb(): string
     {
         return 'Base de precios';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return ItemForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return ItemsTable::configure($table);
@@ -59,12 +65,14 @@ class ItemResource extends Resource
     /**
      * Eager loading global del Resource — evita N+1 en el listado.
      */
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['zona:id,codigo,nombre', 'unidadMedida:id,codigo,simbolo,nombre']);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -74,6 +82,7 @@ class ItemResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

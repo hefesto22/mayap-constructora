@@ -112,7 +112,7 @@ class ZonaForm
                                 ->schema([
                                     Placeholder::make('items_count')
                                         ->label('Items en la base de precios')
-                                        ->content(fn (?Zona $record): string => $record !== null
+                                        ->content(fn (?Zona $record): string => $record instanceof Zona
                                             ? (string) $record->items()->count()
                                             : '—'),
                                     Placeholder::make('creada_at')
@@ -121,7 +121,7 @@ class ZonaForm
                                     Placeholder::make('cambios_registrados')
                                         ->label('Cambios registrados')
                                         ->content(function (?Zona $record): string {
-                                            if ($record === null) {
+                                            if (! $record instanceof Zona) {
                                                 return '—';
                                             }
 

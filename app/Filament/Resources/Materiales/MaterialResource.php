@@ -17,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Catálogo de MATERIALES físicos (ADR-0003) — el recurso único y global
@@ -41,16 +42,19 @@ class MaterialResource extends Resource
 
     protected static ?int $navigationSort = 10;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Inventario';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return MaterialForm::configure($schema, CategoriaItem::Materiales);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return MaterialsTable::configure($table, conCategoria: false);
@@ -60,6 +64,7 @@ class MaterialResource extends Resource
      * Eager loading + conteo de items (precios por zona) ligados — evita N+1
      * en el listado y permite mostrar en cuántas zonas tiene precio.
      */
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
@@ -70,6 +75,7 @@ class MaterialResource extends Resource
             ->withCount('items');
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -79,6 +85,7 @@ class MaterialResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre'];

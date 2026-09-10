@@ -27,7 +27,7 @@ beforeEach(function (): void {
 function asignacionConTarifa(AsignarMaquinaService $asignar, Proyecto $obra, float $tarifa, float $jornada = 8, float $horometro = 100): AsignacionMaquina
 {
     $maquina = Maquina::factory()->create([
-        'jornada_horas'    => $jornada,
+        'horas_dia_renta'  => $jornada,
         'horometro_actual' => $horometro,
         'estado'           => EstadoMaquina::Disponible->value,
     ]);
@@ -45,7 +45,7 @@ test('GOLDEN: parte por horómetro calcula horas, costo y avanza el horómetro',
         ->and($parte->metodo_captura)->toBe(MetodoCapturaHoras::Horometro)
         ->and($parte->horas)->toBe('8.00')
         ->and($parte->horas_extra)->toBe('0.00')
-        ->and($parte->tarifa_hora_aplicada)->toBe('1500.00')
+        ->and($parte->tarifa_aplicada)->toBe('1500.00')
         ->and($parte->costo_cache)->toBe('12000.00')
         ->and($parte->asignacion->maquina->fresh()->horometro_actual)->toBe('108.00');
 });
@@ -59,19 +59,46 @@ test('parte por horómetro usa el horómetro actual como lectura inicial por def
         ->and($parte->horas)->toBe('4.00');
 });
 
-test('las horas que exceden la jornada se marcan como extra y exigen motivo', function (): void {
+test('un día largo se registra sin pedir explicaciones: la jornada ya no manda', function (): void {
     $asignacion = asignacionConTarifa($this->asignar, $this->obra, tarifa: 1000, jornada: 8, horometro: 100);
 
-    // 100 → 110 = 10h, jornada 8 → 2h extra. Sin motivo debe fallar.
-    expect(fn () => $this->service->registrarPorHorometro($asignacion, lecturaFinal: '110'))
-        ->toThrow(ParteInvalidoException::class);
-
-    // Con motivo, pasa y registra las 2h extra.
-    $parte = $this->service->registrarPorHorometro($asignacion->fresh(), lecturaFinal: '110', motivoHorasExtra: 'TERMINAR FUNDICIÓN');
+    // 100 → 110 = 10 h de motor. Antes esto exigía "motivo de horas extra"
+    // por pasarse de la jornada de 8; desde 2026-09-04 no, porque esa jornada
+    // no era un dato real (hay días de 4 horas y días de 12) y el aviso
+    // saltaba casi todos los días hasta volverse ruido.
+    $parte = $this->service->registrarPorHorometro($asignacion, lecturaFinal: '110');
 
     expect($parte->horas)->toBe('10.00')
-        ->and($parte->horas_extra)->toBe('2.00')
+        ->and($parte->horas_motor)->toBe('10.00')
+        ->and($parte->horas_extra)->toBe('0.00')
         ->and($parte->costo_cache)->toBe('10000.00');
+});
+
+test('lo que SÍ pide explicación es el tiempo muerto alto', function (): void {
+    $asignacion = asignacionConTarifa($this->asignar, $this->obra, tarifa: 1000, jornada: 8, horometro: 100);
+
+    // El motor corrió 10 h y solo se cobran 2: 80% muerto, muy por encima del
+    // 35% que la construcción considera normal. Esta es la señal útil, porque
+    // compara contra algo real — el horómetro — y no contra una jornada
+    // inventada.
+    expect(fn () => $this->service->registrarPorHorometro(
+        $asignacion,
+        lecturaFinal: '110',
+        horasCobradas: '2',
+    ))->toThrow(ParteInvalidoException::class);
+
+    $parte = $this->service->registrarPorHorometro(
+        $asignacion->fresh(),
+        lecturaFinal: '110',
+        horasCobradas: '2',
+        motivoIdle: 'SE LLOVIO TODA LA TARDE',
+    );
+
+    expect($parte->horas_motor)->toBe('10.00')
+        ->and($parte->horas)->toBe('2.00')
+        ->and($parte->horas_muertas)->toBe('8.00')
+        // Se cobran las 2 horas productivas, no las 10 de motor.
+        ->and($parte->costo_cache)->toBe('2000.00');
 });
 
 test('el horómetro no puede retroceder', function (): void {

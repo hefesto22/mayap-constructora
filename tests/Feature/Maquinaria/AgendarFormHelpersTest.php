@@ -7,6 +7,7 @@ use App\Filament\Resources\SolicitudesMaquina\SolicitudMaquinaResource;
 use App\Models\Maquina;
 use App\Models\Proyecto;
 use App\Services\Maquinaria\AgendarMaquinaService;
+use App\Services\Maquinaria\MantenimientoService;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,21 +18,23 @@ use App\Services\Maquinaria\AgendarMaquinaService;
 | nombre de la máquina, y obra bloqueada si ya está agendada ahí ese día.
 */
 
-test('COMPROMISOS: el label del select muestra las llegadas del día (un día) o el conteo (rango)', function (): void {
+test('COMPROMISOS: el label del select muestra a qué obra llega cada máquina ese día', function (): void {
     $servicio = app(AgendarMaquinaService::class);
-    $maquina = Maquina::factory()->create();
+    $retro = Maquina::factory()->create();
+    $vibro = Maquina::factory()->create();
     $obraA = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA ALFA']);
     $obraB = Proyecto::factory()->enEjecucion()->create(['nombre' => 'OBRA BETA']);
     $fecha = today()->addDays(2)->toDateString();
 
-    $servicio->agendar($maquina->id, $obraA->id, $fecha, horaEntrada: '08:00:00');
-    $servicio->agendar($maquina->id, $obraB->id, $fecha, horaEntrada: '13:00:00');
+    // Una máquina por obra: desde 2026-09-04 la misma máquina NO se puede
+    // comprometer en dos obras, porque su estadía no tiene fecha de fin.
+    $servicio->agendar($retro->id, $obraA->id, $fecha, horaEntrada: '08:00:00');
+    $servicio->agendar($vibro->id, $obraB->id, $fecha, horaEntrada: '13:00:00');
 
     $detalle = AgendaMaquinaResource::compromisosPorAgenda([$fecha]);
 
-    expect($detalle)->toHaveKey($maquina->id)
-        ->and($detalle[$maquina->id])->toContain('llega 8:00 AM a OBRA ALFA')
-        ->and($detalle[$maquina->id])->toContain('llega 1:00 PM a OBRA BETA');
+    expect($detalle[$retro->id])->toContain('llega 8:00 AM a OBRA ALFA')
+        ->and($detalle[$vibro->id])->toContain('llega 1:00 PM a OBRA BETA');
 });
 
 test('HORAS 12H: las opciones de llegada van cada 30 min en AM/PM y guardan H:i', function (): void {
@@ -76,4 +79,47 @@ test('OBRA OCUPADA: con una máquina y un día, la obra ya agendada se bloquea e
     // Con varias máquinas no aplica (el service decide al guardar).
     $otra = Maquina::factory()->create();
     expect(AgendaMaquinaResource::obrasYaAgendadas([$fecha], [$maquina->id, $otra->id]))->toBe([]);
+});
+
+/*
+| TALLER (2026-08-16): el bloqueo lo produce la reparación ABIERTA, no la
+| historia. El día en que se cerraba la reparación la máquina ya estaba
+| Disponible pero el selector la seguía mostrando "en taller" y
+| deshabilitada, y agendar la rechazaba.
+*/
+
+test('TALLER: solo la reparación ABIERTA bloquea el selector — la finalizada hoy ya no', function (): void {
+    $servicio = app(MantenimientoService::class);
+    $enTaller = Maquina::factory()->create();
+    $reparada = Maquina::factory()->create();
+
+    $servicio->enviarAMantenimiento($enTaller, motivo: 'FALLA HIDRÁULICA');
+
+    $cerrado = $servicio->enviarAMantenimiento($reparada, motivo: 'REVISIÓN');
+    $servicio->finalizar($cerrado);
+
+    $bloqueos = AgendaMaquinaResource::bloqueosPorMantenimiento([today()->toDateString()]);
+
+    expect($bloqueos)->toHaveKey($enTaller->id)
+        ->and($bloqueos[$enTaller->id])->toContain('en taller desde el')
+        ->and($bloqueos)->not->toHaveKey($reparada->id);
+});
+
+test('TALLER: agendar el mismo día en que salió del taller ya no se rechaza', function (): void {
+    $servicio = app(MantenimientoService::class);
+    $maquina = Maquina::factory()->create();
+    $obra = Proyecto::factory()->enEjecucion()->create();
+
+    $mantenimiento = $servicio->enviarAMantenimiento($maquina, motivo: 'REVISIÓN');
+    $servicio->finalizar($mantenimiento);
+
+    $agendado = app(AgendarMaquinaService::class)->agendar(
+        $maquina->id,
+        $obra->id,
+        today()->toDateString(),
+        horaEntrada: '08:00:00',
+    );
+
+    expect($agendado->maquina_id)->toBe($maquina->id)
+        ->and($agendado->fecha->toDateString())->toBe(today()->toDateString());
 });

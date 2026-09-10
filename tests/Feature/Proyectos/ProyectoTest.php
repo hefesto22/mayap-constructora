@@ -115,30 +115,30 @@ test('mutator uppercase aplica a nombre, descripción, dirección, notas', funct
 });
 
 test('CHECK rechaza estado inválido (no en el enum)', function (): void {
-    expect(fn () => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
+    expect(fn (): bool => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
         'estado' => 'aprobado_pero_con_dudas',
     ]))->toThrow(QueryException::class);
 });
 
 test('CHECK rechaza ISV fuera de rango 0-100', function (): void {
-    expect(fn () => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
+    expect(fn (): bool => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
         'isv_porcentaje' => 150.00,
     ]))->toThrow(QueryException::class);
 
-    expect(fn () => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
+    expect(fn (): bool => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
         'isv_porcentaje' => -5.00,
     ]))->toThrow(QueryException::class);
 });
 
 test('CHECK rechaza fecha_validez anterior a fecha_emision', function (): void {
-    expect(fn () => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
+    expect(fn (): bool => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
         'fecha_emision' => '2026-05-15',
         'fecha_validez' => '2026-05-10',  // ANTES
     ]))->toThrow(QueryException::class);
 });
 
 test('CHECK rechaza aplica_isv=false con isv_porcentaje > 0', function (): void {
-    expect(fn () => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
+    expect(fn (): bool => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
         'aplica_isv'     => false,
         'isv_porcentaje' => 15.00,  // INCONSISTENTE
     ]))->toThrow(QueryException::class);
@@ -156,7 +156,7 @@ test('proyecto exento (aplica_isv=false) acepta isv_porcentaje=0', function (): 
 });
 
 test('CHECK rechaza totales negativos en cache', function (): void {
-    expect(fn () => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
+    expect(fn (): bool => insertarProyectoCrudo($this->zona->id, $this->cliente->id, [
         'subtotal_cache' => -100,
     ]))->toThrow(QueryException::class);
 });

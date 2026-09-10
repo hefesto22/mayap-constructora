@@ -19,6 +19,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Override;
 
 /**
  * Cuentas por cobrar — lo que los clientes le deben a MAYAP. Se registran a
@@ -39,26 +40,31 @@ class CuentaPorCobrarResource extends Resource
 
     protected static ?int $navigationSort = 30;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Comercial';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return CuentaPorCobrarForm::configure($schema);
     }
 
+    #[Override]
     public static function infolist(Schema $schema): Schema
     {
         return CuentaPorCobrarInfolist::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return CuentasPorCobrarTable::configure($table);
     }
 
+    #[Override]
     public static function getRelations(): array
     {
         return [
@@ -66,12 +72,14 @@ class CuentaPorCobrarResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['cliente:id,codigo,nombre', 'proyecto:id,codigo,nombre']);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -82,6 +90,7 @@ class CuentaPorCobrarResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'cliente.nombre', 'concepto'];

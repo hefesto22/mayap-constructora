@@ -43,12 +43,12 @@ test('GOLDEN: junta horas, ingresos, combustible y utilidad de TODAS sus asignac
     ParteTrabajo::factory()->create([
         'asignacion_maquina_id' => $asignacionA->id,
         'horas'                 => '10.00', 'horas_extra' => '0.00',
-        'tarifa_hora_aplicada'  => '350.00', 'costo_cache' => '3500.00',
+        'tarifa_aplicada'       => '350.00', 'costo_cache' => '3500.00',
     ]);
     ParteTrabajo::factory()->create([
         'asignacion_maquina_id' => $asignacionA->id,
         'horas'                 => '5.00', 'horas_extra' => '0.00',
-        'tarifa_hora_aplicada'  => '350.00', 'costo_cache' => '1750.00',
+        'tarifa_aplicada'       => '350.00', 'costo_cache' => '1750.00',
     ]);
     ConsumoCombustible::factory()->create([
         'asignacion_maquina_id' => $asignacionA->id,
@@ -59,7 +59,7 @@ test('GOLDEN: junta horas, ingresos, combustible y utilidad de TODAS sus asignac
     ParteTrabajo::factory()->create([
         'asignacion_maquina_id' => $asignacionB->id,
         'horas'                 => '8.00', 'horas_extra' => '0.00',
-        'tarifa_hora_aplicada'  => '300.00', 'costo_cache' => '2400.00',
+        'tarifa_aplicada'       => '300.00', 'costo_cache' => '2400.00',
     ]);
     ConsumoCombustible::factory()->create([
         'asignacion_maquina_id' => $asignacionB->id,
@@ -75,7 +75,7 @@ test('GOLDEN: junta horas, ingresos, combustible y utilidad de TODAS sus asignac
     ParteTrabajo::factory()->create([
         'asignacion_maquina_id' => $otra->id,
         'horas'                 => '99.00', 'horas_extra' => '0.00',
-        'tarifa_hora_aplicada'  => '500.00', 'costo_cache' => '49500.00',
+        'tarifa_aplicada'       => '500.00', 'costo_cache' => '49500.00',
     ]);
 
     $resumen = $this->servicio->resumen($maquina);

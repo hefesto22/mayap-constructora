@@ -14,7 +14,8 @@ use Illuminate\Support\Carbon;
 beforeEach(function (): void {
     $this->zona = Zona::factory()->create(['codigo' => 'SRC']);
     $this->cliente = Cliente::factory()->create();
-    $this->service = new CambiarEstadoEjecucionService;
+    // SIEMPRE app(): el constructor del service crece con el proyecto.
+    $this->service = app(CambiarEstadoEjecucionService::class);
 });
 
 function proyectoEnEjecucion(): Proyecto

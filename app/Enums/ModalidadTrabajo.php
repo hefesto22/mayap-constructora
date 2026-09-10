@@ -72,4 +72,41 @@ enum ModalidadTrabajo: string implements HasColor, HasIcon, HasLabel
             ->mapWithKeys(static fn (self $caso): array => [$caso->value => $caso->getLabel()])
             ->all();
     }
+
+    /**
+     * Cómo se le cobra a la obra en esta modalidad. Es la ÚNICA fuente del
+     * texto: lo usan el formulario de asignación y el error que salta cuando
+     * falta pactar la tarifa de la dimensión.
+     */
+    public function sufijoTarifa(): string
+    {
+        return match ($this) {
+            self::Horas       => 'por hora',
+            self::Kilometraje => 'por kilómetro',
+            self::Viajes      => 'por viaje',
+            self::Flete       => 'por flete',
+        };
+    }
+
+    /** Columna de la asignación donde vive la tarifa pactada de esta modalidad. */
+    public function columnaTarifaPactada(): string
+    {
+        return match ($this) {
+            self::Horas       => 'tarifa_hora_pactada',
+            self::Kilometraje => 'tarifa_km_pactada',
+            self::Viajes      => 'tarifa_viaje_pactada',
+            self::Flete       => 'tarifa_flete_pactada',
+        };
+    }
+
+    /** Columna del catálogo de la máquina que sugiere esa tarifa. */
+    public function columnaTarifaMaquina(): string
+    {
+        return match ($this) {
+            self::Horas       => 'tarifa_hora',
+            self::Kilometraje => 'tarifa_km',
+            self::Viajes      => 'tarifa_viaje',
+            self::Flete       => 'tarifa_flete',
+        };
+    }
 }

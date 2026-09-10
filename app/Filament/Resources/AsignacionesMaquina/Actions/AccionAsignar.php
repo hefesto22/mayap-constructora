@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\AsignacionesMaquina\Actions;
 
+use App\Enums\EstadoProyecto;
 use App\Exceptions\Maquinaria\AsignacionInvalidaException;
 use App\Models\Maquina;
 use App\Models\Proyecto;
@@ -62,9 +63,14 @@ final class AccionAsignar
                     })
                     ->helperText('Si no aparece una máquina, revisa que esté activa y disponible.'),
 
+                // Fuera las obras MUERTAS (2026-08-16): a una
+                // finalizada o cancelada no se le imputan horas ni
+                // combustible. Antes el selector las listaba TODAS —
+                // maquinaria era la única puerta sin esta regla.
                 Select::make('proyecto_id')
                     ->label('Obra')
                     ->options(fn (): array => Proyecto::query()
+                        ->whereNotIn('estado', EstadoProyecto::terminales())
                         ->orderBy('nombre')
                         ->get()
                         ->mapWithKeys(fn (Proyecto $p): array => [

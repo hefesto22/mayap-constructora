@@ -39,11 +39,11 @@ use Throwable;
  *
  * El actor de la transición nunca se auto-notifica.
  */
-final class NotificadorRequisiciones
+final readonly class NotificadorRequisiciones
 {
     public function __construct(
-        private readonly PresupuestoMaterialesProyectoService $presupuesto,
-        private readonly EnviarWhatsAppService $whatsapp,
+        private PresupuestoMaterialesProyectoService $presupuesto,
+        private EnviarWhatsAppService $whatsapp,
     ) {}
 
     // ─── Llegada del material comprado (seguimiento para la obra) ──────
@@ -143,7 +143,7 @@ final class NotificadorRequisiciones
             titulo: 'Hoy llega material a tu obra',
             actorId: null,
             detalle: $detalle,
-            urlAccion: self::urlDeLaCompra($compra),
+            urlAccion: $this->urlDeLaCompra($compra),
             labelAccion: 'Verificar recepción',
         );
 
@@ -172,7 +172,7 @@ final class NotificadorRequisiciones
                 $compra->codigo,
                 $compra->fecha_estimada_llegada?->format('d/m/Y') ?? '—',
             ),
-            urlAccion: self::urlDeLaCompra($compra),
+            urlAccion: $this->urlDeLaCompra($compra),
             labelAccion: 'Verificar recepción',
         );
     }
@@ -183,7 +183,7 @@ final class NotificadorRequisiciones
      * en Compras y es lo único que la obra puede tocar en ese momento.
      * Mandarla a la requisición era dejarla en una pantalla sin acción.
      */
-    private static function urlDeLaCompra(Compra $compra): string
+    private function urlDeLaCompra(Compra $compra): string
     {
         return CompraResource::getUrl('index', ['tableSearch' => $compra->codigo]);
     }
@@ -296,7 +296,7 @@ final class NotificadorRequisiciones
                 $requisicion->proyecto_id,
                 $linea->material_id,
             ))
-            ->filter(fn (?PresupuestoMaterial $pm): bool => $pm !== null && $pm->excedido())
+            ->filter(fn (?PresupuestoMaterial $pm): bool => $pm instanceof PresupuestoMaterial && $pm->excedido())
             ->map(fn (PresupuestoMaterial $pm): string => sprintf(
                 '%s: excede en %s %s',
                 $pm->materialNombre,
@@ -335,6 +335,54 @@ final class NotificadorRequisiciones
         }
 
         $this->enviar($destinatarios, $requisicion, $titulo, $actorId);
+    }
+
+    /**
+     * EL RESULTADO DE LA REVISIÓN, contado como lo entiende la obra
+     * (Mauricio 2026-09-10).
+     *
+     * El estado de la cabecera no contesta la pregunta que el encargado
+     * tiene en la cabeza: "¿me llega o no?". Este aviso sí, y separa las
+     * tres respuestas —va en camino, te lo van a comprar, ese no te
+     * llega— con el motivo de las que no llegan. Sin esto, enterarse de
+     * que un material no viene requiere entrar a buscarlo.
+     *
+     * @param array<string, string> $noLlegan "material" => motivo
+     */
+    public function resolucionDelPedido(
+        Requisicion $requisicion,
+        int $salieron,
+        int $seCompran,
+        array $noLlegan,
+        ?int $actorId = null,
+    ): void {
+        $partes = [];
+
+        if ($salieron > 0) {
+            $partes[] = $salieron.' '.($salieron === 1 ? 'material va' : 'materiales van').' en camino';
+        }
+
+        if ($seCompran > 0) {
+            $partes[] = $seCompran.' se '.($seCompran === 1 ? 'compra' : 'compran');
+        }
+
+        foreach ($noLlegan as $material => $motivo) {
+            $partes[] = "NO llega {$material} ({$motivo})";
+        }
+
+        if ($partes === []) {
+            return;
+        }
+
+        $this->enviar(
+            destinatarios: $this->solicitanteYEncargados($requisicion),
+            requisicion: $requisicion,
+            titulo: $noLlegan === []
+                ? 'Tu pedido ya fue revisado'
+                : 'Tu pedido: hay material que NO te va a llegar',
+            actorId: $actorId,
+            detalle: implode(' · ', $partes),
+        );
     }
 
     /**

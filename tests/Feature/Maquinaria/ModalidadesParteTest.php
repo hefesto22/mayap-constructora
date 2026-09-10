@@ -90,8 +90,9 @@ test('el parte de flete exige la actividad', function (): void {
     ))->toThrow(ParteInvalidoException::class, 'actividad');
 });
 
-test('el parte de flete guarda la actividad y el costo sigue siendo horas × tarifa', function (): void {
+test('el parte de flete cobra el MONTO FIJO pactado, no horas × tarifa', function (): void {
     $asignacion = asignacionActivaDeMaquina();
+    $asignacion->forceFill(['tarifa_flete_pactada' => '2500.00'])->save();
 
     $parte = $this->service->registrarManual(
         asignacion: $asignacion,
@@ -102,10 +103,12 @@ test('el parte de flete guarda la actividad y el costo sigue siendo horas × tar
 
     $parte->refresh();
 
-    $esperado = bcmul('4.00', (string) $asignacion->tarifa_hora_pactada, 2);
-
+    // El acarreo se cotiza completo: el precio ya contempla el recorrido, así
+    // que las horas del día no lo mueven. Antes se cobraba horas × tarifa
+    // horaria y un flete corto costaba lo mismo que uno de todo el día.
     expect($parte->actividad)->toBe('FLETE DE CEMENTO A LA OBRA X')
-        ->and(bccomp((string) $parte->costo_cache, $esperado, 2))->toBe(0);
+        ->and(bccomp((string) $parte->costo_cache, '2500.00', 2))->toBe(0)
+        ->and($parte->horas)->toBe('4.00');
 });
 
 test('un parte normal sigue naciendo en modalidad horas', function (): void {

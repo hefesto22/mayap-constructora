@@ -22,9 +22,9 @@ use App\Models\PlanMantenimiento;
  * Si un plan saltó directo a vencido (máquina que trabajó mucho entre
  * pasadas), avisa UNA vez con el nivel real — no dos avisos en cadena.
  */
-final class AvisarMantenimientosService
+final readonly class AvisarMantenimientosService
 {
-    public function __construct(private readonly NotificadorMantenimiento $notificador) {}
+    public function __construct(private NotificadorMantenimiento $notificador) {}
 
     /**
      * @return int Cuántos avisos se enviaron en esta pasada.

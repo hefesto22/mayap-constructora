@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\CategoriaCompra;
 use App\Enums\CondicionPago;
 use App\Enums\EstadoCompra;
 use App\Enums\TipoDocumentoFiscal;
@@ -27,10 +28,14 @@ class CompraFactory extends Factory
     public function definition(): array
     {
         return [
-            'codigo'          => null, // auto COM-{AÑO}-#####
-            'proveedor_id'    => Proveedor::factory(),
-            'bodega_id'       => Bodega::factory(),
-            'estado'          => EstadoCompra::Borrador->value,
+            'codigo'       => null, // auto COM-{AÑO}-#####
+            'proveedor_id' => Proveedor::factory(),
+            'bodega_id'    => Bodega::factory(),
+            'estado'       => EstadoCompra::Borrador->value,
+            // Espejo del DEFAULT de la tabla: sin esto el modelo recién
+            // creado no trae categorías en memoria y todo lo que se apoya
+            // en ellas (capturaDiferida, esLibre) responde de más.
+            'categorias'      => [CategoriaCompra::Materiales->value],
             'condicion_pago'  => CondicionPago::Contado->value,
             'fecha'           => now()->startOfDay(),
             'fecha_recepcion' => null,

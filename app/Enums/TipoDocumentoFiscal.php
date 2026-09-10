@@ -39,6 +39,24 @@ enum TipoDocumentoFiscal: string implements HasColor, HasIcon, HasLabel
         };
     }
 
+    /**
+     * ¿Este documento traslada ISV? (Mauricio, 2026-09-10: "factura es lo
+     * único que lleva ISV, los otros no").
+     *
+     * Solo la factura. El recibo por honorarios y la boleta de compra
+     * documentan operaciones que no trasladan el impuesto, y "ninguno" no
+     * es documento.
+     *
+     * OJO: que PUEDA trasladarlo no obliga. Hay facturas exentas y de
+     * régimen simplificado, así que el formulario enciende el ISV solo
+     * pero deja apagarlo — esto responde "qué es lo normal", no "qué es
+     * lo único posible".
+     */
+    public function trasladaIsv(): bool
+    {
+        return $this === self::Factura;
+    }
+
     public function getColor(): string
     {
         return match ($this) {

@@ -46,7 +46,7 @@ test('lo YA trabajado no se pinta: el parte de trabajo no genera evento', functi
         'horas'                 => '8.00',
         'horas_extra'           => '2.00',
         'motivo_horas_extra'    => 'TERMINAR TRAMO DE ZANJA', // CHECK: extra exige motivo
-        'tarifa_hora_aplicada'  => '350.00',
+        'tarifa_aplicada'       => '350.00',
         'costo_cache'           => '3500.00',
     ]);
 
@@ -178,7 +178,7 @@ test('el azul agendado DESAPARECE cuando ya existe el parte real de ese día (pl
         'asignacion_maquina_id' => $asignacion->id,
         'fecha'                 => '2026-07-15',
         'horas'                 => '7.50', 'horas_extra' => '0.00',
-        'tarifa_hora_aplicada'  => '350.00', 'costo_cache' => '2625.00',
+        'tarifa_aplicada'       => '350.00', 'costo_cache' => '2625.00',
     ]);
 
     $azules = array_filter(
@@ -274,7 +274,7 @@ test('la asignación FINALIZADA de un solo día con parte ya registrado se OCULT
         'fecha'                 => '2026-07-10',
         'horas'                 => '6.00',
         'horas_extra'           => '0.00',
-        'tarifa_hora_aplicada'  => '350.00',
+        'tarifa_aplicada'       => '350.00',
         'costo_cache'           => '2100.00',
     ]);
 

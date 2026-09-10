@@ -11,6 +11,7 @@ use App\Models\Zona;
 use App\Services\Catalogos\ClonarItemsEntreZonas;
 use App\Services\Fichas\DuplicarFichaAOtraZona;
 use Filament\Resources\Pages\CreateRecord;
+use Override;
 
 class CreateZona extends CreateRecord
 {
@@ -41,6 +42,7 @@ class CreateZona extends CreateRecord
      *
      * @return array<string, mixed>
      */
+    #[Override]
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         if (isset($data['zona_origen_id']) && $data['zona_origen_id'] !== null && $data['zona_origen_id'] !== '') {

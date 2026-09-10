@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\EstadoAsignacion;
+use App\Enums\EstadoMantenimiento;
 use App\Enums\EstadoMaquina;
 use App\Enums\ModalidadTrabajo;
 use App\Enums\TipoMaquina;
@@ -14,11 +16,13 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -43,11 +47,16 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string|null $modelo
  * @property int|null $anio
  * @property string|null $serie
- * @property string $horometro_actual
+ * @property numeric-string $horometro_actual
  * @property string|null $kilometraje_actual
  * @property string $tarifa_hora
- * @property string $jornada_horas
+ * @property numeric-string $horas_dia_renta
+ * @property numeric-string|null $tarifa_dia
+ * @property numeric-string|null $tarifa_semana
+ * @property numeric-string|null $tarifa_mes
+ * @property numeric-string|null $tarifa_flete
  * @property ModalidadTrabajo $modalidad_trabajo
+ * @property int|null $operador_habitual_id
  * @property string|null $tarifa_viaje
  * @property string|null $tarifa_km
  * @property EstadoMaquina $estado
@@ -56,7 +65,10 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
+ * @property-read Operador|null $operadorHabitual
  * @property-read AgendaMaquina|null $agendaHoyConfirmada
+ * @property-read AsignacionMaquina|null $asignacionActiva
+ * @property-read MantenimientoMaquina|null $mantenimientoEnProceso
  * @property-read Collection<int, PlanMantenimiento> $planesMantenimiento
  */
 class Maquina extends Model
@@ -92,7 +104,13 @@ class Maquina extends Model
         'horometro_actual',
         'kilometraje_actual',
         'tarifa_hora',
-        'jornada_horas',
+        'horas_dia_renta',
+        'litros_por_hora',
+        'operador_habitual_id',
+        'tarifa_dia',
+        'tarifa_semana',
+        'tarifa_mes',
+        'tarifa_flete',
         'modalidad_trabajo',
         'tarifa_viaje',
         'tarifa_km',
@@ -104,6 +122,7 @@ class Maquina extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -114,7 +133,12 @@ class Maquina extends Model
             'horometro_actual'   => 'decimal:2',
             'kilometraje_actual' => 'decimal:2',
             'tarifa_hora'        => 'decimal:2',
-            'jornada_horas'      => 'decimal:2',
+            'horas_dia_renta'    => 'decimal:2',
+            'litros_por_hora'    => 'decimal:2',
+            'tarifa_dia'         => 'decimal:2',
+            'tarifa_semana'      => 'decimal:2',
+            'tarifa_mes'         => 'decimal:2',
+            'tarifa_flete'       => 'decimal:2',
             'tarifa_viaje'       => 'decimal:2',
             'tarifa_km'          => 'decimal:2',
             'activo'             => 'boolean',
@@ -126,7 +150,8 @@ class Maquina extends Model
         return LogOptions::defaults()
             ->logOnly([
                 'codigo', 'nombre', 'tipo', 'marca', 'modelo', 'anio', 'serie',
-                'horometro_actual', 'kilometraje_actual', 'tarifa_hora', 'jornada_horas',
+                'horometro_actual', 'kilometraje_actual', 'tarifa_hora', 'horas_dia_renta',
+                'tarifa_dia', 'tarifa_semana', 'tarifa_mes', 'tarifa_flete',
                 'modalidad_trabajo', 'tarifa_viaje', 'tarifa_km', 'estado', 'activo',
             ])
             ->logOnlyDirty()
@@ -136,6 +161,7 @@ class Maquina extends Model
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (Maquina $maquina): void {
@@ -219,16 +245,19 @@ class Maquina extends Model
     // ─── Trabajando hoy (estado VISUAL, no del ciclo de vida) ──────
 
     /**
-     * El agendado de HOY con llegada confirmada y SIN salida — la
-     * evidencia de que la máquina está trabajando en una obra AHORA
-     * (cuando el encargado confirma que terminó, deja de contar).
+     * La ESTADÍA ABIERTA: el agendado con llegada confirmada y sin
+     * salida — la evidencia de que la máquina está en una obra AHORA.
+     *
+     * SIN filtro de fecha (2026-09-05): la estadía es abierta, y una
+     * máquina que llegó el lunes sigue en la obra el jueves aunque su
+     * agendado sea del lunes. Con el filtro de "hoy" toda máquina que
+     * pasara de un día se leía como si no estuviera trabajando.
      *
      * @return HasOne<AgendaMaquina, $this>
      */
     public function agendaHoyConfirmada(): HasOne
     {
         return $this->hasOne(AgendaMaquina::class)
-            ->whereDate('fecha', today())
             ->whereNotNull('llegada_confirmada_at')
             ->whereNull('salida_confirmada_at')
             ->latest('llegada_confirmada_at');
@@ -247,13 +276,76 @@ class Maquina extends Model
     }
 
     /**
-     * Nombre de la obra donde trabaja hoy (null si no está trabajando).
+     * Nombre de la obra DONDE ESTÁ la máquina (null si no está en
+     * ninguna). Vale para estadías de un día o de tres semanas.
      */
     public function obraDondeTrabajaHoy(): ?string
     {
         return $this->trabajandoHoy()
             ? $this->agendaHoyConfirmada?->proyecto->nombre
             : null;
+    }
+
+    // ─── Asignación a obra ─────────────────────────────────────────
+
+    /**
+     * Todo lo gastado en reparar esta máquina, de todas sus averías: es
+     * su historial de costo, independiente de la obra donde ocurrieron
+     * (decisión Mauricio 2026-09-05).
+     *
+     * @return HasMany<GastoMantenimiento, $this>
+     */
+    public function gastosMantenimiento(): HasMany
+    {
+        return $this->hasMany(GastoMantenimiento::class);
+    }
+
+    /**
+     * El operador habitual de esta máquina — casi siempre es el mismo
+     * señor en la misma máquina, así que el parte del día lo trae puesto
+     * (2026-09-05). Puede ser de planilla o externo; eso lo dice él.
+     *
+     * @return BelongsTo<Operador, $this>
+     */
+    public function operadorHabitual(): BelongsTo
+    {
+        return $this->belongsTo(Operador::class, 'operador_habitual_id');
+    }
+
+    /**
+     * La asignación ABIERTA de la máquina — a qué obra está comprometida
+     * y con qué tarifa. Única fuente para saber por qué está "Asignada"
+     * y la que se cierra al devolverla al parque.
+     *
+     * Null con estado Asignada = estado HUÉRFANO (obra cerrada por una
+     * vía vieja, dato migrado): "Liberar de la obra" la destraba igual.
+     *
+     * @return HasOne<AsignacionMaquina, $this>
+     */
+    public function asignacionActiva(): HasOne
+    {
+        return $this->hasOne(AsignacionMaquina::class)
+            ->where('estado', EstadoAsignacion::Activa->value)
+            ->latest('fecha_inicio');
+    }
+
+    // ─── Mantenimiento correctivo (taller) ─────────────────────────
+
+    /**
+     * La reparación ABIERTA de la máquina — única fuente para saber por
+     * qué está en el taller y la que se cierra al devolverla al parque.
+     *
+     * Null con estado Mantenimiento = estado HUÉRFANO: la máquina figura
+     * en el taller sin expediente abierto (antes quedaba trabada para
+     * siempre; hoy "Marcar como reparada" la libera igual).
+     *
+     * @return HasOne<MantenimientoMaquina, $this>
+     */
+    public function mantenimientoEnProceso(): HasOne
+    {
+        return $this->hasOne(MantenimientoMaquina::class)
+            ->where('estado', EstadoMantenimiento::EnProceso->value)
+            ->latest('fecha_inicio');
     }
 
     // ─── Mantenimiento preventivo ──────────────────────────────────

@@ -27,9 +27,9 @@ use RuntimeException;
  * Regenerable: correr dos veces el mismo período reemplaza el PDF y
  * actualiza la MISMA fila (updateOrCreate por tipo + periodo).
  */
-final class GenerarReporteFiscalMensualService
+final readonly class GenerarReporteFiscalMensualService
 {
-    public function __construct(private readonly RenderizadorPdf $pdf) {}
+    public function __construct(private RenderizadorPdf $pdf) {}
 
     /**
      * Genera (o regenera) el reporte del mes de la fecha dada, verifica
@@ -148,7 +148,7 @@ final class GenerarReporteFiscalMensualService
                 };
 
                 $porCompra[$compra->id][] = 'data:'.$mime.';base64,'
-                    .base64_encode(Storage::disk('public')->get($ruta));
+                    .base64_encode((string) Storage::disk('public')->get($ruta));
             }
         }
 

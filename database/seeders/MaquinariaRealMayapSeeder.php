@@ -85,7 +85,7 @@ class MaquinariaRealMayapSeeder extends Seeder
                     'tarifa_hora'        => 0,
                     'tarifa_viaje'       => 0,
                     'tarifa_km'          => 0,
-                    'jornada_horas'      => 8,
+                    'horas_dia_renta'    => 8,
                     'activo'             => true,
                 ]);
             }

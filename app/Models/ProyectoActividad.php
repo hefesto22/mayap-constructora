@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Override;
 
 /**
  * Actividad / hito de avance físico de un proyecto.
@@ -56,6 +57,7 @@ class ProyectoActividad extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -68,6 +70,7 @@ class ProyectoActividad extends Model
 
     // ─── Lifecycle: mantener el avance del proyecto sincronizado ───
 
+    #[Override]
     protected static function booted(): void
     {
         // Coherencia completada ↔ fecha_completada (defiende el CHECK

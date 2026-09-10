@@ -16,9 +16,11 @@ use Filament\Support\Facades\FilamentView;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use Override;
 
 class AppServiceProvider extends ServiceProvider
 {
+    #[Override]
     public function register(): void
     {
         // HTML → PDF: la implementación real usa Browsershot/Chromium;

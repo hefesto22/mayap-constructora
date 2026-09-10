@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Shield;
 
+use App\Filament\Resources\Shield\Pages\CreateRole;
+use App\Filament\Resources\Shield\Pages\EditRole;
+use App\Filament\Resources\Shield\Pages\ListRoles;
+use App\Filament\Resources\Shield\Pages\ViewRole;
 use App\Support\Permisos;
 use BezhanSalleh\FilamentShield\Resources\Roles\RoleResource as ShieldRoleResource;
 use BezhanSalleh\FilamentShield\Support\Utils;
@@ -11,6 +15,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Support\Str;
+use Override;
 
 /**
  * RoleResource propio que EXTIENDE el de Shield para un solo cambio: la
@@ -31,16 +36,19 @@ class RoleResource extends ShieldRoleResource
      * actividad), no en un grupo "Filament Shield" propio — el menú se
      * ordena por negocio, no por paquete.
      */
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Administración';
     }
 
+    #[Override]
     public static function getNavigationSort(): ?int
     {
         return 30;
     }
 
+    #[Override]
     public static function getTabFormComponentForCustomPermissions(): Component
     {
         $total = count(Permisos::PERSONALIZADOS);
@@ -66,13 +74,14 @@ class RoleResource extends ShieldRoleResource
             ->schema($secciones);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListRoles::route('/'),
-            'create' => Pages\CreateRole::route('/create'),
-            'view'   => Pages\ViewRole::route('/{record}'),
-            'edit'   => Pages\EditRole::route('/{record}/edit'),
+            'index'  => ListRoles::route('/'),
+            'create' => CreateRole::route('/create'),
+            'view'   => ViewRole::route('/{record}'),
+            'edit'   => EditRole::route('/{record}/edit'),
         ];
     }
 }

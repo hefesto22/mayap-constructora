@@ -7,11 +7,13 @@ namespace App\Filament\Resources\Maquinas\Pages;
 use App\Filament\Resources\Maquinas\MaquinaResource;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditMaquina extends EditRecord
 {
     protected static string $resource = MaquinaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

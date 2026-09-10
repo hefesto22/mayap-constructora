@@ -45,7 +45,7 @@ final class NotificadorMaquinaria
 
         // loadMissing vive en la colección ELOQUENT — los callers arman la
         // lista con collect() (colección base), así que se convierte aquí.
-        $agendados = (new EloquentCollection($agendados->values()->all()))
+        $agendados = new EloquentCollection($agendados->values()->all())
             ->loadMissing('maquina:id,nombre');
 
         // Una línea por máquina: nombre, día(s) y hora de llegada.

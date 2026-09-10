@@ -34,7 +34,7 @@ test('modo hábiles desde viernes cae el lunes siguiente', function (): void {
 });
 
 test('plazo menor a 1 lanza excepción', function (): void {
-    expect(fn () => CalculadorPlazo::calcularFechaFin(Carbon::parse('2026-06-01'), 0, ModoPlazo::Calendario))
+    expect(fn (): Carbon => CalculadorPlazo::calcularFechaFin(Carbon::parse('2026-06-01'), 0, ModoPlazo::Calendario))
         ->toThrow(InvalidArgumentException::class);
 });
 

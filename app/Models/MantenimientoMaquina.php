@@ -8,6 +8,7 @@ use App\Enums\EstadoMantenimiento;
 use App\Enums\FaseMantenimiento;
 use App\Enums\PrioridadMantenimiento;
 use Database\Factories\MantenimientoMaquinaFactory;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 
 /**
  * Mantenimiento de máquina — evento de avería/reparación. Enlaza la asignación
@@ -31,12 +33,15 @@ use Illuminate\Support\Facades\DB;
  * @property int $id
  * @property string $codigo
  * @property int $maquina_id
+ * @property int|null $proyecto_id
  * @property Carbon $fecha_inicio
  * @property Carbon|null $fecha_fin
  * @property string $motivo
  * @property int|null $asignacion_finalizada_id
  * @property int|null $asignacion_sustituta_id
  * @property EstadoMantenimiento $estado
+ * @property bool $en_sitio
+ * @property string|null $necesita
  * @property PrioridadMantenimiento $prioridad
  * @property FaseMantenimiento $fase
  * @property Carbon|null $fecha_estimada_repuestos
@@ -46,6 +51,8 @@ use Illuminate\Support\Facades\DB;
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read Maquina $maquina
+ * @property-read Proyecto|null $proyecto
+ * @property-read Collection<int, GastoMantenimiento> $gastos
  * @property-read AsignacionMaquina|null $asignacionFinalizada
  * @property-read AsignacionMaquina|null $asignacionSustituta
  */
@@ -68,12 +75,16 @@ class MantenimientoMaquina extends Model
     protected $attributes = [
         'fase'      => 'diagnostico',
         'prioridad' => 'normal',
+        'en_sitio'  => false,
     ];
 
     /** @var list<string> */
     protected $fillable = [
         'codigo',
         'maquina_id',
+        'proyecto_id',
+        'en_sitio',
+        'necesita',
         'fecha_inicio',
         'fecha_fin',
         'motivo',
@@ -90,6 +101,7 @@ class MantenimientoMaquina extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
@@ -100,11 +112,45 @@ class MantenimientoMaquina extends Model
             'fecha_fin'                => 'date',
             'fecha_estimada_repuestos' => 'date',
             'aviso_repuestos_at'       => 'datetime',
+            'en_sitio'                 => 'boolean',
         ];
+    }
+
+    /**
+     * La obra donde está la máquina cuando la reparación es EN SITIO —
+     * es la DIRECCIÓN del pedido: a dónde llevar el repuesto (2026-09-05).
+     *
+     * @return BelongsTo<Proyecto, $this>
+     */
+    public function proyecto(): BelongsTo
+    {
+        return $this->belongsTo(Proyecto::class);
+    }
+
+    /**
+     * Lo que costó esta reparación: repuestos, herramienta, mano de obra
+     * externa. Lo que se compró y quién lo pagó vive en cada gasto.
+     *
+     * @return HasMany<GastoMantenimiento, $this>
+     */
+    public function gastos(): HasMany
+    {
+        return $this->hasMany(GastoMantenimiento::class, 'mantenimiento_id');
+    }
+
+    /**
+     * Total gastado en esta reparación.
+     *
+     * @return numeric-string
+     */
+    public function costoTotal(): string
+    {
+        return number_format((float) $this->gastos()->sum('monto'), 2, '.', '');
     }
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (MantenimientoMaquina $mantenimiento): void {

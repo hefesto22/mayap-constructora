@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\DB;
  * La solicitud NUNCA se borra — es historial del proyecto. Reusa
  * AgendarMaquinaService para agendar: cero duplicación de validaciones.
  */
-final class SolicitarMaquinaService
+final readonly class SolicitarMaquinaService
 {
     /**
      * La máquina solo se auto-agenda en días LIBRES: con un solo
@@ -43,8 +43,8 @@ final class SolicitarMaquinaService
     private const int MAX_AUTOAGENDA_POR_DIA = 1;
 
     public function __construct(
-        private readonly AgendarMaquinaService $agenda,
-        private readonly NotificadorMaquinaria $notificador,
+        private AgendarMaquinaService $agenda,
+        private NotificadorMaquinaria $notificador,
     ) {}
 
     public function crear(
@@ -169,8 +169,9 @@ final class SolicitarMaquinaService
             $resultado = $this->agenda->agendarLote(
                 maquinaIds: [$maquinaId],
                 proyectoId: $solicitud->proyecto_id,
-                desde: $fechaDesde,
-                hasta: $fechaHasta ?? $fechaDesde,
+                // Solo el día de llegada: cuánto se queda lo decide el
+                // encargado al registrar la salida, no la solicitud.
+                dia: $fechaDesde,
                 notas: $solicitud->notas,
                 userId: $userId,
                 horaEntrada: $horaLlegada,
@@ -274,8 +275,9 @@ final class SolicitarMaquinaService
             $resultado = $this->agenda->agendarLote(
                 maquinaIds: [$maquinaFinal],
                 proyectoId: $solicitud->proyecto_id,
-                desde: $fechaDesde,
-                hasta: $fechaHasta ?? $fechaDesde,
+                // Solo el día de llegada: cuánto se queda lo decide el
+                // encargado al registrar la salida, no la solicitud.
+                dia: $fechaDesde,
                 notas: $solicitud->notas,
                 userId: $userId,
                 horaEntrada: $horaFinal,
@@ -283,7 +285,7 @@ final class SolicitarMaquinaService
 
             if ($resultado['creados'] === 0) {
                 throw new AgendaInvalidaException(
-                    $resultado['saltados'][0] ?? 'Ningún día del rango se pudo agendar.'
+                    $resultado['saltados'][0] ?? 'No se pudo agendar la máquina.'
                 );
             }
 

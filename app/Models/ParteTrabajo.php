@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Override;
 
 /**
  * Parte de trabajo — el trabajo diario de una máquina en una obra (vía su
@@ -34,6 +35,10 @@ use Illuminate\Support\Facades\DB;
  * @property Carbon $fecha
  * @property MetodoCapturaHoras $metodo_captura
  * @property ModalidadTrabajo $modalidad
+ * @property numeric-string|null $horas_motor
+ * @property numeric-string $horas_muertas
+ * @property string|null $motivo_idle
+ * @property numeric-string $salto_horometro
  * @property string|null $lectura_inicial
  * @property string|null $lectura_final
  * @property string $horas
@@ -45,9 +50,11 @@ use Illuminate\Support\Facades\DB;
  * @property string|null $viaje_destino
  * @property string|null $viaje_material
  * @property string|null $actividad
- * @property string $tarifa_hora_aplicada
+ * @property string $tarifa_aplicada
  * @property string $costo_cache
  * @property string|null $operador
+ * @property int|null $operador_id
+ * @property-read Operador|null $operadorRegistrado
  * @property string|null $notas
  * @property int|null $user_id
  * @property Carbon|null $created_at
@@ -73,6 +80,11 @@ class ParteTrabajo extends Model
      */
     protected $attributes = [
         'modalidad' => 'horas',
+
+        // Espejo de los defaults de la columna: sin esto un parte recién
+        // instanciado devuelve null y porcentajeIdle() revienta.
+        'horas_muertas'   => '0.00',
+        'salto_horometro' => '0.00',
     ];
 
     /** @var list<string> */
@@ -82,6 +94,10 @@ class ParteTrabajo extends Model
         'fecha',
         'metodo_captura',
         'modalidad',
+        'horas_motor',
+        'horas_muertas',
+        'motivo_idle',
+        'salto_horometro',
         'lectura_inicial',
         'lectura_final',
         'horas',
@@ -93,9 +109,10 @@ class ParteTrabajo extends Model
         'viaje_destino',
         'viaje_material',
         'actividad',
-        'tarifa_hora_aplicada',
+        'tarifa_aplicada',
         'costo_cache',
         'operador',
+        'operador_id',
         'notas',
         'user_id',
     ];
@@ -103,25 +120,30 @@ class ParteTrabajo extends Model
     /**
      * @return array<string, string>
      */
+    #[Override]
     protected function casts(): array
     {
         return [
-            'metodo_captura'       => MetodoCapturaHoras::class,
-            'modalidad'            => ModalidadTrabajo::class,
-            'fecha'                => 'date',
-            'lectura_inicial'      => 'decimal:2',
-            'lectura_final'        => 'decimal:2',
-            'horas'                => 'decimal:2',
-            'horas_extra'          => 'decimal:2',
-            'km_recorridos'        => 'decimal:2',
-            'viajes'               => 'integer',
-            'tarifa_hora_aplicada' => 'decimal:2',
-            'costo_cache'          => 'decimal:2',
+            'metodo_captura'  => MetodoCapturaHoras::class,
+            'modalidad'       => ModalidadTrabajo::class,
+            'fecha'           => 'date',
+            'horas_motor'     => 'decimal:2',
+            'horas_muertas'   => 'decimal:2',
+            'salto_horometro' => 'decimal:2',
+            'lectura_inicial' => 'decimal:2',
+            'lectura_final'   => 'decimal:2',
+            'horas'           => 'decimal:2',
+            'horas_extra'     => 'decimal:2',
+            'km_recorridos'   => 'decimal:2',
+            'viajes'          => 'integer',
+            'tarifa_aplicada' => 'decimal:2',
+            'costo_cache'     => 'decimal:2',
         ];
     }
 
     // ─── Lifecycle: auto-generación de código ──────────────────────
 
+    #[Override]
     protected static function booted(): void
     {
         static::creating(static function (ParteTrabajo $parte): void {
@@ -165,6 +187,18 @@ class ParteTrabajo extends Model
     // ─── Relaciones ────────────────────────────────────────────────
 
     /**
+     * El operador del catálogo, cuando se eligió de la lista. El campo
+     * `operador` guarda igual el NOMBRE tal cual quedó ese día: si a la
+     * persona la renombran después, la historia no se reescribe.
+     *
+     * @return BelongsTo<Operador, $this>
+     */
+    public function operadorRegistrado(): BelongsTo
+    {
+        return $this->belongsTo(Operador::class, 'operador_id');
+    }
+
+    /**
      * @return BelongsTo<AsignacionMaquina, $this>
      */
     public function asignacion(): BelongsTo
@@ -192,5 +226,28 @@ class ParteTrabajo extends Model
     public function scopeConHorasExtra(Builder $query): Builder
     {
         return $query->where('horas_extra', '>', 0);
+    }
+
+    /**
+     * Porcentaje del tiempo de motor que NO se cobró: calentamiento,
+     * esperas, traslados dentro de la obra, almuerzo con el motor prendido.
+     * En construcción ronda el 30%; null cuando el parte no trae horómetro.
+     */
+    public function porcentajeIdle(): ?string
+    {
+        if ($this->horas_motor === null || bccomp($this->horas_motor, '0', 2) <= 0) {
+            return null;
+        }
+
+        return bcmul(bcdiv($this->horas_muertas, $this->horas_motor, 6), '100', 2);
+    }
+
+    /**
+     * ¿Aparecieron horas en el horómetro que nadie reportó? La lectura
+     * inicial de este parte no empalmó con la final del anterior.
+     */
+    public function tieneUsoNoDeclarado(): bool
+    {
+        return bccomp($this->salto_horometro, '0', 2) > 0;
     }
 }

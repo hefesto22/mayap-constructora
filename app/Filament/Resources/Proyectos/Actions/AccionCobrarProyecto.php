@@ -33,20 +33,20 @@ final class AccionCobrarProyecto
             ->icon('heroicon-o-banknotes')
             ->color('success')
             ->visible(function (?Proyecto $record): bool {
-                if ($record === null) {
+                if (! $record instanceof Proyecto) {
                     return false;
                 }
 
                 $cuenta = $record->cuentaPorCobrarPendiente();
 
-                return $cuenta !== null
+                return $cuenta instanceof CuentaPorCobrar
                     && (auth()->user()?->can('update', $cuenta) ?? false);
             })
             ->modalHeading('Registrar cobro del cliente')
             ->modalDescription(function (Proyecto $record): string {
                 $cuenta = $record->cuentaPorCobrarPendiente();
 
-                if ($cuenta === null) {
+                if (! $cuenta instanceof CuentaPorCobrar) {
                     return '';
                 }
 
@@ -64,7 +64,7 @@ final class AccionCobrarProyecto
             ->action(function (Proyecto $record, array $data): void {
                 $cuenta = $record->cuentaPorCobrarPendiente();
 
-                if ($cuenta === null) {
+                if (! $cuenta instanceof CuentaPorCobrar) {
                     Notification::make()
                         ->warning()
                         ->title('Sin cuenta pendiente')

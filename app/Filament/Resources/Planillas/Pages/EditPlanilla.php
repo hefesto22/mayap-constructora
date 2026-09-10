@@ -9,11 +9,13 @@ use App\Models\Planilla;
 use App\Services\Planilla\ProcesarPlanillaService;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
+use Override;
 
 class EditPlanilla extends EditRecord
 {
     protected static string $resource = PlanillaResource::class;
 
+    #[Override]
     protected function getHeaderActions(): array
     {
         return [

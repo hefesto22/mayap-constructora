@@ -255,7 +255,7 @@ class ItemForm
                         Placeholder::make('cambios_registrados')
                             ->label('Cambios registrados')
                             ->content(function (?Item $record): string {
-                                if ($record === null) {
+                                if (! $record instanceof Item) {
                                     return '—';
                                 }
 

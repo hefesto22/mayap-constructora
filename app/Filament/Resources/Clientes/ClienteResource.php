@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Override;
 
 class ClienteResource extends Resource
 {
@@ -30,21 +31,25 @@ class ClienteResource extends Resource
 
     protected static ?int $navigationSort = 10;
 
+    #[Override]
     public static function getNavigationGroup(): ?string
     {
         return 'Comercial';
     }
 
+    #[Override]
     public static function form(Schema $schema): Schema
     {
         return ClienteForm::configure($schema);
     }
 
+    #[Override]
     public static function table(Table $table): Table
     {
         return ClientesTable::configure($table);
     }
 
+    #[Override]
     public static function getPages(): array
     {
         return [
@@ -54,6 +59,7 @@ class ClienteResource extends Resource
         ];
     }
 
+    #[Override]
     public static function getGloballySearchableAttributes(): array
     {
         return ['codigo', 'nombre', 'rtn', 'email'];

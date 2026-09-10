@@ -23,7 +23,7 @@ class ProyectoRenglonFactory extends Factory
     {
         $cantidad = number_format($this->faker->randomFloat(4, 1, 100), 4, '.', '');
         $precio = number_format($this->faker->randomFloat(2, 50, 5000), 2, '.', '');
-        $subtotal = self::calcularSubtotal($cantidad, $precio);
+        $subtotal = $this->calcularSubtotal($cantidad, $precio);
 
         return [
             'proyecto_id'              => Proyecto::factory(),
@@ -47,7 +47,7 @@ class ProyectoRenglonFactory extends Factory
         return $this->state(function () use ($ficha): array {
             $cantidad = number_format($this->faker->randomFloat(4, 1, 100), 4, '.', '');
             $precio = (string) $ficha->precio_venta_cache;
-            $subtotal = self::calcularSubtotal($cantidad, $precio);
+            $subtotal = $this->calcularSubtotal($cantidad, $precio);
 
             return [
                 'ficha_id'                 => $ficha->id,
@@ -71,7 +71,7 @@ class ProyectoRenglonFactory extends Factory
         return $this->state(fn (): array => [
             'cantidad'                 => $cantidadStr,
             'precio_unitario_snapshot' => $precioStr,
-            'subtotal_cache'           => self::calcularSubtotal($cantidadStr, $precioStr),
+            'subtotal_cache'           => $this->calcularSubtotal($cantidadStr, $precioStr),
         ]);
     }
 
@@ -79,7 +79,7 @@ class ProyectoRenglonFactory extends Factory
      * cantidad × precio con bcmath y redondeo half-away-from-zero a 2
      * decimales. Coincide con el SCALE_FINAL del calculador del dominio.
      */
-    private static function calcularSubtotal(string $cantidad, string $precio): string
+    private function calcularSubtotal(string $cantidad, string $precio): string
     {
         $crudo = bcmul($cantidad, $precio, 4);
         $factor = '0.005';

@@ -46,7 +46,7 @@ final readonly class SeguimientoLlegadaRequisicionService
     {
         $requisicion = $this->requisicionEnEspera($compra);
 
-        if ($requisicion === null || $compra->fecha_estimada_llegada === null) {
+        if (! $requisicion instanceof Requisicion || $compra->fecha_estimada_llegada === null) {
             return;
         }
 
@@ -81,7 +81,7 @@ final readonly class SeguimientoLlegadaRequisicionService
     ): void {
         $requisicion = $this->requisicionEnEspera($compra);
 
-        if ($requisicion === null || $compra->fecha_estimada_llegada === null) {
+        if (! $requisicion instanceof Requisicion || $compra->fecha_estimada_llegada === null) {
             return;
         }
 

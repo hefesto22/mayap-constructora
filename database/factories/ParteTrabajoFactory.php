@@ -34,7 +34,7 @@ class ParteTrabajoFactory extends Factory
             'horas'                 => $horas,
             'horas_extra'           => 0,
             'motivo_horas_extra'    => null,
-            'tarifa_hora_aplicada'  => $tarifa,
+            'tarifa_aplicada'       => $tarifa,
             'costo_cache'           => round($horas * $tarifa, 2),
             'operador'              => $this->faker->name(),
             'notas'                 => null,
