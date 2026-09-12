@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\Bodegas\Tables;
 
+use App\Models\Bodega;
+use App\Support\Cantidad;
 use Exception;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -43,6 +45,22 @@ class BodegasTable
                     ->badge()
                     ->color('info')
                     ->placeholder('0'),
+                // Los contenedores que viajan (pipa, cisterna) se leen de
+                // otra forma: no importa cuántos ítems tienen, importa qué
+                // tan llenos vienen. Una bodega fija deja la celda vacía.
+                TextColumn::make('nivel')
+                    ->label('Carga')
+                    ->badge()
+                    ->state(fn (Bodega $record): ?string => self::nivelDeCarga($record))
+                    ->color(fn (Bodega $record): string => match (true) {
+                        ! $record->esMovil()                     => 'gray',
+                        $record->estaVacio()                     => 'danger',
+                        ($record->porcentajeLleno() ?? 100) < 50 => 'warning',
+                        default                                  => 'success',
+                    })
+                    ->icon(fn (Bodega $record): ?string => $record->esMovil() ? 'heroicon-o-truck' : null)
+                    ->tooltip('Cuánto carga ahora mismo. Vacío = hay que mandarlo a llenar.')
+                    ->placeholder('—'),
                 ToggleColumn::make('activo')
                     ->label('Activa')
                     ->onColor('success')
@@ -86,5 +104,23 @@ class BodegasTable
                         }),
                 ]),
             ]);
+    }
+
+    /**
+     * "7 M3 · 70%" para un contenedor; nada para una bodega fija.
+     */
+    private static function nivelDeCarga(Bodega $bodega): ?string
+    {
+        if (! $bodega->esMovil()) {
+            return null;
+        }
+
+        $bodega->loadMissing('material.unidadMedida');
+
+        $carga = Cantidad::sinCeros($bodega->contenidoActual());
+        $unidad = $bodega->material?->unidadMedida->codigo ?? '';
+        $porcentaje = $bodega->porcentajeLleno();
+
+        return trim("{$carga} {$unidad}").($porcentaje !== null ? " · {$porcentaje}%" : '');
     }
 }

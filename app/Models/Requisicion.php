@@ -38,6 +38,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int $proyecto_id
  * @property EstadoRequisicion $estado
  * @property OrigenDespacho|null $origen_despacho
+ * @property int|null $vehiculo_id
+ * @property int|null $asignacion_viaje_id
  * @property int|null $solicitante_id
  * @property Carbon $fecha_solicitud
  * @property Carbon $fecha_necesaria
@@ -67,6 +69,8 @@ class Requisicion extends Model
         'proyecto_id',
         'estado',
         'origen_despacho',
+        'vehiculo_id',
+        'asignacion_viaje_id',
         'solicitante_id',
         'fecha_solicitud',
         'fecha_necesaria',
@@ -93,10 +97,43 @@ class Requisicion extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['codigo', 'proyecto_id', 'estado', 'origen_despacho', 'solicitante_id', 'fecha_necesaria', 'fecha_estimada_llegada', 'notas'])
+            ->logOnly(['codigo', 'proyecto_id', 'estado', 'origen_despacho', 'vehiculo_id', 'solicitante_id', 'fecha_necesaria', 'fecha_estimada_llegada', 'notas'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName): string => "Requisición {$eventName}");
+    }
+
+    // ─── El viaje ──────────────────────────────────────────────────
+
+    /**
+     * El vehículo que lleva este pedido a la obra — una bodega móvil de
+     * reparto (volqueta, camioneta). Mientras el material va arriba, el
+     * stock vive AHÍ y no en la obra: es donde está de verdad.
+     *
+     * @return BelongsTo<Bodega, $this>
+     */
+    public function vehiculo(): BelongsTo
+    {
+        return $this->belongsTo(Bodega::class, 'vehiculo_id');
+    }
+
+    /**
+     * La asignación que ocupa al vehículo en el calendario mientras anda
+     * repartiendo, para que nadie lo agende a otra obra.
+     *
+     * @return BelongsTo<AsignacionMaquina, $this>
+     */
+    public function asignacionViaje(): BelongsTo
+    {
+        return $this->belongsTo(AsignacionMaquina::class, 'asignacion_viaje_id');
+    }
+
+    /**
+     * ¿Este pedido va montado en un vehículo nuestro?
+     */
+    public function viajaEnVehiculo(): bool
+    {
+        return $this->vehiculo_id !== null;
     }
 
     // ─── Lifecycle: auto-generación de código ──────────────────────

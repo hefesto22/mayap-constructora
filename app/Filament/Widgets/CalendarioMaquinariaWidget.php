@@ -13,6 +13,7 @@ use App\Enums\LugarReparacion;
 use App\Enums\ModalidadTrabajo;
 use App\Enums\OrigenGastoReparacion;
 use App\Enums\PrioridadMantenimiento;
+use App\Exceptions\Inventario\InventarioException;
 use App\Exceptions\Maquinaria\MaquinariaException;
 use App\Filament\Actions\AgendarMaquinasAction;
 use App\Filament\Resources\Mantenimientos\MantenimientoMaquinaResource;
@@ -29,6 +30,7 @@ use App\Models\Operador;
 use App\Models\ParteTrabajo;
 use App\Models\Proyecto;
 use App\Models\User;
+use App\Services\Inventario\RegistrarEntregaContenedorService;
 use App\Services\Maquinaria\AsignarMaquinaService;
 use App\Services\Maquinaria\CalendarioMaquinariaService;
 use App\Services\Maquinaria\ConfirmarLlegadaService;
@@ -36,6 +38,7 @@ use App\Services\Maquinaria\MantenimientoService;
 use App\Services\Maquinaria\MarcarNoLlegoAgendaService;
 use App\Services\Maquinaria\RegistrarDiaMaquinaService;
 use App\Services\Maquinaria\RegistrarGastoReparacionService;
+use App\Support\Cantidad;
 use App\Support\Permisos;
 use App\Support\Roles;
 use Filament\Actions\Action;
@@ -466,7 +469,151 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 : null,
             'horas_sugeridas' => $horasSugeridas,
             'horas_origen'    => $origenHoras ?? ($horasSugeridas !== null ? 'reloj' : null),
+            // El contenedor que carga la máquina (pipa, cisterna): con
+            // cuánto salió ya lo sabe el sistema —es su existencia—, así
+            // que lo único que falta preguntar es con cuánto volvió.
+            ...$this->datosContenedor($agendado->maquina_id),
         ];
+    }
+
+    /**
+     * ¿Esta máquina carga un contenedor? (Mauricio 2026-09-10).
+     *
+     * Devuelve lo necesario para preguntar el regreso en el cierre del
+     * día. Si no carga nada, devuelve los campos en null y el bloque del
+     * modal ni aparece.
+     *
+     * @return array<string, mixed>
+     */
+    private function datosContenedor(int $maquinaId): array
+    {
+        $contenedor = Bodega::query()
+            ->moviles()
+            ->where('activo', true)
+            ->where('maquina_id', $maquinaId)
+            ->with('material:id,nombre,unidad_medida_id', 'material.unidadMedida:id,codigo')
+            ->first();
+
+        if (! $contenedor instanceof Bodega) {
+            return [
+                'contenedor_id'        => null,
+                'contenedor_tipo'      => null,
+                'contenedor_nombre'    => null,
+                'contenedor_material'  => null,
+                'contenedor_unidad'    => null,
+                'contenedor_capacidad' => null,
+                'contenedor_salio_con' => null,
+                'contenedor_carga'     => null,
+            ];
+        }
+
+        return [
+            'contenedor_id' => $contenedor->id,
+            // Dos contenedores, dos preguntas distintas: a la pipa se le
+            // pregunta CON CUÁNTO vuelve; al camión de reparto, si trae
+            // algo encima que haya que bajar a bodega.
+            'contenedor_tipo'      => $contenedor->esDeGranel() ? 'granel' : 'reparto',
+            'contenedor_nombre'    => $contenedor->nombre,
+            'contenedor_material'  => $contenedor->material?->nombre,
+            'contenedor_unidad'    => $contenedor->material?->unidadMedida->codigo,
+            'contenedor_capacidad' => (string) $contenedor->capacidad,
+            'contenedor_salio_con' => $contenedor->contenidoActual(),
+            'contenedor_carga'     => $this->resumenDeCarga($contenedor),
+        ];
+    }
+
+    /**
+     * Qué trae encima un camión de reparto, en una línea legible. Null
+     * cuando viene vacío: ahí no hay nada que preguntar.
+     */
+    private function resumenDeCarga(Bodega $contenedor): ?string
+    {
+        $aBordo = Existencia::query()
+            ->where('bodega_id', $contenedor->id)
+            ->where('cantidad', '>', 0)
+            ->with('material:id,nombre')
+            ->get();
+
+        if ($aBordo->isEmpty()) {
+            return null;
+        }
+
+        return $aBordo
+            ->map(fn (Existencia $e): string => Cantidad::sinCeros((string) $e->cantidad)
+                .' '.($e->material->nombre ?? 'material'))
+            ->implode(' · ');
+    }
+
+    /**
+     * La tarjeta del contenedor: qué es y con cuánto salió. Ese número no
+     * se le pregunta a nadie — es la existencia del contenedor.
+     */
+    private function fichaContenedor(string $nombre, string $material, string $salioCon, string $unidad): HtmlString
+    {
+        $llevaba = is_numeric($salioCon) ? Cantidad::sinCeros($salioCon) : '0';
+
+        return new HtmlString(
+            '<div class="mayap-aviso"><strong>'.e($nombre).'</strong> salió con <strong>'
+            .e($llevaba).' '.e($unidad).'</strong> de '.e($material)
+            .'. Lo que no traiga de vuelta queda cargado a esta obra, con su costo.</div>'
+        );
+    }
+
+    /**
+     * Los atajos del regreso, para no teclear un número en el caso normal.
+     *
+     * "A la mitad" solo se ofrece si el contenedor SALIÓ con al menos media
+     * carga: si salió con menos, ese botón devolvería más de lo que llevaba
+     * y el servicio lo rechazaría — mejor no ofrecer lo imposible.
+     *
+     * @return array<string, string>
+     */
+    private function opcionesRegresoContenedor(Get $get): array
+    {
+        $opciones = ['vacio' => 'Vacía — descargó todo'];
+
+        $llevaba = (string) $get('contenedor_salio_con');
+        $capacidad = (string) $get('contenedor_capacidad');
+
+        if (is_numeric($llevaba) && is_numeric($capacidad) && bccomp($capacidad, '0', 4) > 0) {
+            $mitad = bcdiv($capacidad, '2', 4);
+
+            if (bccomp($llevaba, $mitad, 4) >= 0) {
+                $opciones['mitad'] = 'A la mitad ('.Cantidad::sinCeros($mitad).')';
+            }
+        }
+
+        $opciones['nada'] = 'No descargó nada';
+        $opciones['otro'] = 'Otra cantidad';
+
+        return $opciones;
+    }
+
+    /**
+     * Traduce el atajo elegido al nivel real de regreso. Null = no hay
+     * nada que registrar (no se contestó).
+     *
+     * @param array<string, mixed> $data
+     */
+    private function nivelRegresoContenedor(array $data): ?string
+    {
+        // Solo la pipa se mide por nivel. El camión de reparto lleva
+        // varios materiales: su regreso se resuelve devolviendo la carga.
+        if (($data['contenedor_tipo'] ?? null) !== 'granel') {
+            return null;
+        }
+
+        $llevaba = (string) ($data['contenedor_salio_con'] ?? '0');
+        $capacidad = (string) ($data['contenedor_capacidad'] ?? '0');
+        $escrito = $data['contenedor_nivel'] ?? null;
+
+        return match ($data['contenedor_regreso'] ?? null) {
+            'vacio' => '0',
+            'nada'  => is_numeric($llevaba) ? $llevaba : '0',
+            'mitad' => is_numeric($capacidad) ? bcdiv($capacidad, '2', 4) : null,
+            'otro'  => is_numeric($escrito) ? (string) $escrito : null,
+            default => null,
+        };
     }
 
     /**
@@ -1358,6 +1505,14 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 Hidden::make('horas_origen'),
                 Hidden::make('usa_horometro'),
                 Hidden::make('agendados_futuros'),
+                Hidden::make('contenedor_id'),
+                Hidden::make('contenedor_tipo'),
+                Hidden::make('contenedor_carga'),
+                Hidden::make('contenedor_nombre'),
+                Hidden::make('contenedor_material'),
+                Hidden::make('contenedor_unidad'),
+                Hidden::make('contenedor_capacidad'),
+                Hidden::make('contenedor_salio_con'),
 
                 Fieldset::make('Jornada del día')
                     ->schema([
@@ -1416,6 +1571,122 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 Fieldset::make('Horómetro y combustible')
                     ->schema($this->camposHorometroYCombustible())
                     ->columns(2),
+
+                // EL CONTENEDOR QUE CARGA (Mauricio 2026-09-10): la pipa
+                // de agua, la cisterna de diésel. Con cuánto SALIÓ no se
+                // pregunta —es la existencia del contenedor, el sistema ya
+                // lo sabe—; lo único que nadie más puede saber es con
+                // cuánto volvió. De esa resta sale lo que quedó en la obra.
+                //
+                // Va montado acá y no en pantalla aparte a propósito: el
+                // operador ya está obligado a cerrar su día. Una pantalla
+                // nueva se olvida, y si nadie marca el regreso el sistema
+                // cree que el agua sigue en la pipa.
+                Fieldset::make('Lo que cargaba')
+                    ->visible(fn (Get $get): bool => $get('contenedor_tipo') === 'granel')
+                    ->schema([
+                        Placeholder::make('contenedor_resumen')
+                            ->hiddenLabel()
+                            ->content(fn (Get $get): HtmlString => $this->fichaContenedor(
+                                (string) $get('contenedor_nombre'),
+                                (string) $get('contenedor_material'),
+                                (string) $get('contenedor_salio_con'),
+                                (string) $get('contenedor_unidad'),
+                            ))
+                            ->columnSpanFull(),
+
+                        ToggleButtons::make('contenedor_regreso')
+                            ->label('¿Con cuánto regresó?')
+                            ->options(fn (Get $get): array => $this->opcionesRegresoContenedor($get))
+                            ->colors([
+                                'vacio' => 'danger',
+                                'mitad' => 'warning',
+                                'nada'  => 'gray',
+                                'otro'  => 'info',
+                            ])
+                            ->icons([
+                                'vacio' => 'heroicon-o-arrow-down-circle',
+                                'mitad' => 'heroicon-o-minus-circle',
+                                'nada'  => 'heroicon-o-arrow-uturn-left',
+                                'otro'  => 'heroicon-o-pencil',
+                            ])
+                            ->default('vacio')
+                            ->live()
+                            ->required(fn (Get $get): bool => filled($get('contenedor_id')))
+                            ->columns(2)
+                            ->gridDirection(GridDirection::Row)
+                            ->extraAttributes(['class' => 'mayap-destino'])
+                            ->helperText('Lo que falte contra lo que llevaba se descarga en la obra, con su costo.')
+                            ->columnSpanFull(),
+
+                        TextInput::make('contenedor_nivel')
+                            ->label('¿Cuánto trae?')
+                            ->numeric()
+                            ->minValue(0)
+                            ->step('any')
+                            ->suffix(fn (Get $get): string => (string) $get('contenedor_unidad'))
+                            ->visible(fn (Get $get): bool => $get('contenedor_regreso') === 'otro')
+                            ->required(fn (Get $get): bool => $get('contenedor_regreso') === 'otro')
+                            ->helperText(fn (Get $get): string => 'No puede pasar de '
+                                .Cantidad::sinCeros((string) $get('contenedor_salio_con')).': es lo que llevaba.')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(1),
+
+                // EL CAMIÓN QUE REGRESA CON CARGA (Mauricio 2026-09-10).
+                //
+                // Si la obra recibió 35 de los 40 sacos que subieron, los
+                // 5 restantes son existencia REAL del camión. Sin esta
+                // puerta ese material quedaba atrapado ahí para siempre:
+                // bien contado, pero inmovilizado, que es peor que no
+                // tenerlo registrado. Acá vuelve a bodega.
+                Fieldset::make('El camión trae carga')
+                    ->visible(fn (Get $get): bool => $get('contenedor_tipo') === 'reparto'
+                        && filled($get('contenedor_carga')))
+                    ->schema([
+                        Placeholder::make('carga_a_bordo')
+                            ->hiddenLabel()
+                            ->content(fn (Get $get): HtmlString => new HtmlString(
+                                '<div class="mayap-aviso"><strong>'.e((string) $get('contenedor_nombre'))
+                                .'</strong> todavía trae encima: <strong>'.e((string) $get('contenedor_carga'))
+                                .'</strong>. O es material que la obra no recibió, o todavía no ha confirmado.</div>'
+                            ))
+                            ->columnSpanFull(),
+
+                        ToggleButtons::make('contenedor_devuelve')
+                            ->label('¿Qué pasa con esa carga?')
+                            ->options([
+                                'sigue'  => 'Sigue arriba — no la descargó',
+                                'bodega' => 'Regresó a bodega: bajarla',
+                            ])
+                            ->colors(['sigue' => 'gray', 'bodega' => 'success'])
+                            ->icons([
+                                'sigue'  => 'heroicon-o-truck',
+                                'bodega' => 'heroicon-o-building-storefront',
+                            ])
+                            ->default('sigue')
+                            ->live()
+                            ->columns(2)
+                            ->gridDirection(GridDirection::Row)
+                            ->extraAttributes(['class' => 'mayap-destino'])
+                            ->helperText('Si el camión volvió a base con esto, bajarlo devuelve el material a la existencia de la bodega, con su mismo costo.')
+                            ->columnSpanFull(),
+
+                        Select::make('contenedor_bodega_destino')
+                            ->label('¿A qué bodega la bajan?')
+                            ->options(fn (): array => Bodega::query()
+                                ->fijas()
+                                ->where('activo', true)
+                                ->orderBy('nombre')
+                                ->pluck('nombre', 'id')
+                                ->all())
+                            ->searchable()
+                            ->native(false)
+                            ->visible(fn (Get $get): bool => $get('contenedor_devuelve') === 'bodega')
+                            ->required(fn (Get $get): bool => $get('contenedor_devuelve') === 'bodega')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(1),
 
                 // ¿No terminó porque se averió? El mismo bloque que el
                 // modal de asignaciones: motivo, sustituta opcional y
@@ -1526,40 +1797,53 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                     ->columns(1),
             ])
             ->fillForm(fn (array $arguments): array => [
-                'agenda_id'           => $arguments['agenda_id'] ?? null,
-                'maquina_id'          => $arguments['maquina_id'] ?? null,
-                'etiqueta'            => $arguments['etiqueta'] ?? '',
-                'maquina_nombre'      => $arguments['maquina_nombre'] ?? '',
-                'proyecto_nombre'     => $arguments['proyecto_nombre'] ?? '',
-                'fecha'               => $arguments['fecha'] ?? today()->toDateString(),
-                'llego'               => $arguments['llego'] ?? null,
-                'salio'               => $arguments['salio'] ?? null,
-                'usa_horometro'       => (bool) ($arguments['usa_horometro'] ?? false),
-                'horometro_apertura'  => $arguments['horometro_apertura'] ?? null,
-                'horometro_cierre'    => $arguments['horometro_cierre'] ?? null,
-                'asignacion_id'       => $arguments['asignacion_id'] ?? null,
-                'jornada_maquina'     => $arguments['jornada_maquina'] ?? null,
-                'litros_hora_maquina' => $arguments['litros_hora_maquina'] ?? null,
-                'tarifa_maquina'      => $arguments['tarifa_maquina'] ?? null,
-                'horas'               => $arguments['horas_sugeridas'] ?? null,
-                'modalidad'           => $arguments['modalidad_maquina'] ?? ModalidadTrabajo::Horas->value,
-                'modalidad_maquina'   => $arguments['modalidad_maquina'] ?? null,
-                'horas_origen'        => $arguments['horas_origen'] ?? null,
-                'km_recorridos'       => null,
-                'viajes'              => null,
-                'actividad'           => null,
-                'motivo_extra'        => null,
-                'litros'              => null,
-                'precio_litro'        => app(RegistrarDiaMaquinaService::class)->ultimoPrecioLitro(),
-                'operador_id'         => $arguments['operador_habitual_id'] ?? null,
-                'reportar_averia'     => (bool) ($arguments['reportar_averia'] ?? false),
-                'averia_motivo'       => null,
-                'lugar_reparacion'    => LugarReparacion::EnObra->value,
-                'averia_prioridad'    => PrioridadMantenimiento::Normal->value,
-                'averia_necesita'     => null,
-                'sustituta_id'        => null,
-                'destino_agenda'      => DestinoAgendaFutura::Cancelar->value,
-                'agendados_futuros'   => $arguments['agendados_futuros'] ?? 0,
+                'agenda_id'            => $arguments['agenda_id'] ?? null,
+                'maquina_id'           => $arguments['maquina_id'] ?? null,
+                'etiqueta'             => $arguments['etiqueta'] ?? '',
+                'maquina_nombre'       => $arguments['maquina_nombre'] ?? '',
+                'proyecto_nombre'      => $arguments['proyecto_nombre'] ?? '',
+                'fecha'                => $arguments['fecha'] ?? today()->toDateString(),
+                'llego'                => $arguments['llego'] ?? null,
+                'salio'                => $arguments['salio'] ?? null,
+                'usa_horometro'        => (bool) ($arguments['usa_horometro'] ?? false),
+                'horometro_apertura'   => $arguments['horometro_apertura'] ?? null,
+                'horometro_cierre'     => $arguments['horometro_cierre'] ?? null,
+                'asignacion_id'        => $arguments['asignacion_id'] ?? null,
+                'jornada_maquina'      => $arguments['jornada_maquina'] ?? null,
+                'litros_hora_maquina'  => $arguments['litros_hora_maquina'] ?? null,
+                'tarifa_maquina'       => $arguments['tarifa_maquina'] ?? null,
+                'horas'                => $arguments['horas_sugeridas'] ?? null,
+                'modalidad'            => $arguments['modalidad_maquina'] ?? ModalidadTrabajo::Horas->value,
+                'modalidad_maquina'    => $arguments['modalidad_maquina'] ?? null,
+                'horas_origen'         => $arguments['horas_origen'] ?? null,
+                'km_recorridos'        => null,
+                'viajes'               => null,
+                'actividad'            => null,
+                'motivo_extra'         => null,
+                'litros'               => null,
+                'precio_litro'         => app(RegistrarDiaMaquinaService::class)->ultimoPrecioLitro(),
+                'operador_id'          => $arguments['operador_habitual_id'] ?? null,
+                'reportar_averia'      => (bool) ($arguments['reportar_averia'] ?? false),
+                'averia_motivo'        => null,
+                'lugar_reparacion'     => LugarReparacion::EnObra->value,
+                'averia_prioridad'     => PrioridadMantenimiento::Normal->value,
+                'averia_necesita'      => null,
+                'sustituta_id'         => null,
+                'destino_agenda'       => DestinoAgendaFutura::Cancelar->value,
+                'agendados_futuros'    => $arguments['agendados_futuros'] ?? 0,
+                'contenedor_id'        => $arguments['contenedor_id'] ?? null,
+                'contenedor_nombre'    => $arguments['contenedor_nombre'] ?? null,
+                'contenedor_material'  => $arguments['contenedor_material'] ?? null,
+                'contenedor_unidad'    => $arguments['contenedor_unidad'] ?? null,
+                'contenedor_capacidad' => $arguments['contenedor_capacidad'] ?? null,
+                'contenedor_salio_con' => $arguments['contenedor_salio_con'] ?? null,
+                'contenedor_regreso'   => 'vacio',
+                'contenedor_nivel'     => null,
+                'contenedor_tipo'      => $arguments['contenedor_tipo'] ?? null,
+                'contenedor_carga'     => $arguments['contenedor_carga'] ?? null,
+                'contenedor_devuelve'  => 'sigue',
+
+                'contenedor_bodega_destino' => null,
             ])
             ->action(function (array $data): void {
                 $agendado = AgendaMaquina::with(['maquina:id,nombre', 'proyecto:id,nombre'])
@@ -1640,6 +1924,66 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                     $saltados = [...$saltados, ...$resultado['saltados']];
                 }
 
+                // EL CONTENEDOR (Mauricio 2026-09-10): lo que la pipa no
+                // trajo de vuelta se quedó en esta obra. Va acá, con la
+                // jornada, y no en una pantalla aparte: si nadie marcara el
+                // regreso, el sistema creería que el agua sigue cargada.
+                $descargado = null;
+
+                if (filled($data['contenedor_id'] ?? null)) {
+                    $contenedor = Bodega::find((int) $data['contenedor_id']);
+
+                    // El camión de reparto que vuelve a base con carga: se
+                    // baja a bodega. Sin esta puerta ese material quedaba
+                    // atrapado arriba del camión para siempre.
+                    if ($contenedor instanceof Bodega
+                        && ($data['contenedor_devuelve'] ?? null) === 'bodega'
+                        && filled($data['contenedor_bodega_destino'] ?? null)
+                    ) {
+                        $bodegaDestino = Bodega::find((int) $data['contenedor_bodega_destino']);
+
+                        if ($bodegaDestino instanceof Bodega) {
+                            try {
+                                $devuelto = app(RegistrarEntregaContenedorService::class)->devolverABodega(
+                                    contenedor: $contenedor,
+                                    bodega: $bodegaDestino,
+                                    userId: $user->id,
+                                    fecha: $agendado->fecha->toDateString(),
+                                );
+
+                                if ($devuelto !== []) {
+                                    $descargado = count($devuelto).' material(es) devueltos a '.$bodegaDestino->nombre;
+                                }
+                            } catch (InventarioException $e) {
+                                $saltados[] = "Devolución a bodega: {$e->getMessage()}";
+                            }
+                        }
+                    }
+
+                    $nivel = $this->nivelRegresoContenedor($data);
+
+                    if ($contenedor instanceof Bodega && $nivel !== null) {
+                        try {
+                            $entregado = app(RegistrarEntregaContenedorService::class)->registrarRegreso(
+                                contenedor: $contenedor,
+                                obra: $agendado->proyecto,
+                                nivelRegreso: $nivel,
+                                userId: $user->id,
+                                fecha: $agendado->fecha->toDateString(),
+                            );
+
+                            if (bccomp($entregado, '0', 4) > 0) {
+                                $descargado = Cantidad::sinCeros($entregado)
+                                    .' '.(string) ($data['contenedor_unidad'] ?? '')
+                                    .' de '.(string) ($data['contenedor_material'] ?? 'material')
+                                    .' descargados';
+                            }
+                        } catch (InventarioException $e) {
+                            $saltados[] = "Contenedor: {$e->getMessage()}";
+                        }
+                    }
+                }
+
                 // Avería DESPUÉS de capturar la jornada (el parte entra
                 // antes de cortar la asignación) y ANTES de liberar la
                 // asignación automática: MantenimientoService la corta y
@@ -1704,6 +2048,7 @@ class CalendarioMaquinariaWidget extends FullCalendarWidget
                 $jornada = array_filter([
                     $partes > 0 ? "{$partes} parte(s) de horas" : null,
                     $consumos > 0 ? "{$consumos} consumo(s) de combustible" : null,
+                    $descargado,
                     $averiaReportada ? 'avería reportada (en mantenimiento)' : null,
                 ]);
 

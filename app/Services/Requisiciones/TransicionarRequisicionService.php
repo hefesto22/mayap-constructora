@@ -8,14 +8,17 @@ use App\Enums\EstadoRequisicion;
 use App\Enums\OrigenDespacho;
 use App\Enums\ResolucionLinea;
 use App\Exceptions\Inventario\StockInsuficienteException;
+use App\Exceptions\Maquinaria\MaquinariaException;
 use App\Exceptions\Requisiciones\RequisicionInvalidaException;
 use App\Exceptions\Requisiciones\TransicionInvalidaException;
+use App\Models\Bodega;
 use App\Models\Requisicion;
 use App\Models\RequisicionLinea;
 use App\Models\RequisicionTransicion;
 use App\Models\User;
 use App\Services\Inventario\RegistrarMovimientoService;
 use App\Services\Inventario\Ubicacion;
+use App\Services\Maquinaria\AsignarMaquinaService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -123,13 +126,18 @@ final readonly class TransicionarRequisicionService
         array $decisiones,
         ?int $userId = null,
         ?string $nota = null,
+        ?Bodega $vehiculo = null,
     ): EstadoRequisicion {
         $requisicion->loadMissing('lineas.material:id,codigo,nombre');
         $this->assertTieneLineas($requisicion);
 
+        // Lo que sale de bodega se sube al camión, si lo hay: ahí es donde
+        // está el material mientras rueda. Sin camión declarado va directo
+        // a la obra, como siempre.
         $obra = Ubicacion::obra($requisicion->proyecto_id);
+        $destinoStock = $vehiculo instanceof Bodega ? Ubicacion::bodega($vehiculo->id) : $obra;
 
-        return DB::transaction(function () use ($requisicion, $bodega, $obra, $decisiones, $userId, $nota): EstadoRequisicion {
+        return DB::transaction(function () use ($requisicion, $bodega, $destinoStock, $vehiculo, $decisiones, $userId, $nota): EstadoRequisicion {
             $ahora = Carbon::now();
             $conteo = [ResolucionLinea::Bodega->value => 0, ResolucionLinea::Comprar->value => 0, ResolucionLinea::NoDisponible->value => 0];
             $salioDeBodega = false;
@@ -158,10 +166,11 @@ final readonly class TransicionarRequisicionService
                     $movio = $this->despacharRenglon(
                         $linea,
                         $bodega,
-                        $obra,
+                        $destinoStock,
                         (string) ($decision['cantidad'] ?? $linea->pendiente()),
                         $userId,
                         $requisicion,
+                        $vehiculo instanceof Bodega,
                     );
 
                     $salioDeBodega = $salioDeBodega || $movio;
@@ -199,6 +208,11 @@ final readonly class TransicionarRequisicionService
             // requisición SÍ pasa por tránsito.
             if ($salioDeBodega) {
                 $requisicion->origen_despacho = OrigenDespacho::Bodega;
+
+                if ($vehiculo instanceof Bodega) {
+                    $requisicion->vehiculo_id = $vehiculo->id;
+                    $this->ocuparVehiculoEnElCalendario($requisicion, $vehiculo, $userId);
+                }
             }
 
             $destino = match (true) {
@@ -234,17 +248,19 @@ final readonly class TransicionarRequisicionService
     }
 
     /**
-     * Saca de bodega lo que este renglón pidió (o la parte que haya).
+     * Saca de bodega lo que este renglón pidió (o la parte que haya) y lo
+     * pone en su destino: el camión si viaja en uno, la obra si no.
      *
      * @return bool ¿Se movió stock de verdad?
      */
     private function despacharRenglon(
         RequisicionLinea $linea,
         Ubicacion $bodega,
-        Ubicacion $obra,
+        Ubicacion $destino,
         string $cantidad,
         ?int $userId,
         Requisicion $requisicion,
+        bool $aCamion = false,
     ): bool {
         $cantidad = is_numeric($cantidad)
             ? number_format((float) $cantidad, self::SCALE_CANTIDAD, '.', '')
@@ -264,14 +280,28 @@ final readonly class TransicionarRequisicionService
             );
         }
 
-        $this->inventario->salidaDespacho(
-            materialId: $linea->material_id,
-            origen: $bodega,
-            destino: $obra,
-            cantidad: $cantidad,
-            userId: $userId,
-            referencia: $requisicion,
-        );
+        // Al camión va como TRASLADO (sigue siendo nuestro, la obra no
+        // paga todavía); a la obra va como DESPACHO, que es el que imputa
+        // el costo. El golpe al presupuesto ocurre una sola vez.
+        if ($aCamion) {
+            $this->inventario->traslado(
+                materialId: $linea->material_id,
+                origen: $bodega,
+                destino: $destino,
+                cantidad: $cantidad,
+                userId: $userId,
+                referencia: $requisicion,
+            );
+        } else {
+            $this->inventario->salidaDespacho(
+                materialId: $linea->material_id,
+                origen: $bodega,
+                destino: $destino,
+                cantidad: $cantidad,
+                userId: $userId,
+                referencia: $requisicion,
+            );
+        }
 
         $linea->cantidad_despachada = bcadd(
             (string) $linea->cantidad_despachada,
@@ -345,14 +375,22 @@ final readonly class TransicionarRequisicionService
         Ubicacion $bodega,
         ?int $userId = null,
         ?string $nota = null,
+        ?Bodega $vehiculo = null,
     ): void {
         $requisicion->loadMissing('lineas');
         $this->assertTieneLineas($requisicion);
 
         $obra = Ubicacion::obra($requisicion->proyecto_id);
 
+        // ¿Se lo llevan en un camión nuestro? (Mauricio 2026-09-10). Si sí,
+        // el material NO llega a la obra todavía: se sube al camión, que
+        // es donde está de verdad mientras rueda. La obra recibe recién al
+        // confirmar. Sin vehículo declarado, el flujo es el de siempre.
+        $enCamion = $vehiculo instanceof Bodega;
+        $destino = $enCamion ? Ubicacion::bodega($vehiculo->id) : $obra;
+
         try {
-            DB::transaction(function () use ($requisicion, $bodega, $obra, $userId, $nota): void {
+            DB::transaction(function () use ($requisicion, $bodega, $destino, $vehiculo, $enCamion, $userId, $nota): void {
                 foreach ($requisicion->lineas as $linea) {
                     $cantidad = (string) ($linea->cantidad_autorizada ?? $linea->cantidad_solicitada);
 
@@ -360,17 +398,36 @@ final readonly class TransicionarRequisicionService
                         continue;
                     }
 
-                    $this->inventario->salidaDespacho(
-                        materialId: $linea->material_id,
-                        origen: $bodega,
-                        destino: $obra,
-                        cantidad: $cantidad,
-                        userId: $userId,
-                        referencia: $requisicion,
-                    );
+                    // Al camión va como TRASLADO: el material sigue siendo
+                    // nuestro y todavía no le pega el costo a la obra. Ese
+                    // golpe es del despacho, y ocurre al recibir.
+                    if ($enCamion) {
+                        $this->inventario->traslado(
+                            materialId: $linea->material_id,
+                            origen: $bodega,
+                            destino: $destino,
+                            cantidad: $cantidad,
+                            userId: $userId,
+                            referencia: $requisicion,
+                        );
+                    } else {
+                        $this->inventario->salidaDespacho(
+                            materialId: $linea->material_id,
+                            origen: $bodega,
+                            destino: $destino,
+                            cantidad: $cantidad,
+                            userId: $userId,
+                            referencia: $requisicion,
+                        );
+                    }
 
                     $linea->cantidad_despachada = $cantidad;
                     $linea->save();
+                }
+
+                if ($enCamion) {
+                    $requisicion->vehiculo_id = $vehiculo->id;
+                    $this->ocuparVehiculoEnElCalendario($requisicion, $vehiculo, $userId);
                 }
 
                 // Salió de bodega: hay un tramo real de carretera que
@@ -610,9 +667,18 @@ final readonly class TransicionarRequisicionService
         ?int $userId = null,
         ?string $nota = null,
     ): void {
-        $requisicion->loadMissing('lineas');
+        $requisicion->loadMissing('lineas', 'vehiculo');
 
         DB::transaction(function () use ($requisicion, $cantidadesPorLinea, $userId, $nota): void {
+            // Si viajó en un camión nuestro, el material todavía está
+            // ARRIBA: recién ahora baja a la obra, y baja lo que de verdad
+            // se contó. Lo que no bajó se queda en el camión — la
+            // diferencia deja de ser una nota y pasa a ser stock que
+            // alguien tiene que devolver a bodega o dar por perdido.
+            $vehiculo = $requisicion->vehiculo;
+            $baja = $vehiculo instanceof Bodega;
+            $obra = Ubicacion::obra($requisicion->proyecto_id);
+
             foreach ($requisicion->lineas as $linea) {
                 $recibida = $cantidadesPorLinea[$linea->id] ?? (string) $linea->cantidad_despachada;
 
@@ -620,9 +686,25 @@ final readonly class TransicionarRequisicionService
                     throw RequisicionInvalidaException::cantidadNegativa($recibida);
                 }
 
+                if ($baja && bccomp($recibida, '0', self::SCALE_CANTIDAD) > 0) {
+                    $this->inventario->salidaDespacho(
+                        materialId: $linea->material_id,
+                        origen: Ubicacion::bodega($vehiculo->id),
+                        destino: $obra,
+                        cantidad: $recibida,
+                        userId: $userId,
+                        referencia: $requisicion,
+                    );
+                }
+
                 $linea->cantidad_recibida = $recibida;
                 $linea->save();
             }
+
+            // El viaje terminó: la volqueta vuelve a estar libre en el
+            // calendario. Si tarda un día más en volver a base, eso ya es
+            // agenda de la máquina, no de este pedido.
+            $this->liberarVehiculoDelCalendario($requisicion);
 
             $this->aplicarTransicion($requisicion, EstadoRequisicion::Recibida, $userId, $nota);
         });
@@ -783,6 +865,58 @@ final readonly class TransicionarRequisicionService
         if (bccomp($autorizada, $solicitada, self::SCALE_CANTIDAD) > 0) {
             throw RequisicionInvalidaException::autorizadaExcedeSolicitada($autorizada, $solicitada);
         }
+    }
+
+    /**
+     * Ocupa la volqueta en el calendario mientras anda repartiendo, para
+     * que nadie la agende a otra obra creyéndola libre.
+     *
+     * Es BEST-EFFORT a propósito: si el vehículo ya estaba asignado a otra
+     * obra, el material igual tiene que salir. Frenar un despacho real por
+     * un renglón de calendario sería poner la contabilidad por encima de
+     * la operación — y el camión igual va a ir.
+     */
+    private function ocuparVehiculoEnElCalendario(Requisicion $requisicion, Bodega $vehiculo, ?int $userId): void
+    {
+        $vehiculo->loadMissing('maquina');
+
+        if ($vehiculo->maquina === null) {
+            return;
+        }
+
+        try {
+            $asignacion = app(AsignarMaquinaService::class)->asignar(
+                maquina: $vehiculo->maquina,
+                proyectoId: $requisicion->proyecto_id,
+                notas: "VIAJE DE ENTREGA DE LA REQUISICIÓN {$requisicion->codigo}.",
+            );
+
+            $requisicion->asignacion_viaje_id = $asignacion->id;
+        } catch (MaquinariaException) {
+            // Ya estaba ocupada: el pedido sale igual, sin renglón de
+            // calendario. Queda visible en la bitácora de la requisición.
+        }
+    }
+
+    /**
+     * El viaje terminó: el vehículo vuelve a estar libre.
+     */
+    private function liberarVehiculoDelCalendario(Requisicion $requisicion): void
+    {
+        $requisicion->loadMissing('asignacionViaje');
+
+        if ($requisicion->asignacionViaje === null) {
+            return;
+        }
+
+        try {
+            app(AsignarMaquinaService::class)->finalizar($requisicion->asignacionViaje);
+        } catch (MaquinariaException) {
+            // Ya la habían cerrado a mano desde maquinaria: nada que hacer.
+        }
+
+        $requisicion->asignacion_viaje_id = null;
+        $requisicion->save();
     }
 
     private function assertTieneLineas(Requisicion $requisicion): void

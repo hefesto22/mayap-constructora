@@ -230,6 +230,19 @@ final class AccionesTransicion
                             ->visible(fn (callable $get): bool => $get('resolucion') === ResolucionLinea::NoDisponible->value),
                     ]),
 
+                // ¿EN QUÉ SE LO LLEVAN? (Mauricio 2026-09-10). Con un
+                // camión nuestro declarado, el material NO llega a la obra
+                // al despacharlo: se sube al camión, que es donde está
+                // mientras rueda. La obra lo recibe al confirmar. Sin
+                // camión, el flujo es el de siempre.
+                Select::make('vehiculo_id')
+                    ->label('¿En qué se lo llevan?')
+                    ->options(self::vehiculosDeReparto(...))
+                    ->searchable()
+                    ->placeholder('Lo recogen ellos / no va en vehículo nuestro')
+                    ->helperText('Si va en una volqueta nuestra, el material queda EN el camión hasta que la obra confirme — y la volqueta queda ocupada en el calendario.')
+                    ->columnSpanFull(),
+
                 Textarea::make('nota_general')
                     ->label('Nota para la bitácora (opcional)')
                     ->rows(2)
@@ -243,6 +256,9 @@ final class AccionesTransicion
                         self::decisionesPorLinea($data),
                         self::userId(),
                         is_string($data['nota_general'] ?? null) ? $data['nota_general'] : null,
+                        filled($data['vehiculo_id'] ?? null)
+                            ? Bodega::find((int) $data['vehiculo_id'])
+                            : null,
                     );
                 } catch (RequisicionInvalidaException|StockInsuficienteException $e) {
                     Notification::make()
@@ -274,8 +290,9 @@ final class AccionesTransicion
             $lineas = $record->lineas()->with('material:id,codigo,nombre,consumo_inmediato')->get();
 
             return [
-                'bodega_id' => $bodegaId,
-                'lineas'    => $lineas
+                'bodega_id'   => $bodegaId,
+                'vehiculo_id' => null,
+                'lineas'      => $lineas
                     ->map(function (RequisicionLinea $linea) use ($bodegaId): array {
                         $pendiente = $linea->pendiente();
                         $existencia = self::existenciaEnBodega($bodegaId, $linea->material_id);
@@ -417,6 +434,27 @@ final class AccionesTransicion
         $bodegas = $query->pluck('nombre', 'id')->all();
 
         return $bodegas;
+    }
+
+    /**
+     * Los vehículos de reparto: bodegas móviles SIN material fijo (una
+     * volqueta lleva lo que se le suba). La pipa de agua no aparece acá —
+     * ésa carga siempre lo mismo y se maneja por su nivel.
+     *
+     * @return array<int, string>
+     */
+    private static function vehiculosDeReparto(): array
+    {
+        /** @var array<int, string> $vehiculos */
+        $vehiculos = Bodega::query()
+            ->moviles()
+            ->where('activo', true)
+            ->whereNull('material_id')
+            ->orderBy('nombre')
+            ->pluck('nombre', 'id')
+            ->all();
+
+        return $vehiculos;
     }
 
     private static function bodegaPorDefecto(): ?int
